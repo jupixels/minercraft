@@ -82,7 +82,7 @@ img,canvas.px{image-rendering:pixelated;image-rendering:crisp-edges}
 #debug div{display:flex;flex-direction:column;align-items:flex-start;gap:var(--g)}
 #debug div.r{align-items:flex-end}
 #debug span{background:rgba(80,80,80,.55);color:#e0e0e0;padding:0 var(--g);white-space:pre}
-#toast{position:absolute;left:50%;top:calc(var(--g)*8);transform:translateX(-50%);background:#212121;border:var(--g) solid #555;color:#ff0;padding:calc(var(--g)*6) calc(var(--g)*8);transition:opacity .4s;opacity:0}
+#toast{width:max-content;max-width:calc(100vw - 24px);font-size:calc(var(--g)*10);line-height:1.15;text-align:center;position:absolute;left:50%;top:calc(var(--g)*8);transform:translateX(-50%);background:#212121;border:var(--g) solid #555;color:#ff0;padding:calc(var(--g)*6) calc(var(--g)*8);transition:opacity .4s;opacity:0}
 /* ---- container GUI ---- */
 .panel{position:relative;background:#c6c6c6;border:var(--g) solid #000;border-radius:calc(var(--g)*3);
   box-shadow:inset calc(var(--g)*2) calc(var(--g)*2) 0 #fff, inset calc(var(--g)*-2) calc(var(--g)*-2) 0 #555;color:#404040}
@@ -681,7 +681,56 @@ if(typeof importScripts === 'function'){
  * hidden; v12 export imported as v13 with generator 2 and held rod intact.
  * No page/mesh-worker errors. Q4 original scope: generator 3: coherent shores/rivers and branching dry cave networks;
  * keep generator 1/2 output unchanged for existing edit-only saves.
- * Q5: repeat player walkthrough, persistence, worker/fallback and timings.
+ * Q5 COMPLETE — broader player audit repaired the following live failures:
+ * - Powered pistons/dispenser functions were disconnected from redstone.
+ *   Lever input now drives them; dispenser edges persist without reload shots.
+ * - Nether netherrack was incorrectly seeded as redstone; device sets now
+ *   avoid that queue flood and reseed correctly when continuing cached chunks.
+ * - Recipe availability stayed stale after crafting. The book now updates;
+ *   logs→planks→sticks→table→wooden pick→stone mining played through in UI.
+ * - Slab side-clicks merged the previous slab instead of extending a roof.
+ *   Side placement, top/bottom merging and complementary halves now work.
+ * - Newly placed stairs/beds faced backwards. Their placement is corrected;
+ *   existing saved orientations stay intact. A no-jump stair climb passed.
+ * - Water destroyed mature crops without harvest drops. It now uses farming
+ *   drop rules. Manual and water harvest both yielded wheat and seeds.
+ * - Item use intercepted chest/lever actions. Blocks now take priority;
+ *   dispenser upgrades remain accessible, and buckets outline their source.
+ * - Hoppers stole raw furnace inputs/fuel. They extract output below and
+ *   insert valid input above; processing rotates within a bounded work cap.
+ * - Shields could block a fireball yet still ignite the player. No longer;
+ *   normal blasts also leave obsidian intact and unlink destroyed shapes.
+ * - Death→Title could asynchronously capture the mouse over menus. The
+ *   title path no longer requests capture; late menu captures are released.
+ *   Death cause/score persist, respawn clears fire/effects and saves promptly.
+ * - Two-decimal player positions rounded bed/partial-block footing into the
+ *   block. Four decimals preserve collision clearance on reload.
+ * UI: visible offhand/durability, eligibility/costs at enchanting, brewing
+ * progress/fuel, shift-click brew inputs, concise new-world-only guide hint.
+ * Field guide documents hopper direction, dispenser retrofit and portal use.
+ * Player checks: constructed 46 wall/window blocks and 25 slab roof blocks;
+ * door toggle, wall torch, bed/night skip/spawn, sign editing and ladder climb.
+ * Iron smelted with normal slot actions and real ten-second processing;
+ * held pick enchanted; two real 20-second brew batches, potion drinking,
+ * eating, armor equip, melee, bow and shield/fireball blocking exercised.
+ * Hoed/watered/seeded/fertilized/harvested crops, bred cows, milked/drank milk;
+ * tamed/saddled/rode/dismounted a horse; tamed/sat/followed wolf and cat;
+ * traded wheat→emerald→bread; cast/reelled fishing (bite timer accelerated).
+ * Tamed/saddled flags, sign, bed and equipment retained on reload/travel.
+ * /kill→reload→death screen→Respawn and Death→Title→Continue played;
+ * score 49 and enchanted/equipment drops persisted; respawn stayed under
+ * the roof at bed Y70.5626, then retained that exact footing after Continue.
+ * Browser: synchronous fallback selected through Options; mesh positions,
+ * UVs and light exactly match worker output; workers restored without errors.
+ * Repeatable developer checks: node tests/quality-regression.cjs (no build
+ * dependency for players): syntax, original soundpack hash, stable 256 IDs,
+ * 48 legacy chunk hashes, v3 determinism/resources, migration, portal frames.
+ * Q6 FINAL: active CPU/frame interval sampling and final fresh-world walk.
+ * Remaining limits: simplified entity pathfinding/redstone, downward-only
+ * hoppers/manual furnace fuel, 128-block height, 32 active mobs, 12-block
+ * piston push limit, 4×5 portal frames, no upside-down stair variants or
+ * greedy meshing. Hardware 60 FPS is not established by CPU measurements.
+ * End/bosses and broader vanilla parity remain deferred.
  * End/boss expansion remains deferred. No new block IDs or atlas slots.
  * M1 COMPLETE — shared AABB, water/step physics; four animated procedural mobs;
  * wander/panic/lure/breeding/babies; loot and cooked meats; bounded spawning;
@@ -1233,6 +1282,7 @@ const world = {
     const li=(x&15)+((z&15)<<4)+(y<<8);
     const old=c.data[li]; if(old===id) return;
     c.data[li]=id;
+    if(c.redstoneCells){if(isRedstoneBlock(id))c.redstoneCells.add(li);else c.redstoneCells.delete(li);}
     if((old===B.obsidian||old===B.portal)&&id!==old)invalidatePortal(x,y,z);
     if(old===B.nether_wart_block&&id!==old){world.plantAges.delete(posKey(x,y,z));if(c.plantAges)delete c.plantAges[li];}if(id===B.nether_wart_block&&old!==id){world.plantAges.set(posKey(x,y,z),0);if(!c.plantAges)c.plantAges={};c.plantAges[li]=0;}
     if(id===B.spawner)c.spawners.add(li);else c.spawners.delete(li);
@@ -1686,6 +1736,7 @@ function updatePlayer(dt){
   else if(p.inWater) speed = 2.2;
   else if(p.sneaking) speed = 1.31;
   else if(p.sprinting) speed = 5.612;
+  if(!p.flying&&!p.inWater&&blockAtFeet(-.1)===B.soul_sand)speed*=.6;
   if(player.effects?.speed>0)speed*=1.2;
   const control = p.flying ? 10 : (p.onGround ? 18 : (p.inWater? 6 : 4));
   const k = 1-Math.exp(-control*dt);
@@ -1770,14 +1821,15 @@ let noLock=false;   // fallback when the page is not allowed to capture the mous
 function enableNoLock(){ if(noLock) return; noLock=true; if(typeof toast==='function') toast('Mouse capture unavailable here: move the mouse (or use arrow keys) to look, Esc to pause'); }
 function requestLock(fromGesture){
   if(noLock) return;
-  try{ const r=canvas.requestPointerLock(); if(r&&r.catch) r.catch(()=>{ if(fromGesture) enableNoLock(); }); }catch(e){ if(fromGesture) enableNoLock(); }
+  try{ const r=canvas.requestPointerLock(); if(r&&r.catch) r.catch(()=>{ if(fromGesture&&gameState==='playing')enableNoLock(); }); }catch(e){ if(fromGesture&&gameState==='playing')enableNoLock(); }
   // some embedded views ignore the request silently: fall back if nothing happened
   if(fromGesture) setTimeout(()=>{ if(!locked && gameState==='playing' && document.hasFocus()) enableNoLock(); }, 1500);
 }
-document.addEventListener('pointerlockerror', ()=>{ if(lastLockGesture && performance.now()-lastLockGesture<1000) enableNoLock(); });
+document.addEventListener('pointerlockerror', ()=>{ if(gameState==='playing'&&lastLockGesture&&performance.now()-lastLockGesture<1000) enableNoLock(); });
 let lastLockGesture=0;
 document.addEventListener('pointerlockchange', ()=>{
   locked = document.pointerLockElement===canvas;
+  if(locked&&gameState!=='playing'){document.exitPointerLock();return;}
   if(!locked && gameState==='playing' && !noLock){ setState('paused'); if(typeof saveWorld==='function') saveWorld(); }
 });
 document.addEventListener('mousemove', (e)=>{
@@ -1913,6 +1965,14 @@ function playerIntersects(x,y,z){
   return p.x+PW>x && p.x-PW<x+1 && p.y+PH>y && p.y<y+1 && p.z+PW>z && p.z-PW<z+1;
 }
 function tryPlace(repeat=false){
+  if(!repeat&&target&&!player.sneaking&&!raycastMob()){
+    const d=BLOCKS[target.id];
+    if(target.id===B.crafting_table){openInventory(true);return true;}
+    if(d.container&&!(d.container==='chest'&&inv.heldId()===B.dispenser_mechanism)){openContainerAt(target);return true;}
+    if(target.id===B.enchanting_table){openGui('enchant',{x:target.x,y:target.y,z:target.z});return true;}
+    if(['door','door_open','gate','gate_open','trapdoor','trapdoor_open','bed','sign'].includes(d.model)&&shapeInteract())return true;
+    if(['lever','button'].includes(d.model)&&redstoneInteract())return true;
+  }
   if(repeat){const id=inv.heldId(),d=BLOCKS[target?.id];if(!isBlockId(id)&&id!==B.redstone)return false;if(!player.sneaking&&(d?.container||['door','door_open','gate','gate_open','trapdoor','trapdoor_open','bed','sign','lever','button'].includes(d?.model)||target?.id===B.crafting_table))return false;}
   if(engineeringInteract())return true;
   if(livingInteract())return true;
@@ -1934,10 +1994,14 @@ function tryPlace(repeat=false){
   const held=inv.held(); if(!held || !isBlockId(held.id)&&held.id!==B.redstone) return false;
   let id=held.id===B.redstone?B.wire:held.id; const b=BLOCKS[id];
   if(b.model==='ladder'&&target.ny===0)id=b.base+SHAPE_DIR.findIndex(d=>d[0]===target.nx&&d[1]===target.nz);
-  else if(b.facing!==undefined){ const k=((Math.round(player.yaw/(Math.PI/2))%4)+4)%4; id = b.base + (4-k)%4; }
+  else if(b.facing!==undefined){ const k=((Math.round(player.yaw/(Math.PI/2))%4)+4)%4; id=b.base+((4-k+(b.model==='stairs'||b.model==='bed'?2:0))%4); }
   let x=target.x+target.nx, y=target.y+target.ny, z=target.z+target.nz;
   if(tb.plant && tb.name!=='dead_bush' || target.id===B.tall_grass){ x=target.x; y=target.y; z=target.z; }   // replace grass
   const cur=world.getBlock(x,y,z);
+  if(id===B.oak_slab||id===B.stone_slab){
+    const upper=id===B.oak_slab?B.oak_slab_top:B.stone_slab_top,wantTop=target.ny<0||target.ny===0&&(camera.position.y+_rd.y*target.t)%1>.5;
+    if((cur===id&&wantTop||cur===upper&&!wantTop)&&!playerIntersects(x,y,z)){world.setBlock(x,y,z,id===B.oak_slab?B.planks:B.stone_bricks);if(player.mode==='survival')inv.consumeHeld();worldStats.placed++;sfx.blockPlace(id);return true;}
+  }
   if(!(cur===0 || BLOCKS[cur]?.liquid || cur===B.tall_grass)) return false;
   if(y<0||y>=CH) return false;
   if((id===B.oak_slab||id===B.stone_slab)&&(target.ny<0||(target.ny===0&&(camera.position.y+_rd.y*target.t)%1>.5)))id=id===B.oak_slab?B.oak_slab_top:B.stone_slab_top;
@@ -1966,12 +2030,12 @@ canvas.addEventListener('mousedown',(e)=>{
 });
 addEventListener('mouseup',(e)=>{ if(e.button===0){ mouse.left=false; mining.active=false; } if(e.button===2){releaseBow();mouse.right=false;} });
 addEventListener('contextmenu',(e)=>e.preventDefault());
-function pickBlock(id){ for(let i=0;i<9;i++) if(inv.slots[i]&&inv.slots[i].id===id){ inv.sel=i; onInventoryChange&&onInventoryChange(); return; } if(player.mode==='survival'){const i=inv.slots.findIndex(s=>s?.id===id);if(i<0)return;const a=inv.slots[i];inv.slots[i]=inv.slots[inv.sel];inv.slots[inv.sel]=a;}else inv.slots[inv.sel]={id,count:1}; onInventoryChange&&onInventoryChange(); }
+function pickBlock(id){const b=BLOCKS[id];if(b&&(b.facing!==undefined||b.model==='slab_top'||b.wire!==undefined||b.name.endsWith('_on')||b.name.endsWith('_off')))id=b.model==='piston_head'?B.piston:b.drop||b.base||id;for(let i=0;i<9;i++) if(inv.slots[i]&&inv.slots[i].id===id){ inv.sel=i; onInventoryChange&&onInventoryChange(); return; } if(player.mode==='survival'){const i=inv.slots.findIndex(s=>s?.id===id);if(i<0)return;const a=inv.slots[i];inv.slots[i]=inv.slots[inv.sel];inv.slots[inv.sel]=a;}else inv.slots[inv.sel]={id,count:1}; onInventoryChange&&onInventoryChange(); }
 let swingT=1;   // 0..1 progress of the arm swing (0.3 s), 1 = idle
 function swing(){ if(swingT>=0.5) swingT=0; }
 
 function updateInteraction(dt){
-  target = (gameState==='playing') ? raycastBlock(REACH) : null;
+  target = (gameState==='playing') ? raycastBlock(REACH,[B.bucket,B.glass_bottle].includes(inv.heldId())) : null;
   if(target){
     const bb=blockBox(target.id), e=0.002;
     outline.visible=true;
@@ -2099,9 +2163,9 @@ function saveWorld(){
     if(!store.set(chunkPrefix()+cx+','+cz, out)) ok=false;
   }
   if(ok) world.dirtyEdits.clear();
-  const containers=[]; for(const [k,c] of world.containers) containers.push([k,{t:c.type,s:c.slots.map(st=>packStack(st)),b:c.burn||0,bm:c.burnMax||0,c:c.cook||0}]);
-  const meta = { v:13, pendingItems:[...craftGrid2,...craftGrid3,cursor].filter(Boolean).map(packStack), portalLinks:world.portalLinks||[],offhand:packStack(offhand[0]),pistons:[...pistonSticky],plantAges:[...world.plantAges], stats:worldStats, dimension:world.dimension||'overworld',dimensions:world.dimensionStates||{}, effects:player.effects||{}, advancements:[...advancements], tnt:primedTNT.map(e=>[e.pos.x,e.pos.y,e.pos.z,e.fuse]), days:dayCount,weather:{type:weather.type,remaining:weather.remaining}, generator:world.genVersion||2, signs:[...signTexts], armor:armorSlots.map(packStack), xpOrbs:xpOrbs.map(e=>[e.value,e.pos.x,e.pos.y,e.pos.z]), mobs:saveMobs(), mobChunks:[...mobChunks], name:world.name, seed:world.seed, mode:player.mode, time:dayTime, spawn:world.spawn,
-    p:{ x:+player.pos.x.toFixed(2), y:+player.pos.y.toFixed(2), z:+player.pos.z.toFixed(2), yaw:+player.yaw.toFixed(3), pitch:+player.pitch.toFixed(3),
+  const containers=[]; for(const [k,c] of world.containers) containers.push([k,{t:c.type,s:c.slots.map(st=>packStack(st)),b:c.burn||0,bm:c.burnMax||0,c:c.cook||0,p:!!c.powered}]);
+  const meta = { v:13, pendingItems:[...craftGrid2,...craftGrid3,cursor].filter(Boolean).map(packStack), portalLinks:world.portalLinks||[],offhand:packStack(offhand[0]),pistons:[...pistonSticky],plantAges:[...world.plantAges], stats:worldStats,deathCause:world.deathCause||'', dimension:world.dimension||'overworld',dimensions:world.dimensionStates||{}, effects:player.effects||{}, advancements:[...advancements], tnt:primedTNT.map(e=>[e.pos.x,e.pos.y,e.pos.z,e.fuse]), days:dayCount,weather:{type:weather.type,remaining:weather.remaining}, generator:world.genVersion||2, signs:[...signTexts], armor:armorSlots.map(packStack), xpOrbs:xpOrbs.map(e=>[e.value,e.pos.x,e.pos.y,e.pos.z]), mobs:saveMobs(), mobChunks:[...mobChunks], name:world.name, seed:world.seed, mode:player.mode, time:dayTime, spawn:world.spawn,
+    p:{ x:+player.pos.x.toFixed(4), y:+player.pos.y.toFixed(4), z:+player.pos.z.toFixed(4), yaw:+player.yaw.toFixed(3), pitch:+player.pitch.toFixed(3),
         fire:player.fire||0, hp:player.health, food:player.food, sat:player.sat, xp:player.xp, fly:player.flying },
     inv: inv.slots.map(st=>packStack(st)), sel:inv.sel, containers,
     items: itemEntities.slice(-200).map(e=>[e.id,e.count,+e.pos.x.toFixed(2),+e.pos.y.toFixed(2),+e.pos.z.toFixed(2),Math.round(e.age),e.d??null,e.en||null]) };
@@ -2129,21 +2193,23 @@ function damage(n, cause){
   if(player.health<=0) die(cause);
 }
 function die(cause){
+  world.deathCause=cause;
   if(guiOpen)closeGuiSilently();
   if(riding)riding=null;
   if(player.mode==='survival'){ for(let i=0;i<36;i++){ const st=inv.slots[i]; if(st){ spawnItem(st.id, st.count, player.pos.x, player.pos.y+1, player.pos.z, true,st); inv.slots[i]=null; } } onInventoryChange(); }
   if(player.mode==='survival'&&offhand[0]){const st=offhand[0];spawnItem(st.id,st.count,player.pos.x,player.pos.y+1,player.pos.z,true,st);offhand[0]=null;}
   if(player.mode==='survival')for(let i=0;i<4;i++){const st=armorSlots[i];if(st){spawnItem(st.id,1,player.pos.x,player.pos.y+1,player.pos.z,true,st);armorSlots[i]=null;}}
-  deathMessage.textContent=deathText(cause);
+  onInventoryChange();deathMessage.textContent=deathText(cause);
   setState('dead');
-  $('deathScore').textContent = 'Score: '+player.xp;
+  $('deathScore').textContent = 'Score: '+player.xp;saveWorld();
   document.exitPointerLock && document.exitPointerLock();
 }
-function respawn(){
+function respawn(resume=true){
+  world.deathCause='';
   const s=world.spawn||[0.5,80,0.5];
   player.pos.set(s[0], s[1], s[2]); player.vel.set(0,0,0); player.fallStart=null;
   player.health=20; player.food=20; player.sat=5; player.air=300; player.xp=0;player.fire=0;player.effects={};player.hurtTime=0;player.exh=0;spawnPending=true;respawnPending=true;
-  setState('playing'); requestLock();
+  if(resume){setState('playing');requestLock();}saveWorld();
 }
 events.onJump = ()=>{ player.exh += player.sprinting?0.2:0.05; if(typeof sfx==='object') sfx.jump(); };
 events.onLand = (dist)=>{ if(typeof sfx==='object') sfx.land(dist); if(dist>3.5) damage(Math.floor(dist-3),'fall'); };
@@ -2373,6 +2439,7 @@ const hudEls = { slots:[] };
 function buildHud(){
   const hb=$('hotbar');
   for(let i=0;i<9;i++){ const d=document.createElement('div'); d.className='hslot'; d.style.left=`calc(var(--g)*${3+i*20})`; d.innerHTML='<img class="icon" alt=""><span class="count"></span>'; hb.appendChild(d); hudEls.slots.push(d); }
+  const hand=el('div','slot',{right:'calc(50% + var(--g)*96)',bottom:g(2),width:g(20),height:g(20),display:'none'},$('hud'));hand.id='offhandHud';hand.title='Offhand · F swaps with the selected slot';hudEls.offhand=el('div','in',{left:g(1),top:g(1)},hand,'<img class="icon" alt="Offhand"><span class="count"></span>');
   for(let i=0;i<10;i++){ $('hearts').appendChild(new Image()); $('food').appendChild(new Image()); $('bubbles').appendChild(new Image()); }
 }
 function setSlotEl(el, st){
@@ -2386,10 +2453,11 @@ function setSlotEl(el, st){
 let nameTimer=0, lastSel=-1, lastHeldId=-1;
 function onInventoryChange(){
   for(let i=0;i<9;i++) setSlotEl(hudEls.slots[i], inv.slots[i]);
+  if(hudEls.offhand){setSlotEl(hudEls.offhand,offhand[0]);hudEls.offhand.parentElement.style.display=offhand[0]?'block':'none';}
   $('hotsel').style.left=`calc(var(--g)*${-1+inv.sel*20})`;
   const hid=inv.heldId();const hd=ITEMS[hid];if(hd?.durability)$('itemName').textContent=itemLabel(hid)+' · '+(inv.held().d??hd.durability)+' / '+hd.durability;
   if(inv.sel!==lastSel || hid!==lastHeldId){ lastSel=inv.sel; lastHeldId=hid; if(hid){ $('itemName').textContent=itemLabel(hid)+(hd?.durability?' · '+(inv.held().d??hd.durability)+' / '+hd.durability:''); $('itemName').style.opacity=1; nameTimer=2; } else $('itemName').style.opacity=0; }
-  if(guiOpen) renderGui();
+  if(guiOpen){if(recipeBookOpen&&['inventory','table'].includes(guiOpen))buildGui();else renderGui();}
 }
 let hudCache='';
 function updateHud(dt){
@@ -2429,13 +2497,13 @@ function updateDebug(dt){
   const t=target? `${target.x}, ${target.y}, ${target.z}\n${BLOCKS[target.id].label}` : '';
   const L=[`Minercraft 1.0 (three.js r128)`, `${fps.toFixed(0)} fps  C: ${stats.drawCalls} draws  T: ${(stats.tris/1000).toFixed(0)}k tris`,
     `Chunks: ${meshed} meshed / ${loaded} loaded / ${world.chunks.size} tracked  R: ${CONFIG.renderDistance}`,
-    `Mesh: ${meshStats.last.toFixed(1)} ms (avg ${meshStats.avg.toFixed(1)})  CPU frame: ${prof.frame.toFixed(1)} ms (chunks ${prof.chunks.toFixed(1)}, render ${prof.render.toFixed(1)})`, '',
+    `Mesh: ${meshStats.last.toFixed(1)} ms (avg ${meshStats.avg.toFixed(1)})  CPU avg: ${prof.frame.toFixed(1)} ms (chunks ${prof.chunks.toFixed(1)}, render ${prof.render.toFixed(1)})`, '',
     `Simulation: ${entityClock.ms.toFixed(2)} ms; fluids ${fluidClock.ms.toFixed(2)}, random ${farmClock.ms.toFixed(2)}, redstone ${redstoneClock.ms.toFixed(2)}`,
     `XYZ: ${p.x.toFixed(3)} / ${p.y.toFixed(3)} / ${p.z.toFixed(3)}`, `Block: ${bx} ${by} ${bz}`,
     `Chunk: ${bx&15} ${by} ${bz&15} in ${bx>>4} ${bz>>4}`, `Facing: ${FACING_NAMES[f]} (${yawDeg.toFixed(1)} / ${(-player.pitch*180/Math.PI).toFixed(1)})`,
     `Biome: ${gen.BIOME_NAMES[gen.biomeAt(bx,bz)]}`, `Day ${Math.floor(dayCount)}, time ${Math.floor(dayTime*24000)}`,
     `Mode: ${player.mode}${player.flying?' (flying)':''}`];
-  const R=[`JS heap: ${performance.memory? (performance.memory.usedJSHeapSize/1048576).toFixed(0)+' MB':'n/a'}`, `Display: ${innerWidth}x${innerHeight}`, `Workers: ${workers.length}`, '', t ? 'Targeted Block:\n'+t : ''];
+  const R=[`JS heap: ${performance.memory? (performance.memory.usedJSHeapSize/1048576).toFixed(0)+' MB':'n/a'}`, `Display: ${innerWidth}x${innerHeight}`, `Workers: ${workers.length} terrain / ${meshWorkers.length} mesh${meshWorkerError?" (fallback)":""}`, '', t ? 'Targeted Block:\n'+t : ''];
   $('dbgL').innerHTML=L.map(s=>s?`<span>${s}</span>`:'<br>').join('');
   $('dbgR').innerHTML=R.map(s=>s?`<span>${s}</span>`:'<br>').join('');
 }
@@ -2496,8 +2564,8 @@ function buildGui(){
   const host=$('gui'); host.innerHTML=''; guiSlots=[];
   const wrap=el('div',null,{position:'relative', left: (recipeBookOpen && (guiOpen==='inventory'||guiOpen==='table')) ? g(76) : 0},host);
   let panel;
-  if(guiOpen==='enchant'){panel=el('div','panel',{width:g(176),height:g(190)},wrap);buildEnchantGui(panel);
-  }else if(guiOpen==='brewing'){panel=el('div','panel',{width:g(176),height:g(166)},wrap);label(panel,58,7,'Brewing Stand');for(let i=0;i<3;i++)addSlot(panel,36+i*36,45,{arr:guiData.slots,i,kind:'brew_bottle'});addSlot(panel,80,18,{arr:guiData.slots,i:3,kind:'brew_ingredient'});addSlot(panel,8,18,{arr:guiData.slots,i:4,kind:'brew_fuel'});label(panel,8,68,'Blaze fuel · 20 seconds per brew');addInvSlots(panel,8,84);
+  if(guiOpen==='enchant'){panel=el('div','panel',{width:g(230),height:g(190)},wrap);buildEnchantGui(panel);
+  }else if(guiOpen==='brewing'){panel=el('div','panel',{width:g(176),height:g(166)},wrap);label(panel,58,7,'Brewing Stand');for(let i=0;i<3;i++)addSlot(panel,36+i*36,45,{arr:guiData.slots,i,kind:'brew_bottle'});addSlot(panel,80,18,{arr:guiData.slots,i:3,kind:'brew_ingredient'});addSlot(panel,8,18,{arr:guiData.slots,i:4,kind:'brew_fuel'});const progress=label(panel,8,68,'Blaze fuel · 20 seconds per brew');progress.classList.add('brew-progress');progress.style.fontSize=g(9);addInvSlots(panel,8,84);
   }else if(guiOpen==='trade'){panel=el('div','panel',{width:g(210),height:g(180)},wrap);buildTradeGui(panel,guiData);
   }else if(guiOpen==='journal'){panel=el('div','panel',{width:g(290),height:g(208)},wrap);buildJournal(panel);
   }else if(guiOpen==='sign'){
@@ -2618,6 +2686,7 @@ function renderGui(){
     if(fl) fl.style.height = (guiData.burnMax? guiData.burn/guiData.burnMax*100 : 0)+'%';
     if(af) af.style.width = (guiData.cook/10*100)+'%';
   }
+  if(guiOpen==='brewing'&&guiData){const e=$('gui').querySelector('.brew-progress');if(e)e.textContent='Fuel: '+(guiData.burn||0)+' batches · '+Math.floor(guiData.cook||0)+' / 20 seconds';}
   const ci=$('cursorItem');
   if(cursor){ ci.classList.remove('hidden'); ci.innerHTML=`<img class="icon" src="${iconURL(cursor.id)}"><span class="count">${cursor.count>1?cursor.count:''}</span>`; }
   else ci.classList.add('hidden');
@@ -2649,6 +2718,7 @@ function quickMove(ref){
   const armor=ITEMS[st.id]?.armor;if(armor!==undefined&&!armorSlots[armor]&&ref.arr!==armorSlots){armorSlots[armor]=st;ref.arr[ref.i]=null;return;}
   if(g2==='hotbar' || g2==='main'){
     if(['chest','hopper','dispenser'].includes(guiOpen)) targets=guiData.slots.map((_,i)=>({arr:guiData.slots,i,kind:'normal'}));
+    else if(guiOpen==='brewing'){const indices=ITEMS[st.id]?.bottle?[0,1,2]:st.id===B.blaze_powder?[4]:Object.values(BREW).some(r=>r.ingredient===st.id)?[3]:[];targets=indices.length?indices.map(i=>({arr:guiData.slots,i,kind:i<3?'brew_bottle':i===3?'brew_ingredient':'brew_fuel'})):null;}
     else if(guiOpen==='furnace'){ targets = SMELT[st.id]!==undefined ? [{arr:guiData.slots,i:0,kind:'normal'}] : (FUEL[st.id]?[{arr:guiData.slots,i:1,kind:'fuel'}]:null); }
     if(!targets) targets = g2==='hotbar' ? invRefs(9,36) : invRefs(0,9);
   } else targets = [...invRefs(0,9), ...invRefs(9,36)];
@@ -2758,7 +2828,7 @@ $('bSoundT').onclick=$('bSoundP').onclick=()=>{ sfx.usePack=!sfx.usePack; CONFIG
 $('bResume').onclick=()=>{ clickSound(); setState('playing'); requestLock(); };
 $('bQuit').onclick=()=>{ clickSound(); saveWorld(); toTitle(); };
 $('bRespawn').onclick=()=>{ clickSound(); respawn(); };
-$('bDeathTitle').onclick=()=>{ clickSound(); player.health=20; player.food=20; const s=world.spawn; if(s){ player.pos.set(s[0],s[1],s[2]); } saveWorld(); toTitle(); };
+$('bDeathTitle').onclick=()=>{clickSound();respawn(false);toTitle();};
 $('bOptDone').onclick=()=>{ clickSound(); saveSettings(); showScreen(menuReturn); if(menuReturn==='title') refreshTitle(); };
 function clickSound(){ if(typeof sfx==='object') sfx.click(); }
 
@@ -2825,7 +2895,7 @@ function titleUpdate(dt){
 /* ---- starting / continuing a world ---- */
 function beginGame(seed, meta, mode){
   world.dimension=meta?.dimension||'overworld';world.dimensionStates=meta?.dimensions||{};
-  world.portalLinks=meta?.portalLinks||[];portalState.arrival=null;portalState.time=0;portalState.mustLeave=true;
+  world.deathCause=meta?.deathCause||'';world.showIntro=!meta;world.portalLinks=meta?.portalLinks||[];portalState.arrival=null;portalState.time=0;portalState.mustLeave=true;
   respawnPending=false;resetMobs();clearSigns();resetRedstone();
   if(world.builtDimension!==world.dimension){world.edits.clear();world.dirtyEdits.clear();}
   world.genVersion=meta?.generator||3;
@@ -2843,7 +2913,7 @@ function beginGame(seed, meta, mode){
     world.containers.clear();
     clearItems(); for(const it of (meta.items||[])){ const e=spawnItem(it[0],it[1],it[2],it[3],it[4],false,{d:it[6]??undefined,en:it[7]||undefined}); if(e){ e.vel.set(0,0,0); e.age=it[5]||0; e.delay=0; } }
     for(const packed of meta.pendingItems||[]){const st=unpackStack(packed);if(st){const left=inv.add(st.id,st.count,st);if(left)spawnItem(st.id,left,player.pos.x,player.pos.y+1,player.pos.z,false,st);}}
-    for(const [k,c] of (meta.containers||[])){ const [x,y,z]=k.split(',').map(Number); const o={type:c.t, slots:c.s.map(unpackStack), burn:c.b, burnMax:c.bm, cook:c.c, x,y,z}; world.containers.set(k,o); }
+    for(const [k,c] of (meta.containers||[])){ const [x,y,z]=k.split(',').map(Number); const o={type:c.t, slots:c.s.map(unpackStack), burn:c.b, burnMax:c.bm, cook:c.c,powered:!!c.p, x,y,z}; world.containers.set(k,o); }
   } else {
     dayTime=0.27; Object.assign(player,{health:20,food:20,sat:5,xp:0,flying:false,air:300,fire:0});
     world.spawn=null;
@@ -2857,6 +2927,8 @@ function beginGame(seed, meta, mode){
   dayCount=meta?.days||0;setWeather(meta?.weather?.type||'clear',meta?.weather?.remaining||300);
   for(const e of meta?.tnt||[])primeTNT(e[0],e[1],e[2],e[3],true);
   restoreMobs(meta);
+  for(const c of world.chunks.values())if(c.data){seedRedstoneChunk(c);c.plantAges={};}
+  for(const [key,age] of world.plantAges){const [x,y,z]=key.split(',').map(Number),c=world.get(x>>4,z>>4);if(c?.data){c.plantAges[(x&15)+((z&15)<<4)+(y<<8)]=age;c.dirty=true;c.rev=(c.rev||0)+1;}}
   onInventoryChange();
   loadingStart=performance.now();
   setState('loading');
@@ -2870,7 +2942,8 @@ function checkLoading(){
   $('loadingText').textContent = done<need ? 'Loading terrain' : 'Building terrain';
   if(done>=need && !spawnPending){
     if(!world.spawn) world.spawn=[player.pos.x, player.pos.y, player.pos.z];
-    setState(player.health<=0?'dead':'playing');if(player.health>0)requestLock();saveWorld();if(!advancements.has('Opened Field Guide'))toast('WASD move · E inventory & recipes · J field guide · Esc pause');
+    if(player.health<=0){deathMessage.textContent=deathText(world.deathCause);$('deathScore').textContent='Score: '+player.xp;}
+    setState(player.health<=0?'dead':'playing');if(player.health>0)requestLock();saveWorld();if(world.showIntro){world.showIntro=false;toast('E: inventory & recipes · J: guide · Esc: pause');}
   }
 }
 
@@ -2942,8 +3015,8 @@ let lastT=performance.now(), fps=60, fpsAcc=0, fpsFrames=0, autosaveT=0;
 const stats = { drawCalls:0, tris:0 };
 function frame(){
   requestAnimationFrame(frame);
-  const now=performance.now();if(CONFIG.maxFps>0&&now-lastT<1000/CONFIG.maxFps-.4)return; let dt=(now-lastT)/1000; lastT=now; if(dt>0.1) dt=0.1;
-  fpsAcc+=dt; fpsFrames++; if(fpsAcc>=0.5){ fps=fpsFrames/fpsAcc; fpsAcc=0; fpsFrames=0; }
+  const now=performance.now();if(CONFIG.maxFps>0&&now-lastT<1000/CONFIG.maxFps-.4)return; const elapsed=(now-lastT)/1000;let dt=Math.min(elapsed,.1);lastT=now;
+  fpsAcc+=elapsed; fpsFrames++; if(fpsAcc>=0.5){ fps=fpsFrames/fpsAcc; fpsAcc=0; fpsFrames=0; }
   U.uTime.value += dt;
   if(gameState==='title'){ titleUpdate(dt); if(typeof updateSky==='function') updateSky(dt*0.15, camera.position); }
   else {
@@ -2971,9 +3044,9 @@ function frame(){
   stats.drawCalls=renderer.info.render.calls; stats.tris=renderer.info.render.triangles;
   if(typeof renderHeld==='function' && gameState!=='title' && gameState!=='loading') renderHeld();
   prof.render = prof.render*0.9 + (performance.now()-tr)*0.1;
-  prof.frame = prof.frame*0.9 + (performance.now()-now)*0.1;
+  prof.lastFrame=performance.now()-now;prof.frame=prof.frame*.9+prof.lastFrame*.1;
 }
-const prof = { chunks:0, render:0, frame:0 };
+const prof = { chunks:0, render:0, frame:0,lastFrame:0 };
 
 /* =========================================================================
    21. SOUND — Web Audio synthesis, plus optional user sound pack folder
@@ -3357,7 +3430,7 @@ function lightAt(x,y,z){
   let bl=0; const cx=bx>>4, cz=bz>>4;
   for(let dz=-1;dz<=1;dz++) for(let dx=-1;dx<=1;dx++){ const c=world.get(cx+dx,cz+dz); if(!c||!c.emitters.size) continue;
     for(const li of c.emitters){ const ex=(cx+dx)*16+(li&15), ez=(cz+dz)*16+((li>>4)&15), ey=li>>8; bl=Math.max(bl,(BLOCKS[c.data[li]].light-Math.abs(ex-bx)-Math.abs(ey-by)-Math.abs(ez-bz))/15); } }
-  return clamp(Math.max(player.effects?.night_vision>0?.8:0,open ? U.uSky.value : (by<SEA-6 ? 0.05 : 0.3*U.uSky.value), bl), 0.05, 1);
+  return clamp(Math.max(player.effects?.night_vision>0?.8:0,world.dimension==='nether'?.14:0,open ? U.uSky.value : (by<SEA-6 ? 0.05 : 0.3*U.uSky.value), bl), 0.05, 1);
 }
 function makeItemVisual(id, count){
   const o=heldMeshFor(id), isBlock = o.kind==='block', g=new THREE.Group();
@@ -3493,6 +3566,7 @@ function buildRecipeBook(wrap, panelH){
 function addRecipeButton(panel, x, y){
   const b=el('div',null,{position:'absolute',left:g(x),top:g(y),width:g(20),height:g(18),cursor:'pointer',background:'#c6c6c6',border:`${g(1)} solid #000`,boxShadow:`inset ${g(1)} ${g(1)} 0 #fff, inset ${g(-1)} ${g(-1)} 0 #555`,boxSizing:'border-box'},panel);
   el('img',null,{position:'absolute',left:g(2),top:g(1),width:g(16),height:g(14)},b).src=RB_ICON();
+  b.setAttribute('role','button');b.setAttribute('aria-label','Recipe book');b.title='Show or hide recipes';
   b.onmousedown=(e)=>{ e.stopPropagation(); recipeBookOpen=!recipeBookOpen; if(typeof sfx==='object') sfx.click(); buildGui(); };
   b.onmousemove=(e)=>{ e.stopPropagation(); showTip(e, recipeBookOpen?'Hide recipes':'Show all recipes'); };
 }
@@ -3733,7 +3807,7 @@ function clearSight(ax,ay,az,bx,by,bz){
  for(let i=1;i<n;i++){const id=world.getBlock(Math.floor(ax+dx*i/n),Math.floor(ay+dy*i/n),Math.floor(az+dz*i/n));if(id<0||BLOCKS[id]?.solid)return false;}return true;
 }
 function applyKnock(e,dt){e.vel.x+=e.knockX||0;e.vel.z+=e.knockZ||0;e.knockX=(e.knockX||0)*Math.exp(-10*dt);e.knockZ=(e.knockZ||0)*Math.exp(-10*dt);}
-function mobDamage(n,cause,source=null){if(combat.hurt>0||!['playing','inventory','chat'].includes(gameState)||CONFIG.difficulty==='peaceful')return;combat.hurt=.65;if(blockWithShield(n,cause,source))return;damage(n*(CONFIG.difficulty==='hard'?1.5:CONFIG.difficulty==='easy'?.5:1),cause);}
+function mobDamage(n,cause,source=null){if(combat.hurt>0||!['playing','inventory','chat'].includes(gameState)||CONFIG.difficulty==='peaceful')return false;combat.hurt=.65;if(blockWithShield(n,cause,source))return false;damage(n*(CONFIG.difficulty==='hard'?1.5:CONFIG.difficulty==='easy'?.5:1),cause);return true;}
 function tickHostile(e,dt,dist){
  const d=MOB_DEFS[e.kind],p=e.pos,pp=player.pos;
  e.attackT=Math.max(0,(e.attackT||0)-dt);e.sightT=(e.sightT||0)-dt;
@@ -3790,7 +3864,7 @@ function tickProjectiles(dt){
      e.pos.addScaledVector(e.vel,sd);const p=e.pos,id=world.getBlock(Math.floor(p.x),Math.floor(p.y),Math.floor(p.z));
      if(id<0||BLOCKS[id]?.solid){if(e.owner==='egg'){eggImpact(e);e.age=31;}else if(e.owner==='fireball'){explode(e.pos.x,e.pos.y,e.pos.z,2);e.age=31;}else e.stuck=true;break;}
      if(e.owner==='hostile'||e.owner==='fireball'){
-       const pp=player.pos;if(Math.abs(p.x-pp.x)<PW+.08&&Math.abs(p.z-pp.z)<PW+.08&&p.y>pp.y&&p.y<pp.y+PH){mobDamage(e.owner==='fireball'?6:4,e.owner==='fireball'?'fire':'arrow',{x:pp.x-e.vel.x,z:pp.z-e.vel.z});if(e.owner==='fireball')player.fire=5;e.age=31;break;}
+       const pp=player.pos;if(Math.abs(p.x-pp.x)<PW+.08&&Math.abs(p.z-pp.z)<PW+.08&&p.y>pp.y&&p.y<pp.y+PH){const hit=mobDamage(e.owner==='fireball'?6:4,e.owner==='fireball'?'fire':'arrow',{x:pp.x-e.vel.x,z:pp.z-e.vel.z});if(hit&&e.owner==='fireball'&&!player.effects?.fire_resistance)player.fire=5;e.age=31;break;}
      }else for(const m of entities){const d=MOB_DEFS[m.kind],s=mobScale(m);if(!m.dead&&Math.abs(p.x-m.pos.x)<d.w*s&&Math.abs(p.z-m.pos.z)<d.w*s&&p.y>m.pos.y&&p.y<m.pos.y+d.h*s){if(e.owner==='egg')eggImpact(e);else hurtMob(m,6);e.age=31;break;}}
      if(e.age>30)break;
    }
@@ -3802,9 +3876,9 @@ function explode(x,y,z,radius){
  for(let dy=-radius;dy<=radius;dy++)for(let dz=-radius;dz<=radius;dz++)for(let dx=-radius;dx<=radius;dx++){
    if(dx*dx+dy*dy+dz*dz>radius*radius)continue;
    const bx=Math.floor(x)+dx,by=Math.floor(y)+dy,bz=Math.floor(z)+dz,id=world.getBlock(bx,by,bz),b=BLOCKS[id];
-   if(id<=0||b.hardness<0||b.liquid)continue;
+   if(id<=0||b.hardness<0||b.liquid||id===B.obsidian)continue;
    if(id===B.tnt){primeTNT(bx,by,bz,.5+Math.random());continue;}
-   if(b.container)dropContainer(bx,by,bz);world.setBlock(bx,by,bz,0);if(b.drop&&Math.random()<.2)spawnItem(b.drop,1,bx+.5,by+.4,bz+.5);
+   if(b.container)dropContainer(bx,by,bz);world.setBlock(bx,by,bz,0);unlinkShape(bx,by,bz,id);breakPistonLink(bx,by,bz,id);if(b.drop&&Math.random()<.2)spawnItem(b.drop,1,bx+.5,by+.4,bz+.5);
  }
  for(const e of entities){const dist=Math.hypot(e.pos.x-x,e.pos.y-y,e.pos.z-z);if(dist<radius*2)hurtMob(e,Math.ceil((1-dist/(radius*2))*18));}
  const dist=Math.hypot(player.pos.x-x,player.pos.y-y,player.pos.z-z);if(dist<radius*2)mobDamage(Math.ceil((1-dist/(radius*2))*18),'explosion');
@@ -4001,7 +4075,7 @@ function toggleShape(x,y,z){
 function shapeInteract(){
  if(!target)return false;const t=target,d=BLOCKS[t.id],id=inv.heldId();
  if(!player.sneaking){if(toggleShape(t.x,t.y,t.z))return true;if(d.model==='bed'){sleepBed(t.x,t.y,t.z);return true;}if(d.model==='sign'){openSignAt(t.x,t.y,t.z);return true;}}
- if((id===B.oak_slab&&[B.oak_slab,B.oak_slab_top].includes(t.id))||(id===B.stone_slab&&[B.stone_slab,B.stone_slab_top].includes(t.id))){if(playerIntersects(t.x,t.y,t.z))return false;world.setBlock(t.x,t.y,t.z,id===B.oak_slab?B.planks:B.stone_bricks);if(player.mode==='survival')inv.consumeHeld();return true;}
+ if(((id===B.oak_slab&&[B.oak_slab,B.oak_slab_top].includes(t.id))||(id===B.stone_slab&&[B.stone_slab,B.stone_slab_top].includes(t.id)))&&((d.model==='slab'&&t.ny>0)||(d.model==='slab_top'&&t.ny<0))){if(playerIntersects(t.x,t.y,t.z))return false;world.setBlock(t.x,t.y,t.z,id===B.oak_slab?B.planks:B.stone_bricks);if(player.mode==='survival')inv.consumeHeld();worldStats.placed++;sfx.blockPlace(id);return true;}
  return false;
 }
 function unlinkShape(x,y,z,id){
@@ -4092,7 +4166,7 @@ function updateFluidCell(x,y,z){
  sources=0;for(let i=1;i<5;i++){const d=FLUID_DIR[i],n=BLOCKS[world.getBlock(x+d[0],y,z+d[2])];if(n?.fluid===type&&n.level===0)sources++;}
  if(type==='water'&&sources>=2&&(bb?.solid||bb?.fluid==='water'&&bb.level===0))level=0;
  const next=(level<=7||level===8&&ab?.fluid===type)?sourceFluid(type,level):0;
- if(next!==id){if(b?.plant&&next)spawnItem(b.drop,1,x+.5,y+.2,z+.5);world.setBlock(x,y,z,next);}
+ if(next!==id){if(b?.plant&&next){const harvested=farmDrops(id,x,y,z,world.plantAges.get(posKey(x,y,z))||0);if(!harvested&&b.drop)spawnItem(b.drop,1,x+.5,y+.2,z+.5);}world.setBlock(x,y,z,next);}
 }
 function tickFluids(dt){
  const center=(Math.floor(player.pos.x)>>4)+','+(Math.floor(player.pos.z)>>4);if(center!==fluidClock.center){fluidClock.center=center;for(const c of world.chunks.values())if(c.data&&Math.abs(c.cx*16-player.pos.x)<48&&Math.abs(c.cz*16-player.pos.z)<48)seedFluidChunk(c);}
@@ -4114,6 +4188,7 @@ function bucketInteract(){
  const t=raycastBlock(REACH,id===B.bucket);if(!t)return false;
  if(id===B.bucket){const b=BLOCKS[t.id];if(!b.fluid||b.level!==0)return false;world.setBlock(t.x,t.y,t.z,0);if(player.mode==='survival'){inv.consumeHeld();const full=b.fluid==='water'?B.water_bucket:B.lava_bucket;if(inv.add(full,1))spawnItem(full,1,player.pos.x,player.pos.y+1,player.pos.z);}sfx.splash();return true;}
  const x=t.x+t.nx,y=t.y+t.ny,z=t.z+t.nz;if(!fluidPassable(world.getBlock(x,y,z))||y<1||y>=CH)return false;
+ if(world.dimension==='nether'&&id===B.water_bucket){sfx.fuse();toast('Water evaporates in the Nether');if(player.mode==='survival'){inv.consumeHeld();if(inv.add(B.bucket,1))spawnItem(B.bucket,1,player.pos.x,player.pos.y+1,player.pos.z);}return true;}
  world.setBlock(x,y,z,id===B.water_bucket?B.water:B.lava);if(player.mode==='survival'){inv.consumeHeld();if(inv.add(B.bucket,1))spawnItem(B.bucket,1,player.pos.x,player.pos.y+1,player.pos.z);}sfx.splash();return true;
 }
 const fireOverlay=el('div',null,{position:'fixed',inset:0,pointerEvents:'none',zIndex:3,display:'none',background:'linear-gradient(0deg,rgba(244,97,14,.62),transparent 48%)'},document.body);
@@ -4218,7 +4293,11 @@ const redstoneQueue=[],redstonePending=new Set(),redstoneDevices=new Map(),redst
 const redstoneClock={tick:0,head:0,ms:0};
 function queueRedstone(x,y,z){if(y<0||y>=CH||redstoneQueue.length-redstoneClock.head>8192)return;const key=posKey(x,y,z);if(redstonePending.has(key))return;redstonePending.add(key);redstoneQueue.push([x,y,z,key]);}
 function wakeRedstone(x,y,z){queueRedstone(x,y,z);for(const d of FLUID_DIR)queueRedstone(x+d[0],y+d[1],z+d[2]);}
-function seedRedstoneChunk(c){for(let i=0;i<c.data.length;i++){const id=c.data[i];if(id>=195&&id<=251){const x=c.cx*16+(i&15),y=i>>8,z=c.cz*16+((i>>4)&15);wakeRedstone(x,y,z);if(id===B.button_on)redstoneTimers.set(posKey(x,y,z),{tick:redstoneClock.tick+20,id:B.button});}}}
+function isRedstoneBlock(id){return id>=195&&id<=229||id>=236&&id<=247||id>=B.chest&&id<B.chest+4;}
+function seedRedstoneChunk(c){
+ if(!c.redstoneCells){c.redstoneCells=new Set();for(let i=0;i<c.data.length;i++)if(isRedstoneBlock(c.data[i]))c.redstoneCells.add(i);}
+ for(const i of c.redstoneCells){const x=c.cx*16+(i&15),y=i>>8,z=c.cz*16+((i>>4)&15);wakeRedstone(x,y,z);if(c.data[i]===B.button_on)redstoneTimers.set(posKey(x,y,z),{tick:redstoneClock.tick+20,id:B.button});}
+}
 function powerAt(x,y,z,fromX=null,fromZ=null){
  const id=world.getBlock(x,y,z),b=BLOCKS[id];if(!b)return 0;if(b.wire!==undefined)return b.wire;
  if(b.powered&&['lever','button','plate','torch'].includes(b.model))return 15;
@@ -4227,6 +4306,8 @@ function powerAt(x,y,z,fromX=null,fromZ=null){
 function adjacentPower(x,y,z){let p=0;for(const d of FLUID_DIR)p=Math.max(p,powerAt(x+d[0],y+d[1],z+d[2],x,z));return p;}
 function redstoneCell(x,y,z,key){
  const id=world.getBlock(x,y,z),b=BLOCKS[id];if(!b)return;
+ if(id>=236&&id<=247){updatePiston(x,y,z);return;}
+ const device=world.containers.get(key);if(device?.type==='dispenser'){const powered=adjacentPower(x,y,z)>0;if(powered&&!device.powered)dispense(device);device.powered=powered;return;}
  if(b.wire!==undefined){if(!isSolidAt(x,y-1,z)){world.setBlock(x,y,z,0);spawnItem(B.redstone,1,x+.5,y,z+.5);return;}
   let p=0;for(const d of FLUID_DIR){const nx=x+d[0],ny=y+d[1],nz=z+d[2],nid=world.getBlock(nx,ny,nz),n=BLOCKS[nid];const power=powerAt(nx,ny,nz,x,z);p=Math.max(p,n?.wire!==undefined?Math.max(0,power-1):power);}
   if(p!==b.wire)world.setBlock(x,y,z,195+p);return;
@@ -4351,8 +4432,13 @@ function enchantHeld(name,desk=null){
  if(!st.en)st.en={};st.en[name]=level;onInventoryChange();sfx.xp();toast(en.label+' '+level);return true;
 }
 function buildEnchantGui(panel){
- label(panel,12,9,'Enchant held equipment');label(panel,12,23,'Lapis + XP; shelves raise levels');
- Object.entries(ENCHANTMENTS).forEach(([name,en],i)=>{const button=el('button','btn',{position:'absolute',left:g(12),top:g(39+i*22),width:g(150)},panel,en.label);button.onclick=()=>enchantHeld(name,guiData);});
+ const st=inv.held(),d=st&&ITEMS[st.id];
+ label(panel,12,9,'Enchant: '+(st?itemLabel(st.id):'empty hand'));
+ label(panel,12,23,d?.durability?'Lapis + XP; shelves raise maximum levels':'Hold equipment, then reopen this table');
+ Object.entries(ENCHANTMENTS).forEach(([name,en],i)=>{
+  const level=(st?.en?.[name]||0)+1,eligible=!!d?.durability&&(en.any||en.tool&&d.tool&&d.tool!=='sword'||en.sword&&d.tool==='sword'||en.armor&&d.armor!==undefined);
+  const button=el('button','btn',{position:'absolute',left:g(12),top:g(39+i*22),width:g(206),fontSize:g(10)},panel,en.label+' '+level+' · '+(2+level)+' levels + lapis');button.disabled=!eligible;button.onclick=()=>{if(enchantHeld(name,guiData))buildGui();};
+ });
 }
 function drinkPotion(id){
  const effect=ITEMS[id]?.effect;if(!effect)return false;if(!player.effects)player.effects={};
@@ -4361,7 +4447,7 @@ function drinkPotion(id){
 }
 function magicInteract(){
  if(target?.id===B.enchanting_table&&!player.sneaking){openGui('enchant',{x:target.x,y:target.y,z:target.z});return true;}
- if(inv.heldId()===B.glass_bottle){const t=raycastBlock(REACH,true);if(BLOCKS[t?.id]?.fluid==='water'){if(player.mode==='survival')inv.consumeHeld();inv.add(B.water_bottle,1);sfx.splash();return true;}}
+ if(inv.heldId()===B.glass_bottle){const t=raycastBlock(REACH,true);if(BLOCKS[t?.id]?.fluid==='water'){if(player.mode==='survival')inv.consumeHeld();if(inv.add(B.water_bottle,1))spawnItem(B.water_bottle,1,player.pos.x,player.pos.y+1,player.pos.z);sfx.splash();return true;}}
  return false;
 }
 function tickMagic(dt){
@@ -4374,7 +4460,7 @@ function tickMagic(dt){
   const ingredient=c.slots[3],can=ingredient&&c.slots.slice(0,3).some(s=>s&&BREW[s.id+':'+ingredient.id]);
   if(!can){c.cook=0;continue;}
   if(c.burn<=0&&c.slots[4]?.id===B.blaze_powder){if(--c.slots[4].count<=0)c.slots[4]=null;c.burn=20;}
-  if(c.burn<=0)continue;c.cook+=dt;
+  if(c.burn<=0)continue;c.cook+=dt;if(guiOpen==='brewing'&&guiData===c&&entityClock.tick%4===0)renderGui();
   if(c.cook>=20){for(let i=0;i<3;i++){const s=c.slots[i],r=s&&BREW[s.id+':'+ingredient.id];if(r)c.slots[i]=makeStack(r.out,1);}if(--ingredient.count<=0)c.slots[3]=null;c.burn--;c.cook=0;if(guiOpen==='brewing'&&guiData===c)renderGui();}
  }
 }
@@ -4401,7 +4487,7 @@ function portalFrame(x,y,z,axis,lit=true){
  if(y<1||y+4>=CH)return null;
  for(let h=0;h<5;h++)for(let w=0;w<4;w++){
   const id=world.getBlock(x+(axis===0?w:0),y+h,z+(axis===1?w:0));
-  if((h===0||h===4)&&(w===0||w===3)){if(id!==0&&id!==B.obsidian)return null;continue;}
+  if((h===0||h===4)&&(w===0||w===3)){if(id<0)return null;continue;}
   const edge=h===0||h===4||w===0||w===3;
   if(edge?id!==B.obsidian:lit?id!==B.portal:id!==0&&id!==B.portal)return null;
  }
@@ -4489,7 +4575,7 @@ function settlePortalArrival(){
   beginGame(previous.seed,previous,previous.mode);portalState.mustLeave=true;return;
  }
  player.pos.set(exit.x,exit.y,exit.z);player.vel.set(0,0,0);player.fallStart=null;
- if(a.source){const pair={};pair[a.from]=a.source;pair[world.dimension]=f;world.portalLinks=(world.portalLinks||[]).filter(p=>portalKey(p[a.from]||{})!==portalKey(a.source));world.portalLinks.push(pair);}
+ if(a.source){const pair={};pair[a.from]=a.source;pair[world.dimension]=f;world.portalLinks=(world.portalLinks||[]).filter(p=>portalKey(p[a.from]||{})!==portalKey(a.source));world.portalLinks.push(pair);if(world.portalLinks.length>1024)world.portalLinks.shift();}
  if(!world.spawn)world.spawn=[exit.x,exit.y,exit.z];
  portalState.arrival=null;portalState.time=0;portalState.cooldown=2;portalState.mustLeave=true;spawnPending=false;saveWorld();
 }
@@ -4548,7 +4634,7 @@ function workerGeometry(data){
 }
 function stopMeshingWorkers(){for(const w of meshWorkers){w.worker.terminate();if(w.job){w.job.ch.meshPending=false;w.job.ch.dirty=true;}}meshWorkers=[];}
 function startMeshingWorkers(){
- stopMeshingWorkers();if(!CONFIG.meshingWorkers)return;
+ stopMeshingWorkers();meshWorkerError='';if(!CONFIG.meshingWorkers)return;
  try{
   const source=document.scripts[document.scripts.length-1].textContent;
   const prefix=source.slice(source.indexOf('const PADW ='),source.indexOf('let meshStats ='));
@@ -4567,13 +4653,13 @@ function startMeshingWorkers(){
   const url=URL.createObjectURL(new Blob([code],{type:'text/javascript'}));
   for(let i=0;i<Math.min(2,Math.max(1,(navigator.hardwareConcurrency||4)-2));i++){
    const record={worker:new Worker(url),job:null};record.worker.onmessage=e=>{
-    const task=record.job;record.job=null;if(!task)return;const ch=task.ch;ch.meshPending=false;
+    if(!meshWorkers.includes(record))return;const task=record.job;record.job=null;if(!task)return;const ch=task.ch;ch.meshPending=false;
     if(world.get(ch.cx,ch.cz)!==ch||task.epoch!==(world.meshEpoch||0))return;
     if(task.rev!==(ch.rev||0)){ch.dirty=true;return;}
     const data=e.data;if(ch.solidGeo)ch.solidGeo.dispose();if(ch.waterGeo)ch.waterGeo.dispose();ch.solidGeo=workerGeometry(data.solid);ch.waterGeo=workerGeometry(data.water);ch.blockLight=data.blockLight;
     const radius=Math.sqrt(128+((data.maxY-data.minY+1)/2)**2),cy=(data.minY+data.maxY+1)/2;for(const g of [ch.solidGeo,ch.waterGeo])if(g)g.boundingSphere=new THREE.Sphere(new THREE.Vector3(8,cy,8),radius);
     attachMeshes(ch);ch.meshed=true;ch.urgent=false;ch.dirty=false;meshStats.last=data.ms;meshStats.avg=meshStats.avg*.95+data.ms*.05;
-   };record.worker.onerror=e=>{meshWorkerError=e.message;stopMeshingWorkers();toast('Mesh worker unavailable; using the synchronous mesher');};meshWorkers.push(record);
+   };record.worker.onerror=e=>{if(!meshWorkers.includes(record))return;meshWorkerError=e.message;stopMeshingWorkers();toast('Mesh worker unavailable; using the synchronous mesher');};meshWorkers.push(record);
   }
   URL.revokeObjectURL(url);
  }catch(e){meshWorkerError=String(e);stopMeshingWorkers();}
@@ -4676,7 +4762,7 @@ const TRADE_OFFERS=[['wheat',20,'emerald',1],['coal',16,'emerald',1],['emerald',
 function inventoryCount(id){let count=0;for(const s of inv.slots)if(s?.id===id)count+=s.count;return count;}
 function consumeInventory(id,count){if(inventoryCount(id)<count)return false;for(let i=0;i<36&&count>0;i++){const s=inv.slots[i];if(s?.id!==id)continue;const n=Math.min(count,s.count);s.count-=n;count-=n;if(!s.count)inv.slots[i]=null;}return true;}
 function trade(e,index){const offer=TRADE_OFFERS[index];if(!e||e.dead||!offer)return false;if(!e.stock)e.stock=TRADE_OFFERS.map(()=>16);if(e.stock[index]<=0||inventoryCount(B[offer[0]])<offer[1]||!inventoryRoomFor(B[offer[2]]))return false;consumeInventory(B[offer[0]],offer[1]);const left=inv.add(B[offer[2]],offer[3]);if(left)spawnItem(B[offer[2]],left,player.pos.x,player.pos.y+1,player.pos.z);e.stock[index]--;worldStats.trades++;spawnXP(2,e.pos.x,e.pos.y+1,e.pos.z);onInventoryChange();return true;}
-function buildTradeGui(panel,e){label(panel,10,8,'Villager Exchange');TRADE_OFFERS.forEach((r,i)=>{const b=el('button','btn',{position:'absolute',left:g(10),top:g(27+i*22),width:g(188)},panel,r[1]+' '+itemLabel(B[r[0]])+' → '+r[3]+' '+itemLabel(B[r[2]]));b.onclick=()=>{if(!trade(e,i))toast('Missing items, room, or stock');else buildGui();};});}
+function buildTradeGui(panel,e){label(panel,10,8,'Villager Exchange');TRADE_OFFERS.forEach((r,i)=>{const b=el('button','btn',{position:'absolute',left:g(10),top:g(27+i*22),width:g(188),fontSize:g(10)},panel,r[1]+' '+itemLabel(B[r[0]])+' → '+r[3]+' '+itemLabel(B[r[2]]));b.onclick=()=>{if(!trade(e,i))toast('Missing items, room, or stock');else buildGui();};});}
 const fishing={bobber:null,wait:0,bite:0},bobberGeo=new THREE.BoxGeometry(.15,.15,.15);let bobberMat,eggMat;
 function castFishing(){
  if(fishing.bobber){if(fishing.bite>0){const loot=Math.random()<.9?B.raw_fish:Math.random()<.5?B.saddle:B.book;if(inv.add(loot,1))spawnItem(loot,1,player.pos.x,player.pos.y+1,player.pos.z);worldStats.fished++;awardAdvancement('Patient Angler',B.fishing_rod);}scene.remove(fishing.bobber.mesh);fishing.bobber=null;wearHeld();return true;}
@@ -4692,11 +4778,11 @@ function livingInteract(){
  const id=inv.heldId(),d=ITEMS[id],mob=raycastMob();
  if(d?.spawn&&target){const x=target.x+target.nx+.5,y=target.y+target.ny,z=target.z+target.nz+.5;if(world.getBlock(Math.floor(x),y,Math.floor(z))!==0)return false;const e=spawnMob(d.spawn,x,y,z,{persistent:!MOB_DEFS[d.spawn].hostile});if(!e){toast('Entity limit reached');return true;}if(player.mode==='survival')inv.consumeHeld();return true;}
  if(id===B.egg)return throwEgg();if(id===B.fishing_rod)return castFishing();
- if(id===B.milk_bucket){player.effects={};if(player.mode==='survival'){inv.consumeHeld();inv.add(B.bucket,1);}sfx.burp();return true;}
+ if(id===B.milk_bucket){player.effects={};if(player.mode==='survival'){inv.consumeHeld();if(inv.add(B.bucket,1))spawnItem(B.bucket,1,player.pos.x,player.pos.y+1,player.pos.z);}sfx.burp();return true;}
  if(!mob)return false;
  if(mob.kind==='villager'){openGui('trade',mob);return true;}
  if(id===B.shears&&shearSheep(mob))return true;
- if(id===B.bucket&&mob.kind==='cow'){if(player.mode==='survival')inv.consumeHeld();inv.add(B.milk_bucket,1);sfx.pop();return true;}
+ if(id===B.bucket&&mob.kind==='cow'){if(player.mode==='survival')inv.consumeHeld();if(inv.add(B.milk_bucket,1))spawnItem(B.milk_bucket,1,player.pos.x,player.pos.y+1,player.pos.z);sfx.pop();return true;}
  if(['wolf','cat'].includes(mob.kind)){
   if(!mob.tamed)return tamePet(mob);
   if(d?.food){mob.hp=Math.min(MOB_DEFS[mob.kind].hp,mob.hp+4);if(player.mode==='survival')inv.consumeHeld();return true;}
@@ -4711,7 +4797,7 @@ function livingInteract(){
 }
 function buildJournal(panel){
  label(panel,10,8,'Field Guide & Statistics');const text=el('div',null,{position:'absolute',left:g(10),top:g(25),width:g(267),height:g(170),overflowY:'auto',fontSize:g(10),lineHeight:'1.3',userSelect:'text'},panel);
- text.textContent='WASD move · Space jump · Shift sneak/dismount · E inventory · Q drop · F3 timings · F5 camera · T chat (/help).\n\n'+Object.entries(worldStats).map(([k,v])=>k+': '+Math.floor(v)).join(' · ')+'\n\n'+[...advancements].join(' · ')+'\n\nFarm with hoes, plant seeds on hydrated soil. Breed cows/sheep with wheat, pigs with carrots, chickens with seeds. Shear sheep, milk cows, fish with a rod. Wolves like bones; cats like fish. Tame horses, then equip a saddle. Villagers trade for emeralds. Build a 4×5 obsidian frame and light it for the Nether. Brew wart into water bottles, then add ingredients. Enchant held equipment with lapis and XP. Export or back up worlds from Pause.';
+ text.textContent='WASD move · Space jump · Shift sneak/dismount · E inventory · Q drop · F3 timings · F5 camera · T chat (/help).\n\n'+Object.entries(worldStats).map(([k,v])=>k+': '+Math.floor(v)).join(' · ')+'\n\n'+[...advancements].join(' · ')+'\n\nFarm with hoes, plant seeds on hydrated soil. Breed cows/sheep with wheat, pigs with carrots, chickens with seeds. Shear sheep, milk cows, fish with a rod. Wolves like bones; cats like fish. Tame horses, then equip a saddle. Villagers trade for emeralds. Build a 4×5 obsidian frame (2×3 clear opening; corners optional), then light it. Stand inside for two seconds. Step out after arriving before travelling again. Brew wart into water bottles, then add ingredients. Enchant held equipment with lapis and XP. Hoppers pull from above and output downward; power pauses them. Furnace output is extracted below; fuel is loaded manually. Fit a chest with a dispenser mechanism and pulse it with redstone. F swaps your selected item with the visible offhand slot; hold right-click to block frontal attacks with a shield. Hold equipment before opening an enchanting table; shift-click bottles, ingredients and blaze fuel into a brewing stand. Export or back up worlds from Pause.';
  text.style.whiteSpace='pre-wrap';
 }
 function buildLivingTextures(){
@@ -4724,21 +4810,21 @@ function buildLivingTextures(){
    41. EQUIPMENT & ENGINEERING — shields, wart, pistons, hoppers,
        dispenser retrofits, repair kits, maps and compass.
    ========================================================================= */
-world.plantAges=new Map();const pistonSticky=new Set();let automationT=0;const compassHud=el('div','sh',{position:'fixed',left:'50%',bottom:g(66),transform:'translateX(-50%)',fontSize:g(10),pointerEvents:'none',display:'none'},document.body);
+world.plantAges=new Map();const pistonSticky=new Set();let automationT=0,automationCursor=0;const compassHud=el('div','sh',{position:'fixed',left:'50%',bottom:g(66),transform:'translateX(-50%)',fontSize:g(10),pointerEvents:'none',display:'none'},document.body);
 function blockWithShield(n,cause,source){
  const st=offhand[0];if(!mouse.right||st?.id!==B.shield||!['zombie','spider','slime','arrow','explosion','fire','ember_kite'].includes(cause))return false;
  if(source){const dx=source.x-player.pos.x,dz=source.z-player.pos.z,l=Math.hypot(dx,dz)||1;if((-Math.sin(player.yaw)*dx-Math.cos(player.yaw)*dz)/l<.15)return false;}
- st.d=(st.d??336)-Math.ceil(n);if(st.d<=0){offhand[0]=null;sfx.toolBreak();}sfx.blockHit(B.planks);return true;
+ st.d=(st.d??336)-Math.ceil(n);if(st.d<=0){offhand[0]=null;sfx.toolBreak();}sfx.blockHit(B.planks);onInventoryChange();return true;
 }
 function growNetherWart(x,y,z){
  if(world.getBlock(x,y-1,z)!==B.soul_sand)return false;const key=posKey(x,y,z),age=world.plantAges.get(key)||0;if(age>=3)return false;world.plantAges.set(key,age+1);const c=world.get(x>>4,z>>4);if(c){if(!c.plantAges)c.plantAges={};c.plantAges[(x&15)+((z&15)<<4)+(y<<8)]=age+1;c.dirty=true;c.urgent=true;c.rev=(c.rev||0)+1;}return true;
 }
-function pistonMovable(id){return id>0&&BLOCKS[id].hardness>=0&&!BLOCKS[id].container&&id!==B.obsidian&&id!==B.spawner&&!(id>=236&&id<=251);}
+function pistonMovable(id){return id>0&&BLOCKS[id].hardness>=0&&!BLOCKS[id].container&&id!==B.obsidian&&id!==B.spawner&&!['door','door_open','bed','sign','ladder','wall_torch','portal'].includes(BLOCKS[id].model)&&!(id>=236&&id<=251);}
 function updatePiston(x,y,z){
  const id=world.getBlock(x,y,z),b=BLOCKS[id];if(id<236||id>247)return false;const f=b.facing,d=SHAPE_DIR[f],key=posKey(x,y,z),extended=id>=240&&id<244;
  let powered=false;for(const off of FLUID_DIR){if(off[0]===d[0]&&off[2]===d[1]&&off[1]===0)continue;if(powerAt(x+off[0],y+off[1],z+off[2],x,z)>0)powered=true;}
  if(powered&&!extended){let length=0;for(;length<13;length++){const n=world.getBlock(x+d[0]*(length+1),y,z+d[1]*(length+1));if(n===0||BLOCKS[n]?.plant)break;if(!pistonMovable(n))return false;}if(length>12)return false;
-  const destX=x+d[0]*(length+1),destZ=z+d[1]*(length+1);if(playerIntersects(destX,y,destZ))return false;
+  for(let i=1;i<=length+1;i++)if(playerIntersects(x+d[0]*i,y,z+d[1]*i))return false;
   for(let i=length;i>=1;i--){const sx=x+d[0]*i,sz=z+d[1]*i,n=world.getBlock(sx,y,sz);world.setBlock(sx+d[0],y,sz+d[1],n);}
   if(id>=244)pistonSticky.add(key);else pistonSticky.delete(key);world.setBlock(x+d[0],y,z+d[1],248+f);world.setBlock(x,y,z,240+f);sfx.blockPlace(B.stone);return true;
  }
@@ -4748,13 +4834,16 @@ function breakPistonLink(x,y,z,id){
  if(id>=240&&id<244){const d=SHAPE_DIR[BLOCKS[id].facing],head=world.getBlock(x+d[0],y,z+d[1]);if(head>=248&&head<=251)world.setBlock(x+d[0],y,z+d[1],0);}
  if(id>=248&&id<=251){const f=BLOCKS[id].facing,d=SHAPE_DIR[f],xx=x-d[0],zz=z-d[1],base=world.getBlock(xx,y,zz);if(base>=240&&base<244){world.setBlock(xx,y,zz,0);spawnItem(pistonSticky.has(posKey(xx,y,zz))?B.sticky_piston:B.piston,1,xx+.5,y+.5,zz+.5);}}
 }
-function slotTransfer(source,target){for(let i=0;i<source.length;i++){const st=source[i];if(!st)continue;for(let j=0;j<target.length;j++){const to=target[j];if(!to){target[j]=makeStack(st.id,1,st);if(--st.count<=0)source[i]=null;return true;}if(stacksMatch(to,st)&&to.count<maxStack(st.id)){to.count++;if(--st.count<=0)source[i]=null;return true;}}}return false;}
+function slotTransfer(source,target,sourceIndices=null,targetIndices=null,accept=null){
+ const src=sourceIndices||source.map((_,i)=>i),dst=targetIndices||target.map((_,i)=>i);
+ for(const i of src){const st=source[i];if(!st)continue;for(const j of dst){if(accept&&!accept(st,j))continue;const to=target[j];if(!to){target[j]=makeStack(st.id,1,st);if(--st.count<=0)source[i]=null;return true;}if(stacksMatch(to,st)&&to.count<maxStack(st.id)){to.count++;if(--st.count<=0)source[i]=null;return true;}}}return false;
+}
 function tickAutomation(dt){
  automationT+=dt;if(automationT<.4)return;automationT=0;compassHud.style.display=inv.heldId()===B.compass&&gameState==='playing'?'block':'none';if(inv.heldId()===B.compass&&world.spawn){const dx=world.spawn[0]-player.pos.x,dz=world.spawn[2]-player.pos.z,index=(Math.round(Math.atan2(dx,-dz)/(Math.PI/4))+8)%8;compassHud.textContent='Spawn: '+['N','NE','E','SE','S','SW','W','NW'][index]+' · '+Math.round(Math.hypot(dx,dz))+' blocks';}let processed=0;
- for(const c of world.containers.values()){if(c.type!=='hopper'||Math.abs(c.x-player.pos.x)>40||Math.abs(c.z-player.pos.z)>40)continue;if(++processed>24)break;if(adjacentPower(c.x,c.y,c.z)>0)continue;
-  const above=world.containers.get(posKey(c.x,c.y+1,c.z));if(above)slotTransfer(above.slots,c.slots);
+ const containers=[...world.containers.values()];for(let checked=0;checked<Math.min(256,containers.length)&&processed<24;checked++){const c=containers[automationCursor++%containers.length];if(c.type!=='hopper'||Math.abs(c.x-player.pos.x)>40||Math.abs(c.z-player.pos.z)>40)continue;processed++;if(adjacentPower(c.x,c.y,c.z)>0)continue;
+  const above=world.containers.get(posKey(c.x,c.y+1,c.z));if(above)slotTransfer(above.slots,c.slots,above.type==='furnace'?[2]:above.type==='brewing'?[0,1,2]:null);
   for(let i=itemEntities.length-1;i>=0;i--){const e=itemEntities[i];if(Math.abs(e.pos.x-c.x-.5)<.65&&Math.abs(e.pos.z-c.z-.5)<.65&&e.pos.y>c.y+.5&&e.pos.y<c.y+1.8){const source=[makeStack(e.id,e.count,e)];if(slotTransfer(source,c.slots)){e.count--;if(e.count<=0)removeItem(e);}break;}}
-  const below=world.containers.get(posKey(c.x,c.y-1,c.z));if(below&&below.type!=='furnace'&&below.type!=='brewing')slotTransfer(c.slots,below.slots);
+  const below=world.containers.get(posKey(c.x,c.y-1,c.z));if(below){if(below.type==='furnace')slotTransfer(c.slots,below.slots,null,[0],st=>SMELT[st.id]!==undefined);else if(below.type==='brewing')slotTransfer(c.slots,below.slots,null,[0,1,2,3,4],(st,j)=>canAccept({kind:j<3?'brew_bottle':j===3?'brew_ingredient':'brew_fuel'},st.id));else slotTransfer(c.slots,below.slots);}
  }
  if(guiOpen==='hopper')renderGui();
 }
@@ -4775,7 +4864,7 @@ function buildMapGui(panel){
 function engineeringInteract(){
  const id=inv.heldId();if(id===B.map){openGui('map');return true;}if(id===B.repair_kit){openGui('repair');return true;}
  if(id===B.nether_wart&&target){const x=target.x+target.nx,y=target.y+target.ny,z=target.z+target.nz;if(world.getBlock(x,y-1,z)===B.soul_sand&&world.getBlock(x,y,z)===0){world.setBlock(x,y,z,B.nether_wart_block);if(player.mode==='survival')inv.consumeHeld();return true;}}
- if(id===B.dispenser_mechanism&&target&&BLOCKS[target.id]?.container==='chest'){const c=getContainer(target.x,target.y,target.z,'chest');c.type='dispenser';if(player.mode==='survival')inv.consumeHeld();toast('Chest fitted with a dispenser mechanism');return true;}
+ if(id===B.dispenser_mechanism&&target&&BLOCKS[target.id]?.container==='chest'){const c=getContainer(target.x,target.y,target.z,'chest');if(c.type==='dispenser'){toast('This chest already has a dispenser mechanism');return true;}c.type='dispenser';c.powered=false;wakeRedstone(c.x,c.y,c.z);if(player.mode==='survival')inv.consumeHeld();toast('Chest fitted with a dispenser mechanism');return true;}
  return false;
 }
 function buildEngineeringTextures(){
@@ -4800,7 +4889,7 @@ for(const n in TEX) TEX_NAME[TEX[n]]=n;
 buildShapeCache(); buildBlockTables(); makeMaterials(); initFluidMaterial(); makeCrackMats(); makeParticles();
 buildGuiImages(); buildHud(); applyGuiScale(); buildSky();buildWeather();buildPlayerModel();applyGraphicsSettings(); if(CONFIG.soundPack===false) sfx.usePack=false; soundLabel();
 scene.background = new THREE.Color(0x9cc8ff);
-window.__bc = { sky,portalState,findPortal,portalFrame,portalExit,stacksMatch, offhand, blockWithShield, pistonSticky, updatePiston, growNetherWart, tickAutomation, dispense, repairStack, buildMapGui, castFishing, tickAnimalSpecial, tickRiding, eggImpact, petAndGuardianAI, iconURL, livingInteract, tickFishing, fishing, trade, shearSheep, tamePet, dormantMobs, mobRecord, activateDormant, get riding(){return riding;}, setRiding:e=>riding=e, exportWorld, importWorld, validateWorldFile, worldStats, meshChunkSync, meshChunk, applyGraphicsSettings, get meshWorkers(){return meshWorkers;},get meshWorkerError(){return meshWorkerError;}, switchDimension, lightPortal, createPortal, tickPortals, spawnFireball, chunkPrefix, enchantHeld, tickMagic, BREW, drinkPotion, command, pickBlock, advancements, awardAdvancement, get cameraMode(){return cameraMode;}, setCameraMode:(m)=>cameraMode=((m%3)+3)%3, updateThirdPerson, redstoneClock, powerAt, tickRedstone, wakeRedstone, primeTNT, primedTNT, redstoneInteract, weather, setWeather, updateWeather, tickWeatherRoof, lightning, makeGenMain, WORLDGEN_SRC, tickSpawners, tickFluids, tickFire, fluidClock, wakeFluids, bucketInteract, sourceFluid, shapeBoxes, shapeRayHit, shapePlayerIntersects, toggleShape, sleepBed, signTexts, setSignText, SHAPE_CACHE, collectBoxes, hydrateFarmland, growCrop, growTree, randomBlockTick, farmInteract, tickRandomBlocks, farmClock, farmDrops, wearHeld, absorbDamage, spawnXP, xpOrbs, tickXP, makeStack, packStack, unpackStack, quickMove, canAccept, armorPreview, attackMob, mobDamage, combat, projectiles, spawnArrow, tickProjectiles, explode, skyVisible, blockLightAt, tickHostile, releaseBow, entities, MOB_DEFS, spawnMob, hurtMob, feedMob, updateEntities, raycastMob, resetMobs, saveMobs, migrateMeta, getContainer, updateFurnaces, ITEMS, armorSlots, moveAxis, itemEntities, spawnItem, throwItem, updateItems, setSwing:(v)=>{held.forceP=v; held.equip=1;}, step:(dt,n)=>{ for(let i=0;i<n;i++){ updatePlayer(dt); updateCamera(dt); updateInteraction(dt); updateSurvival(dt); updateChunks(player.pos.x,player.pos.z,50); } }, prof, get locked(){return locked;}, get noLock(){return noLock;}, sfx, setDay:(t)=>{dayTime=t;}, get gen(){return gen;}, inv, mouse, mining, get target(){return target;}, breakBlock, tryPlace, world, player, B, BLOCKS, CONFIG, keys, meshStats, stats, camera, renderer, scene, setState, startWorld, beginGame, openGui, closeGui, saveWorld, readMeta, matchRecipe, craftGrid2, craftGrid3, craftOut, getFps:()=>fps, get state(){return gameState;}, get cursor(){return cursor;}, clickSlot };
+window.__bc = { get atlasTiles(){return tileCount;},mobChunks,entityClock,sky,portalState,findPortal,portalFrame,portalExit,stacksMatch, offhand, blockWithShield, pistonSticky, updatePiston, growNetherWart, tickAutomation, dispense, repairStack, buildMapGui, castFishing, tickAnimalSpecial, tickRiding, eggImpact, petAndGuardianAI, iconURL, livingInteract, tickFishing, fishing, trade, shearSheep, tamePet, dormantMobs, mobRecord, activateDormant, get riding(){return riding;}, setRiding:e=>riding=e, exportWorld, importWorld, validateWorldFile, worldStats, meshChunkSync, meshChunk, applyGraphicsSettings, get meshWorkers(){return meshWorkers;},get meshWorkerError(){return meshWorkerError;}, switchDimension, lightPortal, createPortal, tickPortals, spawnFireball, chunkPrefix, enchantHeld, tickMagic, BREW, drinkPotion, command, pickBlock, advancements, awardAdvancement, get cameraMode(){return cameraMode;}, setCameraMode:(m)=>cameraMode=((m%3)+3)%3, updateThirdPerson, redstoneClock, powerAt, tickRedstone, wakeRedstone, primeTNT, primedTNT, redstoneInteract, weather, setWeather, updateWeather, tickWeatherRoof, lightning, makeGenMain, WORLDGEN_SRC, tickSpawners, tickFluids, tickFire, fluidClock, wakeFluids, bucketInteract, sourceFluid, shapeBoxes, shapeRayHit, shapePlayerIntersects, toggleShape, sleepBed, signTexts, setSignText, SHAPE_CACHE, collectBoxes, hydrateFarmland, growCrop, growTree, randomBlockTick, farmInteract, tickRandomBlocks, farmClock, farmDrops, wearHeld, absorbDamage, spawnXP, xpOrbs, tickXP, makeStack, packStack, unpackStack, quickMove, canAccept, armorPreview, attackMob, mobDamage, combat, projectiles, spawnArrow, tickProjectiles, explode, skyVisible, blockLightAt, tickHostile, releaseBow, entities, MOB_DEFS, spawnMob, hurtMob, feedMob, updateEntities, raycastMob, resetMobs, saveMobs, migrateMeta, getContainer, updateFurnaces, ITEMS, armorSlots, moveAxis, itemEntities, spawnItem, throwItem, updateItems, setSwing:(v)=>{held.forceP=v; held.equip=1;}, step:(dt,n)=>{ for(let i=0;i<n;i++){ updatePlayer(dt); updateCamera(dt); updateInteraction(dt); updateSurvival(dt); updateChunks(player.pos.x,player.pos.z,50); } }, prof, get locked(){return locked;}, get noLock(){return noLock;}, sfx, setDay:(t)=>{dayTime=t;}, get gen(){return gen;}, inv, mouse, mining, get target(){return target;}, breakBlock, tryPlace, world, player, B, BLOCKS, CONFIG, keys, meshStats, stats, camera, renderer, scene, setState, startWorld, beginGame, openGui, closeGui, saveWorld, readMeta, matchRecipe, craftGrid2, craftGrid3, craftOut, getFps:()=>fps, get state(){return gameState;}, get cursor(){return cursor;}, clickSlot };
 const QS = new URLSearchParams(location.search);
 if(QS.has('autostart')){ world.persist=false; startWorld(12345); player.mode=QS.get('mode')||'creative'; if(player.mode==='creative') [B.grass,B.dirt,B.stone,B.cobblestone,B.planks,B.log,B.glass,B.torch,B.bricks].forEach((id,i)=>inv.slots[i]={id,count:64}); onInventoryChange(); setState('playing'); }
 else { toTitle(); }
