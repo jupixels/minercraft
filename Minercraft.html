@@ -560,7 +560,28 @@ if(typeof importScripts === 'function'){
  * CPU after reload ~3.05 ms; GPU/frame-rate target not established.
  * Q1 original scope: stabilize loading; prevent repeated use actions, crafting duplication
  * and inventory loss during saves. Verify menus, gathering and crafting.
- * Q2: repair dimension edit isolation, portal frames/orientations, safe
+ * Q2 COMPLETE — dimension edits now use separate in-memory maps as well
+ * as separate storage prefixes. XP orbs, piston/wart data and containers
+ * remain local; health, hunger, XP and equipment travel with the player.
+ * Validated lit frames (optional corners), two visible orientations, frame
+ * destruction and persisted portal pairs replace last-position teleporting.
+ * Arrival searches reuse portals, provide safe footing/clearance on new
+ * unedited sites, preserve builds and require leaving before retriggering.
+ * Interrupted travel leaves the last committed source save available.
+ * Nether hides sky/clouds/weather/celestials and uses warm ambient/fog;
+ * no more rain, sun or moon underground. Respawn clears fire/effects and
+ * searches near the saved bed/spawn instead of teleporting onto its roof.
+ * Audit also found quick Creative clicks lost between frames; break now
+ * starts on mouse-down. Advertised /dimension and /power commands work.
+ * Browser evidence: both full frames built/lit using right-click; Survival
+ * crouch/walk entry; 2 repeat trips with Nether save/reload; HP 17, XP 42,
+ * Fortune pickaxe d321, shield d200, chest sword d222 retained. One reused
+ * destination; no leaked ore edit. Perpendicular return selected its source.
+ * Held-left frame break cleared all six portal cells and survived Continue.
+ * /kill and Respawn buttons tested: HP20, fire0, no old potion effects.
+ * Quick Creative click regression passed; no page/mesh-worker errors.
+ * Active arrival CPU ~2–3.4 ms at R2; software GPU performance remains limited.
+ * Q2 original scope: repair dimension edit isolation, portal frames/orientations, safe
  * linked arrivals and return trips; retain equipment and dimension state.
  * Q3: celestial depth tests against real walls/roofs in all camera modes.
  * Q4: generator 3: coherent shores/rivers and branching dry cave networks;
@@ -1117,6 +1138,7 @@ const world = {
     const li=(x&15)+((z&15)<<4)+(y<<8);
     const old=c.data[li]; if(old===id) return;
     c.data[li]=id;
+    if((old===B.obsidian||old===B.portal)&&id!==old)invalidatePortal(x,y,z);
     if(old===B.nether_wart_block&&id!==old){world.plantAges.delete(posKey(x,y,z));if(c.plantAges)delete c.plantAges[li];}if(id===B.nether_wart_block&&old!==id){world.plantAges.set(posKey(x,y,z),0);if(!c.plantAges)c.plantAges={};c.plantAges[li]=0;}
     if(id===B.spawner)c.spawners.add(li);else c.spawners.delete(li);
     wakeFluids(x,y,z);wakeRedstone(x,y,z);
@@ -1402,19 +1424,19 @@ addEventListener('resize', ()=>{ renderer.setSize(innerWidth, innerHeight); came
 let atlasTex, waterTex;
 const U = {   // shared uniforms
   uMap:{value:null}, uWater:{value:null}, uSky:{value:1}, uFogColor:{value:new THREE.Color(0x9cc8ff)}, uFog:{value:new THREE.Vector2(60,90)},
-  uTime:{value:0}, uUnderwater:{value:0}, uSkyTint:{value:new THREE.Color(1,1,1)}, uGamma:{value:0.35},uNightVision:{value:0},
+  uTime:{value:0}, uUnderwater:{value:0}, uSkyTint:{value:new THREE.Color(1,1,1)}, uGamma:{value:0.35},uNightVision:{value:0},uAmbient:{value:0},
 };
 const VERT = `
 attribute vec3 aLight;attribute vec3 aTint;varying vec3 vTint; varying vec2 vUv; varying vec3 vLight; varying float vFog;
 void main(){vTint=aTint; vUv=uv; vLight=aLight; vec4 mv=modelViewMatrix*vec4(position,1.0); vFog=length(mv.xyz); gl_Position=projectionMatrix*mv; }`;
 const FRAG_COMMON = `
-uniform float uSky; uniform vec3 uFogColor; uniform vec2 uFog; uniform vec3 uSkyTint; uniform float uGamma;uniform float uNightVision;
+uniform float uSky; uniform vec3 uFogColor; uniform vec2 uFog; uniform vec3 uSkyTint; uniform float uGamma;uniform float uNightVision;uniform float uAmbient;
 varying vec3 vTint;varying vec2 vUv; varying vec3 vLight; varying float vFog;
 vec3 lightColor(){
   float s=vLight.y*uSky, b=vLight.z;
   s = mix(s/(4.0-3.0*s), s, uGamma); b = mix(b/(4.0-3.0*b), b, uGamma);
   vec3 c = max(uSkyTint*s, vec3(1.0,0.86,0.66)*b);
-  return max(c, vec3(mix(.03,.72,uNightVision))) * vLight.x;
+  return max(c, vec3(max(uAmbient,mix(.03,.72,uNightVision)))) * vLight.x;
 }`;
 function makeMaterials(){
   atlasTex = new THREE.CanvasTexture(atlasCanvas);
@@ -1843,7 +1865,7 @@ function tryPlace(repeat=false){
 canvas.addEventListener('mousedown',(e)=>{
   if(gameState==='playing' && !locked && !noLock){ lastLockGesture=performance.now(); requestLock(true); return; }
   if(gameState!=='playing') return;
-  if(e.button===0){ if(attackMob()) { swing(); return; } mouse.left=true; swing(); }
+  if(e.button===0){ if(attackMob()) { swing(); return; } mouse.left=true;if(player.mode==='creative'&&target&&mining.cooldown<=0){breakBlock(target.x,target.y,target.z);mining.cooldown=.25;mining.active=false;}swing(); }
   if(e.button===2){ mouse.right=true; mouse.rightTimer=0.22; if(tryPlace()) swing(); }
   if(e.button===1 && target){ pickBlock(target.id); }
 });
@@ -1983,7 +2005,7 @@ function saveWorld(){
   }
   if(ok) world.dirtyEdits.clear();
   const containers=[]; for(const [k,c] of world.containers) containers.push([k,{t:c.type,s:c.slots.map(st=>packStack(st)),b:c.burn||0,bm:c.burnMax||0,c:c.cook||0}]);
-  const meta = { v:13, pendingItems:[...craftGrid2,...craftGrid3,cursor].filter(Boolean).map(packStack), offhand:packStack(offhand[0]),pistons:[...pistonSticky],plantAges:[...world.plantAges], stats:worldStats, dimension:world.dimension||'overworld',dimensions:world.dimensionStates||{}, effects:player.effects||{}, advancements:[...advancements], tnt:primedTNT.map(e=>[e.pos.x,e.pos.y,e.pos.z,e.fuse]), days:dayCount,weather:{type:weather.type,remaining:weather.remaining}, generator:world.genVersion||2, signs:[...signTexts], armor:armorSlots.map(packStack), xpOrbs:xpOrbs.map(e=>[e.value,e.pos.x,e.pos.y,e.pos.z]), mobs:saveMobs(), mobChunks:[...mobChunks], name:world.name, seed:world.seed, mode:player.mode, time:dayTime, spawn:world.spawn,
+  const meta = { v:13, pendingItems:[...craftGrid2,...craftGrid3,cursor].filter(Boolean).map(packStack), portalLinks:world.portalLinks||[],offhand:packStack(offhand[0]),pistons:[...pistonSticky],plantAges:[...world.plantAges], stats:worldStats, dimension:world.dimension||'overworld',dimensions:world.dimensionStates||{}, effects:player.effects||{}, advancements:[...advancements], tnt:primedTNT.map(e=>[e.pos.x,e.pos.y,e.pos.z,e.fuse]), days:dayCount,weather:{type:weather.type,remaining:weather.remaining}, generator:world.genVersion||2, signs:[...signTexts], armor:armorSlots.map(packStack), xpOrbs:xpOrbs.map(e=>[e.value,e.pos.x,e.pos.y,e.pos.z]), mobs:saveMobs(), mobChunks:[...mobChunks], name:world.name, seed:world.seed, mode:player.mode, time:dayTime, spawn:world.spawn,
     p:{ x:+player.pos.x.toFixed(2), y:+player.pos.y.toFixed(2), z:+player.pos.z.toFixed(2), yaw:+player.yaw.toFixed(3), pitch:+player.pitch.toFixed(3),
         fire:player.fire||0, hp:player.health, food:player.food, sat:player.sat, xp:player.xp, fly:player.flying },
     inv: inv.slots.map(st=>packStack(st)), sel:inv.sel, containers,
@@ -2025,7 +2047,7 @@ function die(cause){
 function respawn(){
   const s=world.spawn||[0.5,80,0.5];
   player.pos.set(s[0], s[1], s[2]); player.vel.set(0,0,0); player.fallStart=null;
-  player.health=20; player.food=20; player.sat=5; player.air=300; player.xp=0; spawnPending=true;
+  player.health=20; player.food=20; player.sat=5; player.air=300; player.xp=0;player.fire=0;player.effects={};player.hurtTime=0;player.exh=0;spawnPending=true;respawnPending=true;
   setState('playing'); requestLock();
 }
 events.onJump = ()=>{ player.exh += player.sprinting?0.2:0.05; if(typeof sfx==='object') sfx.jump(); };
@@ -2708,13 +2730,14 @@ function titleUpdate(dt){
 /* ---- starting / continuing a world ---- */
 function beginGame(seed, meta, mode){
   world.dimension=meta?.dimension||'overworld';world.dimensionStates=meta?.dimensions||{};
-  resetMobs();clearSigns();resetRedstone();
+  world.portalLinks=meta?.portalLinks||[];portalState.arrival=null;portalState.time=0;portalState.mustLeave=true;
+  respawnPending=false;resetMobs();clearSigns();resetRedstone();
   if(world.builtDimension!==world.dimension){world.edits.clear();world.dirtyEdits.clear();}
   world.genVersion=meta?.generator||2;
   world.persist = true;
   if(!meta){ world.edits.clear(); world.containers.clear(); }
   startWorld(seed, meta ? meta.p : null, world.seed===seed && !!meta);
-  player.mode = mode || 'survival';
+  player.mode = mode || 'survival';Object.assign(player,{air:300,exh:0,regenT:0,starveT:0,drownT:0,cactusT:0,eatT:0,chewT:0,fireT:0});
   inv.slots.fill(null); armorSlots.fill(null); inv.sel=0; craftGrid2.fill(null); craftGrid3.fill(null); cursor=null;
   if(meta){
     world.name=meta.name||'World'; world.spawn=meta.spawn; dayTime=meta.time||0.3;
@@ -2752,7 +2775,7 @@ function checkLoading(){
   $('loadingText').textContent = done<need ? 'Loading terrain' : 'Building terrain';
   if(done>=need && !spawnPending){
     if(!world.spawn) world.spawn=[player.pos.x, player.pos.y, player.pos.z];
-    setState('playing'); requestLock(); saveWorld();if(!advancements.has('Opened Field Guide'))toast('WASD move · E inventory & recipes · J field guide · Esc pause');
+    setState(player.health<=0?'dead':'playing');if(player.health>0)requestLock();saveWorld();if(!advancements.has('Opened Field Guide'))toast('WASD move · E inventory & recipes · J field guide · Esc pause');
   }
 }
 
@@ -2782,7 +2805,7 @@ document.addEventListener('visibilitychange', ()=>{ if(document.hidden && gameSt
 /* =========================================================================
    19. GAME STATE, SPAWN & MAIN LOOP
    ========================================================================= */
-let spawnPending = false;
+let spawnPending = false,respawnPending=false;
 let dayTime = 0.27, dayCount = 0;
 function setState(s){ gameState=s;if(s!=='playing'&&document.pointerLockElement)document.exitPointerLock(); if(s!=='playing') { keys.clear(); mouse.left=false; mouse.right=false; } if(typeof onStateChange==='function') onStateChange(s); }
 function findSpawn(){
@@ -2793,6 +2816,15 @@ function findSpawn(){
   return [0.5,0.5];
 }
 function settleSpawn(){
+  if(portalState.arrival){settlePortalArrival();return;}
+  if(respawnPending){
+    const s=world.spawn||[player.pos.x,player.pos.y,player.pos.z];
+    for(let r=0;r<=4;r++)for(let dz=-r;dz<=r;dz++)for(let dx=-r;dx<=r;dx++)for(const dy of [0,-1,1,-2,2]){
+      const x=Math.floor(s[0])+dx,z=Math.floor(s[2])+dz,y=Math.floor(s[1])+dy;
+      if(world.getBlock(x,y,z)===0&&world.getBlock(x,y+1,z)===0&&BLOCKS[world.getBlock(x,y-1,z)]?.solid){player.pos.set(x+.5,y+.001,z+.5);player.vel.set(0,0,0);respawnPending=false;spawnPending=false;return;}
+    }
+    respawnPending=false;
+  }
   if(world.dimension==='nether'){settleNetherSpawn();return;}
   const x=Math.floor(player.pos.x), z=Math.floor(player.pos.z);
   for(let y=CH-1;y>0;y--){ const id=world.getBlock(x,y,z); if(id>0 && (BLOCKS[id].solid || BLOCKS[id].liquid)){ player.pos.y=y+1; break; } }
@@ -2838,7 +2870,7 @@ function frame(){
     updateHud(dt); updateDebug(dt);
   }
   const R=CONFIG.renderDistance*16;
-  if(!player.eyeInWater || gameState==='title') U.uFog.value.set(R*0.7, R*0.97);
+  if(world.dimension!=='nether'&&(!player.eyeInWater || gameState==='title')) U.uFog.value.set(R*0.7, R*0.97);
   const tr=performance.now();
   renderer.render(scene, camera);
   stats.drawCalls=renderer.info.render.calls; stats.tris=renderer.info.render.triangles;
@@ -3070,6 +3102,12 @@ function buildClouds(){
 }
 const _tmpC=new THREE.Color(),_sunDir=new THREE.Vector3();
 function updateSky(dt, camPos){
+  const nether=world.dimension==='nether';sky.group.visible=!nether;U.uAmbient.value=nether?.14:0;
+  if(nether){
+    for(const cloud of sky.clouds)cloud.visible=false;
+    scene.background.setRGB(.17,.045,.025);U.uFogColor.value.copy(scene.background);U.uFog.value.set(12,CONFIG.renderDistance*16*.9);U.uSky.value=.35;U.uSkyTint.value.setRGB(1,.65,.45);sfx.rain(0);sfx.update(dt);return;
+  }
+
   dayTime = (dayTime + dt/DAY_LENGTH); if(dayTime>=1){ dayTime-=1; dayCount++; }
   const a=dayTime*Math.PI*2, sunY=Math.sin(a);
   const sunDir=_sunDir.set(Math.cos(a), sunY, 0.18).normalize();
@@ -3539,7 +3577,7 @@ function spawnPassiveChunks(){
   }
 }
 function tickEntities(dt){
-  const start=performance.now();activateDormant(); entityClock.tick++;worldStats.seconds+=dt;worldStats.distance+=Math.hypot(player.vel.x,player.vel.z)*dt;if(entityClock.tick%4===0&&player.sprinting&&player.onGround)emitParticle(player.pos.x,player.pos.y+.1,player.pos.z,(Math.random()-.5)*2,.6,(Math.random()-.5)*2,TEX.dirt); combat.cooldown=Math.max(0,combat.cooldown-dt);combat.hurt=Math.max(0,combat.hurt-dt);tickProjectiles(dt);tickXP(dt);tickFluids(dt);tickFire(dt);tickRandomBlocks(dt);updateSigns(dt);tickHostileSpawns(dt);tickSpawners(dt);tickWeatherRoof();tickRedstone(dt);tickMagic(dt);tickPortals(dt);tickFishing(dt);tickAutomation(dt);
+  const start=performance.now();activateDormant(); entityClock.tick++;worldStats.seconds+=dt;worldStats.distance+=Math.hypot(player.vel.x,player.vel.z)*dt;if(entityClock.tick%4===0&&player.sprinting&&player.onGround)emitParticle(player.pos.x,player.pos.y+.1,player.pos.z,(Math.random()-.5)*2,.6,(Math.random()-.5)*2,TEX.dirt); combat.cooldown=Math.max(0,combat.cooldown-dt);combat.hurt=Math.max(0,combat.hurt-dt);tickProjectiles(dt);tickXP(dt);tickFluids(dt);tickFire(dt);tickRandomBlocks(dt);updateSigns(dt);tickHostileSpawns(dt);tickSpawners(dt);tickWeatherRoof();tickRedstone(dt);tickMagic(dt);tickPortals(dt);if(gameState==='loading')return;tickFishing(dt);tickAutomation(dt);
   entityClock.spawnT-=dt;if(entityClock.spawnT<=0){entityClock.spawnT=.5;spawnPassiveChunks();}
   for(let i=entities.length-1;i>=0;i--){
     const e=entities[i],p=e.pos,d=MOB_DEFS[e.kind]; e.prev.copy(p);
@@ -3574,7 +3612,7 @@ function tickEntities(dt){
 function updateEntities(dt){
   if(mouse.right&&inv.heldId()===B.bow&&gameState==='playing')combat.draw=Math.min(1,combat.draw+dt);else if(inv.heldId()!==B.bow)combat.draw=0;
   entityClock.acc=Math.min(entityClock.acc+dt,.2);
-  let steps=0;while(entityClock.acc>=.05&&steps++<4){tickEntities(.05);entityClock.acc-=.05;}
+  let steps=0;while(entityClock.acc>=.05&&steps++<4){tickEntities(.05);if(gameState==='loading'){entityClock.acc=0;return;}entityClock.acc-=.05;}
   const alpha=entityClock.acc/.05;
   for(const kind in mobMaterials)mobMaterials[kind].normal.color.setScalar(Math.max(.23,U.uSky.value));
   for(const e of entities){
@@ -3825,7 +3863,7 @@ function buildShapeCache(){
  }
 }
 function shapeBoxes(id,x=0,y=0,z=0){
- const b=BLOCKS[id];if(b?.model==='fence'||b?.model==='pane'){
+ const b=BLOCKS[id];if(b?.model==='portal'){const alongZ=world.getBlock(x,y,z-1)===B.portal||world.getBlock(x,y,z+1)===B.portal;return alongZ?[[.4375,0,0,.5625,1,1]]:SHAPE_CACHE[id];}if(b?.model==='fence'||b?.model==='pane'){
   let mask=0;for(let i=0;i<4;i++){const dir=SHAPE_DIR[i],n=BLOCKS[world.getBlock(x+dir[0],y,z+dir[1])];if(n&&(n.opaque||n.model===b.model||n.model==='gate'||n.model==='gate_open'))mask|=1<<i;}
   return CONNECT_CACHE[b.model][mask];
  }
@@ -4063,6 +4101,7 @@ function lightning(x=player.pos.x+(Math.random()-.5)*60,z=player.pos.z+(Math.ran
 }
 function updateWeather(dt){
  if(!weather.points)return;
+ if(world.dimension==='nether'){weather.points.visible=false;weather.bolt.material.opacity=0;weather.strength=0;sfx.rain(0);return;}
  weather.remaining-=dt;if(weather.remaining<=0){setWeather(weather.type==='clear'?(Math.random()<.2?'thunder':'rain'):'clear',240+Math.random()*600);}
  weather.strength=lerp(weather.strength,weather.type==='clear'?0:1,Math.min(1,dt*.5));
  const biome=gen.biomeAt(Math.floor(player.pos.x),Math.floor(player.pos.z));weather.snow=biome===3||biome===14;
@@ -4173,7 +4212,9 @@ function closeChat(){chatOpen=false;chatInput.style.display='none';chatInput.blu
 function command(line){
  const args=line.trim().split(/\s+/),cmd=args.shift().toLowerCase();if(!cmd.startsWith('/')){chatLine('You: '+line);return true;}
  let ok=true,message='';const coord=(s,base)=>s?.startsWith('~')?base+(Number(s.slice(1))||0):Number(s);
- if(cmd==='/help')message='/gamemode /time set /tp /give /weather /seed /kill /spawnpoint /difficulty';
+ if(cmd==='/help')message='/gamemode /time set /tp /give /weather /seed /kill /spawnpoint /difficulty /dimension /power';
+ else if(cmd==='/dimension'){ok=switchDimension(args[0]);message='Travelling to '+args[0];}
+ else if(cmd==='/power'){const p=target||{x:Math.floor(player.pos.x),y:Math.floor(player.pos.y),z:Math.floor(player.pos.z)};message='Redstone power: '+powerAt(p.x,p.y,p.z);}
  else if(cmd==='/gamemode'){const mode=({0:'survival',1:'creative'})[args[0]]||args[0];if(!['survival','creative'].includes(mode))ok=false;else{player.mode=mode;if(mode==='survival')player.flying=false;message='Game mode: '+mode;}}
  else if(cmd==='/time'&&args[0]==='set'){const names={day:.02,noon:.25,night:.55,midnight:.75},v=names[args[1]]??Number(args[1])/24000;if(!Number.isFinite(v))ok=false;else{dayTime=((v%1)+1)%1;message='Time updated';}}
  else if(cmd==='/tp'){const p=player.pos,x=coord(args[0],p.x),y=coord(args[1],p.y),z=coord(args[2],p.z);if(![x,y,z].every(Number.isFinite)||Math.abs(x)>500000||Math.abs(z)>500000||y<1||y>CH-2)ok=false;else{p.set(x,y,z);player.vel.set(0,0,0);player.fallStart=null;message='Teleported';}}
@@ -4256,41 +4297,130 @@ function buildMagicTextures(){
    37. DIMENSIONS — inventories stay global; chunk edits, containers, entities,
        signs, positions and spawn points are isolated per dimension.
    ========================================================================= */
-const portalState={time:0,cooldown:0,arrival:false};
+const portalState={time:0,cooldown:0,arrival:null,mustLeave:false,editing:false};
 function chunkPrefix(){return world.dimension==='nether'?'bc.n.c.':CHUNK_PREFIX;}
-function captureDimension(meta){const out={};for(const key of ['p','spawn','containers','mobs','mobChunks','items','signs','tnt','time','days','weather','pistons','plantAges'])out[key]=meta[key];return out;}
-function switchDimension(next){
- if(!['overworld','nether'].includes(next)||next===(world.dimension||'overworld'))return false;
- saveWorld();const meta=readMeta();if(!meta)return false;
- const current=world.dimension||'overworld',states=world.dimensionStates||{};states[current]=captureDimension(meta);
- const saved=states[next],scale=next==='nether'?1/8:8;
- const state=saved||{p:{...meta.p,x:clamp(player.pos.x*scale,-490000,490000),y:80,z:clamp(player.pos.z*scale,-490000,490000)},spawn:null,containers:[],mobs:[],mobChunks:[],items:[],signs:[],tnt:[],time:meta.time,days:meta.days,weather:{type:'clear',remaining:600}};
- const merged={...meta,...state,p:{...meta.p,x:state.p.x,y:state.p.y,z:state.p.z,yaw:state.p.yaw,pitch:state.p.pitch},dimension:next,dimensions:states,inv:meta.inv,armor:meta.armor,effects:meta.effects,advancements:meta.advancements};
- beginGame(meta.seed,merged,meta.mode);portalState.cooldown=5;portalState.time=0;
- if(!saved){spawnPending=true;portalState.arrival=true;}saveWorld();return true;
+function captureDimension(meta){const out={};for(const key of ['p','spawn','containers','mobs','mobChunks','items','xpOrbs','signs','tnt','time','days','weather','pistons','plantAges'])out[key]=meta[key];return out;}
+function portalKey(f){return f.x+','+f.y+','+f.z+','+f.axis;}
+function portalFrame(x,y,z,axis,lit=true){
+ if(y<1||y+4>=CH)return null;
+ for(let h=0;h<5;h++)for(let w=0;w<4;w++){
+  const id=world.getBlock(x+(axis===0?w:0),y+h,z+(axis===1?w:0));
+  if((h===0||h===4)&&(w===0||w===3)){if(id!==0&&id!==B.obsidian)return null;continue;}
+  const edge=h===0||h===4||w===0||w===3;
+  if(edge?id!==B.obsidian:lit?id!==B.portal:id!==0&&id!==B.portal)return null;
+ }
+ return {x,y,z,axis};
 }
-function settleNetherSpawn(){
- const x=Math.floor(player.pos.x),z=Math.floor(player.pos.z);let found=false;
- for(let y=35;y<110;y++)if(world.getBlock(x,y,z)===0&&world.getBlock(x,y+1,z)===0&&isSolidAt(x,y-1,z)&&world.getBlock(x,y-1,z)!==B.lava){player.pos.y=y;found=true;break;}
- if(!found){const y=50;for(let dx=-2;dx<=4;dx++)for(let dz=-2;dz<=2;dz++){world.setBlock(x+dx,y-1,z+dz,B.obsidian);for(let dy=0;dy<5;dy++)world.setBlock(x+dx,y+dy,z+dz,0);}player.pos.y=y;}
- player.vel.set(0,0,0);spawnPending=false;if(portalState.arrival){createPortal(x+2,Math.floor(player.pos.y),z);portalState.arrival=false;}
+function findPortal(x,y,z,lit=true){
+ for(let axis=0;axis<2;axis++)for(let h=0;h<5;h++)for(let w=0;w<4;w++){
+  const f=portalFrame(x-(axis===0?w:0),y-h,z-(axis===1?w:0),axis,lit);if(f)return f;
+ }return null;
+}
+function invalidatePortal(x,y,z){
+ if(portalState.editing)return;portalState.editing=true;
+ const queue=[[x,y,z],...FLUID_DIR.map(d=>[x+d[0],y+d[1],z+d[2]])],seen=new Set();
+ for(let i=0;i<queue.length&&i<128;i++){
+  const [xx,yy,zz]=queue[i],key=posKey(xx,yy,zz);if(seen.has(key))continue;seen.add(key);
+  if(world.getBlock(xx,yy,zz)!==B.portal||findPortal(xx,yy,zz))continue;
+  world.setBlock(xx,yy,zz,0);for(const d of FLUID_DIR)queue.push([xx+d[0],yy+d[1],zz+d[2]]);
+ }portalState.editing=false;
 }
 function createPortal(x,y,z,axis=0){
- for(let h=0;h<5;h++)for(let w=0;w<4;w++){const xx=x+(axis===0?w:0),zz=z+(axis===1?w:0);world.setBlock(xx,y+h,zz,h===0||h===4||w===0||w===3?B.obsidian:B.portal);}
+ const prior=portalState.editing;portalState.editing=true;
+ for(let h=0;h<5;h++)for(let w=0;w<4;w++)world.setBlock(x+(axis===0?w:0),y+h,z+(axis===1?w:0),h===0||h===4||w===0||w===3?B.obsidian:B.portal);
+ portalState.editing=prior;return {x,y,z,axis};
 }
 function lightPortal(x,y,z){
- for(let axis=0;axis<2;axis++)for(let dy=0;dy<5;dy++)for(let dw=0;dw<4;dw++){
-  const ox=x-(axis===0?dw:0),oy=y-dy,oz=z-(axis===1?dw:0);if(oy<1||oy+4>=CH)continue;let valid=true;
-  for(let h=0;h<5&&valid;h++)for(let w=0;w<4;w++){const id=world.getBlock(ox+(axis===0?w:0),oy+h,oz+(axis===1?w:0)),edge=h===0||h===4||w===0||w===3;if(edge?id!==B.obsidian:id!==0&&id!==B.portal){valid=false;break;}}
-  if(valid){createPortal(ox,oy,oz,axis);sfx.fuse();return true;}
- }
- return false;
+ const f=findPortal(x,y,z,false);if(!f)return false;
+ portalState.editing=true;
+ for(let h=1;h<4;h++)for(let w=1;w<3;w++)world.setBlock(f.x+(f.axis===0?w:0),f.y+h,f.z+(f.axis===1?w:0),B.portal);
+ portalState.editing=false;sfx.fuse();toast('Portal lit — stand inside to travel');return true;
 }
-function portalInteract(){if(inv.heldId()!==B.flint_and_steel||!target||target.id!==B.obsidian)return false;const t=target,ok=lightPortal(t.x,t.y,t.z);if(ok)wearHeld();return ok;}
+function portalInteract(){
+ if(inv.heldId()!==B.flint_and_steel||!target||target.id!==B.obsidian)return false;
+ const t=target;if(lightPortal(t.x,t.y,t.z)){wearHeld();return true;}
+ toast('Portal needs a clear 2 × 3 opening in an obsidian frame');return true;
+}
+function portalExit(f){
+ for(const side of [1,-1])for(const w of [1.5,2.5]){
+  const x=f.x+(f.axis===0?w:.5+side*1.2),z=f.z+(f.axis===1?w:.5+side*1.2),y=f.y+1;
+  let safe=true;
+  for(let zz=Math.floor(z-PW);zz<=Math.floor(z+PW);zz++)for(let xx=Math.floor(x-PW);xx<=Math.floor(x+PW);xx++){
+   const floor=BLOCKS[world.getBlock(xx,y-1,zz)];if(!floor?.solid||floor.liquid)safe=false;
+   for(let yy=y;yy<y+2;yy++)if(world.getBlock(xx,yy,zz)!==0)safe=false;
+  }if(safe)return {x,y:y+.001,z};
+ }
+ const x=f.x+(f.axis===0?1.5:.5),z=f.z+(f.axis===1?1.5:.5);
+ if(portalFrame(f.x,f.y,f.z,f.axis))return {x,y:f.y+1.001,z};
+ return null;
+}
+function portalSiteUntouched(f){
+ for(let w=-1;w<=4;w++)for(let n=-2;n<=2;n++)for(let h=-1;h<=5;h++){
+  const x=f.x+(f.axis===0?w:n),z=f.z+(f.axis===1?w:n),y=f.y+h;
+  if(y<1||y>=CH-1||world.getBlock(x,y,z)<0)return false;
+  if(world.edits.get(ckey(x>>4,z>>4))?.has((x&15)+((z&15)<<4)+(y<<8)))return false;
+ }return true;
+}
+function buildArrivalPortal(x,z,axis){
+ for(let r=0;r<=32;r+=4)for(let dz=-r;dz<=r;dz+=4)for(let dx=-r;dx<=r;dx+=4){
+  if(r&&Math.max(Math.abs(dx),Math.abs(dz))!==r)continue;
+  const xx=Math.floor(x)+dx,zz=Math.floor(z)+dz;let y=clamp(gen.heightAt(xx,zz),3,CH-8);
+  if(world.dimension==='nether'){
+   y=48;let best=Infinity;for(let yy=33;yy<90;yy++)if(world.getBlock(xx,yy,zz)===0&&world.getBlock(xx,yy+1,zz)===0&&BLOCKS[world.getBlock(xx,yy-1,zz)]?.solid&&Math.abs(yy-48)<best){best=Math.abs(yy-48);y=yy-1;}
+  }
+  const f={x:xx,y,z:zz,axis};if(!portalSiteUntouched(f))continue;
+  portalState.editing=true;
+  for(let w=-1;w<=4;w++)for(let n=-2;n<=2;n++){
+   const bx=xx+(axis===0?w:n),bz=zz+(axis===1?w:n);world.setBlock(bx,y,bz,B.obsidian);
+   for(let h=1;h<=5;h++)world.setBlock(bx,y+h,bz,0);
+  }createPortal(xx,y,zz,axis);portalState.editing=false;return f;
+ }return null;
+}
+function settlePortalArrival(){
+ const a=portalState.arrival,px=Math.floor(player.pos.x)>>4,pz=Math.floor(player.pos.z)>>4;
+ for(let dz=-2;dz<=2;dz++)for(let dx=-2;dx<=2;dx++)if(!world.get(px+dx,pz+dz)?.data)return;
+ let f=a.linked&&portalFrame(a.linked.x,a.linked.y,a.linked.z,a.linked.axis),exit=f&&portalExit(f);
+ if(!exit){let distance=Infinity;const seen=new Set();
+  for(const c of world.chunks.values())if(c.data&&Math.abs(c.cx-px)<=2&&Math.abs(c.cz-pz)<=2)for(let i=0;i<c.data.length;i++)if(c.data[i]===B.portal){
+   const candidate=findPortal(c.cx*16+(i&15),i>>8,c.cz*16+((i>>4)&15));if(!candidate||seen.has(portalKey(candidate)))continue;seen.add(portalKey(candidate));
+   const d=(candidate.x-a.x)**2+(candidate.z-a.z)**2;if(d>32*32||d>=distance)continue;const e=portalExit(candidate);if(e){f=candidate;exit=e;distance=d;}
+  }
+ }
+ if(!exit){f=buildArrivalPortal(a.x,a.z,a.source?.axis||0);exit=f&&portalExit(f);}
+ if(!exit){
+  // Preserve builds rather than excavating edited land. Return to the intact source.
+  const previous=a.previous;portalState.arrival=null;spawnPending=false;toast('No unedited landing site nearby. Returning safely.');
+  beginGame(previous.seed,previous,previous.mode);portalState.mustLeave=true;return;
+ }
+ player.pos.set(exit.x,exit.y,exit.z);player.vel.set(0,0,0);player.fallStart=null;
+ if(a.source){const pair={};pair[a.from]=a.source;pair[world.dimension]=f;world.portalLinks=(world.portalLinks||[]).filter(p=>portalKey(p[a.from]||{})!==portalKey(a.source));world.portalLinks.push(pair);}
+ if(!world.spawn)world.spawn=[exit.x,exit.y,exit.z];
+ portalState.arrival=null;portalState.time=0;portalState.cooldown=2;portalState.mustLeave=true;spawnPending=false;saveWorld();
+}
+function switchDimension(next,source=null){
+ if(!['overworld','nether'].includes(next)||next===(world.dimension||'overworld'))return false;
+ if(!saveWorld()){toast('Travel cancelled: save the world successfully first');return false;}
+ const meta=readMeta();if(!meta)return false;const current=world.dimension||'overworld',states=world.dimensionStates||{};states[current]=captureDimension(meta);
+ const saved=states[next]||{},scale=next==='nether'?1/8:8;
+ const linked=source&&(world.portalLinks||[]).slice().reverse().find(p=>p[current]&&portalKey(p[current])===portalKey(source))?.[next];
+ const x=linked?.x??clamp((source?.x??player.pos.x)*scale,-490000,490000),z=linked?.z??clamp((source?.z??player.pos.z)*scale,-490000,490000);
+ const state={spawn:null,containers:[],mobs:[],mobChunks:[],items:[],xpOrbs:[],signs:[],tnt:[],pistons:[],plantAges:[],time:meta.time,days:meta.days,weather:{type:'clear',remaining:600},...saved};
+ const merged={...meta,...state,p:{...meta.p,x,y:linked?.y?linked.y+1:70,z},dimension:next,dimensions:states,pendingItems:meta.pendingItems};
+ beginGame(meta.seed,merged,meta.mode);portalState.arrival={source,from:current,linked,x,z,previous:meta};portalState.cooldown=2;portalState.time=0;spawnPending=true;return true;
+}
+function settleNetherSpawn(){
+ const x=Math.floor(player.pos.x),z=Math.floor(player.pos.z);let y=48;
+ for(let yy=33;yy<90;yy++)if(world.getBlock(x,yy,z)===0&&world.getBlock(x,yy+1,z)===0&&BLOCKS[world.getBlock(x,yy-1,z)]?.solid){y=yy;break;}
+ player.pos.y=y;player.vel.set(0,0,0);spawnPending=false;
+}
 function tickPortals(dt){
  portalState.cooldown=Math.max(0,portalState.cooldown-dt);
- const p=player.pos,id=world.getBlock(Math.floor(p.x),Math.floor(p.y+.6),Math.floor(p.z));
- if(id===B.portal&&portalState.cooldown<=0&&gameState==='playing'){portalState.time+=dt;if(portalState.time>2)switchDimension(world.dimension==='nether'?'overworld':'nether');}else portalState.time=0;
+ const p=player.pos;let f=null;
+ for(const dy of [.1,1]){const x=Math.floor(p.x),y=Math.floor(p.y+dy),z=Math.floor(p.z);if(world.getBlock(x,y,z)===B.portal){f=findPortal(x,y,z);if(!f)invalidatePortal(x,y,z);break;}}
+ if(!f){portalState.time=0;portalState.mustLeave=false;return;}
+ if(portalState.mustLeave||portalState.cooldown>0||gameState!=='playing')return;
+ portalState.time+=dt;if(portalState.time>=.1&&portalState.time-dt<.1)toast('Entering '+(world.dimension==='nether'?'Overworld':'Nether')+'…');
+ if(portalState.time>=(player.mode==='creative'?.25:2))switchDimension(world.dimension==='nether'?'overworld':'nether',f);
 }
 let fireballGeometry=new THREE.BoxGeometry(.3,.3,.3),fireballMaterial;
 function spawnFireball(x,y,z,vx,vy,vz){const e=spawnArrow(x,y,z,vx,vy,vz,'fireball');if(!e)return null;if(!fireballMaterial){const t=new THREE.CanvasTexture(TILE_CANVAS.lava_still);t.magFilter=t.minFilter=THREE.NearestFilter;t.generateMipmaps=false;fireballMaterial=new THREE.MeshBasicMaterial({map:t});}e.mesh.geometry=fireballGeometry;e.mesh.material=fireballMaterial;return e;}
@@ -4378,6 +4508,11 @@ function validateWorldFile(data){
  if(!['survival','creative'].includes(m.mode))throw Error('Invalid game mode');
  if(!Number.isFinite(m.p.xp||0)||m.p.xp<0||m.p.xp>10000000)throw Error('Invalid experience');
  if(m.offhand)stack(m.offhand);
+ if(m.pendingItems!==undefined&&(!Array.isArray(m.pendingItems)||m.pendingItems.length>14))throw Error('Invalid pending inventory');
+ if(m.portalLinks!==undefined){
+  if(!Array.isArray(m.portalLinks)||m.portalLinks.length>1024)throw Error('Invalid portal links');
+  for(const pair of m.portalLinks)for(const [dim,f] of Object.entries(pair||{}))if(!['overworld','nether'].includes(dim)||!f||![f.x,f.y,f.z].every(Number.isInteger)||Math.abs(f.x)>500000||Math.abs(f.z)>500000||f.y<1||f.y>CH-5||![0,1].includes(f.axis))throw Error('Invalid portal destination');
+ }
  if(m.plantAges!==undefined&&(!Array.isArray(m.plantAges)||m.plantAges.some(e=>!Array.isArray(e)||!/^[-0-9]+,[-0-9]+,[-0-9]+$/.test(e[0])||!Number.isInteger(e[1])||e[1]<0||e[1]>3)))throw Error('Invalid growth data');
  if(m.effects&&Object.keys(m.effects).some(k=>!['speed','strength','night_vision','fire_resistance'].includes(k)||!Number.isFinite(m.effects[k])||m.effects[k]<0||m.effects[k]>100000))throw Error('Invalid status effects');
  for(const state of Object.values(m.dimensions||{})){if(state.p&&!['x','y','z'].every(k=>Number.isFinite(state.p[k])))throw Error('Invalid dimension coordinates');for(const entry of state.containers||[]){if(!Array.isArray(entry?.[1]?.s)||entry[1].s.length>27)throw Error('Invalid dimension container');entry[1].s.forEach(stack);}}
@@ -4569,7 +4704,7 @@ for(const n in TEX) TEX_NAME[TEX[n]]=n;
 buildShapeCache(); buildBlockTables(); makeMaterials(); initFluidMaterial(); makeCrackMats(); makeParticles();
 buildGuiImages(); buildHud(); applyGuiScale(); buildSky();buildWeather();buildPlayerModel();applyGraphicsSettings(); if(CONFIG.soundPack===false) sfx.usePack=false; soundLabel();
 scene.background = new THREE.Color(0x9cc8ff);
-window.__bc = { offhand, blockWithShield, pistonSticky, updatePiston, growNetherWart, tickAutomation, dispense, repairStack, buildMapGui, castFishing, tickAnimalSpecial, tickRiding, eggImpact, petAndGuardianAI, iconURL, livingInteract, tickFishing, fishing, trade, shearSheep, tamePet, dormantMobs, mobRecord, activateDormant, get riding(){return riding;}, setRiding:e=>riding=e, exportWorld, importWorld, validateWorldFile, worldStats, meshChunkSync, meshChunk, applyGraphicsSettings, get meshWorkers(){return meshWorkers;},get meshWorkerError(){return meshWorkerError;}, switchDimension, lightPortal, createPortal, tickPortals, spawnFireball, chunkPrefix, enchantHeld, tickMagic, BREW, drinkPotion, command, pickBlock, advancements, awardAdvancement, get cameraMode(){return cameraMode;}, setCameraMode:(m)=>cameraMode=((m%3)+3)%3, updateThirdPerson, redstoneClock, powerAt, tickRedstone, wakeRedstone, primeTNT, primedTNT, redstoneInteract, weather, setWeather, updateWeather, tickWeatherRoof, lightning, makeGenMain, WORLDGEN_SRC, tickSpawners, tickFluids, tickFire, fluidClock, wakeFluids, bucketInteract, sourceFluid, shapeBoxes, shapeRayHit, shapePlayerIntersects, toggleShape, sleepBed, signTexts, setSignText, SHAPE_CACHE, collectBoxes, hydrateFarmland, growCrop, growTree, randomBlockTick, farmInteract, tickRandomBlocks, farmClock, farmDrops, wearHeld, absorbDamage, spawnXP, xpOrbs, tickXP, makeStack, packStack, unpackStack, quickMove, canAccept, armorPreview, attackMob, mobDamage, combat, projectiles, spawnArrow, tickProjectiles, explode, skyVisible, blockLightAt, tickHostile, releaseBow, entities, MOB_DEFS, spawnMob, hurtMob, feedMob, updateEntities, raycastMob, resetMobs, saveMobs, migrateMeta, getContainer, updateFurnaces, ITEMS, armorSlots, moveAxis, itemEntities, spawnItem, throwItem, updateItems, setSwing:(v)=>{held.forceP=v; held.equip=1;}, step:(dt,n)=>{ for(let i=0;i<n;i++){ updatePlayer(dt); updateCamera(dt); updateInteraction(dt); updateSurvival(dt); updateChunks(player.pos.x,player.pos.z,50); } }, prof, get locked(){return locked;}, get noLock(){return noLock;}, sfx, setDay:(t)=>{dayTime=t;}, get gen(){return gen;}, inv, mouse, mining, get target(){return target;}, breakBlock, tryPlace, world, player, B, BLOCKS, CONFIG, keys, meshStats, stats, camera, renderer, scene, setState, startWorld, beginGame, openGui, closeGui, saveWorld, readMeta, matchRecipe, craftGrid2, craftGrid3, craftOut, getFps:()=>fps, get state(){return gameState;}, get cursor(){return cursor;}, clickSlot };
+window.__bc = { portalState,findPortal,portalFrame,portalExit,stacksMatch, offhand, blockWithShield, pistonSticky, updatePiston, growNetherWart, tickAutomation, dispense, repairStack, buildMapGui, castFishing, tickAnimalSpecial, tickRiding, eggImpact, petAndGuardianAI, iconURL, livingInteract, tickFishing, fishing, trade, shearSheep, tamePet, dormantMobs, mobRecord, activateDormant, get riding(){return riding;}, setRiding:e=>riding=e, exportWorld, importWorld, validateWorldFile, worldStats, meshChunkSync, meshChunk, applyGraphicsSettings, get meshWorkers(){return meshWorkers;},get meshWorkerError(){return meshWorkerError;}, switchDimension, lightPortal, createPortal, tickPortals, spawnFireball, chunkPrefix, enchantHeld, tickMagic, BREW, drinkPotion, command, pickBlock, advancements, awardAdvancement, get cameraMode(){return cameraMode;}, setCameraMode:(m)=>cameraMode=((m%3)+3)%3, updateThirdPerson, redstoneClock, powerAt, tickRedstone, wakeRedstone, primeTNT, primedTNT, redstoneInteract, weather, setWeather, updateWeather, tickWeatherRoof, lightning, makeGenMain, WORLDGEN_SRC, tickSpawners, tickFluids, tickFire, fluidClock, wakeFluids, bucketInteract, sourceFluid, shapeBoxes, shapeRayHit, shapePlayerIntersects, toggleShape, sleepBed, signTexts, setSignText, SHAPE_CACHE, collectBoxes, hydrateFarmland, growCrop, growTree, randomBlockTick, farmInteract, tickRandomBlocks, farmClock, farmDrops, wearHeld, absorbDamage, spawnXP, xpOrbs, tickXP, makeStack, packStack, unpackStack, quickMove, canAccept, armorPreview, attackMob, mobDamage, combat, projectiles, spawnArrow, tickProjectiles, explode, skyVisible, blockLightAt, tickHostile, releaseBow, entities, MOB_DEFS, spawnMob, hurtMob, feedMob, updateEntities, raycastMob, resetMobs, saveMobs, migrateMeta, getContainer, updateFurnaces, ITEMS, armorSlots, moveAxis, itemEntities, spawnItem, throwItem, updateItems, setSwing:(v)=>{held.forceP=v; held.equip=1;}, step:(dt,n)=>{ for(let i=0;i<n;i++){ updatePlayer(dt); updateCamera(dt); updateInteraction(dt); updateSurvival(dt); updateChunks(player.pos.x,player.pos.z,50); } }, prof, get locked(){return locked;}, get noLock(){return noLock;}, sfx, setDay:(t)=>{dayTime=t;}, get gen(){return gen;}, inv, mouse, mining, get target(){return target;}, breakBlock, tryPlace, world, player, B, BLOCKS, CONFIG, keys, meshStats, stats, camera, renderer, scene, setState, startWorld, beginGame, openGui, closeGui, saveWorld, readMeta, matchRecipe, craftGrid2, craftGrid3, craftOut, getFps:()=>fps, get state(){return gameState;}, get cursor(){return cursor;}, clickSlot };
 const QS = new URLSearchParams(location.search);
 if(QS.has('autostart')){ world.persist=false; startWorld(12345); player.mode=QS.get('mode')||'creative'; if(player.mode==='creative') [B.grass,B.dirt,B.stone,B.cobblestone,B.planks,B.log,B.glass,B.torch,B.bricks].forEach((id,i)=>inv.slots[i]={id,count:64}); onInventoryChange(); setState('playing'); }
 else { toTitle(); }
