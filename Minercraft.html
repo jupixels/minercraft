@@ -563,7 +563,12 @@ if(typeof importScripts === 'function'){
  * durability tooltips, sprint particles, attack meter, death messages and
  * saved advancement toasts. v1–v8→v9. 13 browser/UI checks pass, zero errors;
  * F3 CPU 6.03 ms, render 1.92 ms, chunks 2.68 ms (SwiftShader R2).
- * Next: M11 enchanting/brewing;
+ * M11 COMPLETE — six working enchantments with bookshelf/XP/lapis costs,
+ * metadata preservation; brewing fuel and timed batches; five drinkable
+ * effects with HUD icons; recipes and original pixel bottles. v1–v9→v10.
+ * 8 browser checks pass, zero errors; F3 CPU 4.72 ms, render .88 ms,
+ * chunks 2.76 ms (SwiftShader R2), 246/256 atlas tiles.
+ * Next: M12 Nether;
  * M5 shapes; M6 fluids; M7 worldgen; M8 weather; M9 redstone;
  * M10 player/QoL; M11 enchanting; M12 Nether; M13 performance.
  * Each milestone receives browser functional tests, F3 timing checks and a commit.
@@ -689,6 +694,8 @@ for(let power=0;power<16;power++)defBlock(195+power,power?'wire_'+power:'wire',{
 for(const [id,name,model,tex,powered] of [[211,'lever','lever','lever',false],[212,'lever_on','lever','lever',true],[213,'button','button','stone',false],[214,'button_on','button','stone',true],[215,'pressure_plate','plate','planks',false],[216,'pressure_plate_on','plate','planks',true],[217,'redstone_torch','torch','redstone_torch',true],[218,'redstone_torch_off','torch','torch',false],[219,'redstone_lamp','cube','lamp_off',false],[220,'redstone_lamp_on','cube','lamp_on',true]])defBlock(id,name,{label:name.replaceAll('_',' '),tex:{all:tex},model,solid:model==='cube',opaque:model==='cube',ao:model==='cube',hardness:.5,sound:'wood',powered,light:id===220?15:id===217?7:0,drop:({212:211,214:213,216:215,218:217,220:219})[id]||id});
 defFacing(221,'repeater',{label:'Repeater',tex:{all:'repeater'},model:'repeater',opaque:false,ao:false,hardness:0,powered:false});defFacing(225,'repeater_on',{label:'Powered Repeater',tex:{all:'repeater_on'},model:'repeater',opaque:false,ao:false,hardness:0,powered:true,drop:221});
 defBlock(229,'tnt',{label:'TNT',tex:{all:'tnt'},hardness:0,sound:'grass'});
+defBlock(230,'enchanting_table',{label:'Enchanting Table',tex:{top:'enchant_top',bottom:'obsidian',side:'enchant_side'},model:'enchant',opaque:false,ao:false,hardness:5,tool:'pickaxe',needsTool:true});
+defBlock(231,'brewing_stand',{label:'Brewing Stand',tex:{all:'cobblestone'},model:'brewing',opaque:false,ao:false,hardness:.5,container:'brewing'});
 const BLOCK_COUNT = BLOCKS.length;
 const LEAVES = new Set([8,30,39,41]);
 
@@ -721,13 +728,14 @@ defItem(295,'carrot',{label:'Carrot',food:3});defItem(296,'potato',{label:'Potat
 defItem(346,'bucket',{label:'Bucket',stack:16});defItem(347,'water_bucket',{label:'Water Bucket',stack:1});defItem(348,'lava_bucket',{label:'Lava Bucket',stack:1});
 defItem(350,'raw_copper',{label:'Raw Copper'});defItem(351,'copper_ingot',{label:'Copper Ingot'});defItem(352,'lapis',{label:'Lapis Lazuli'});defItem(353,'emerald',{label:'Emerald'});
 defItem(349,'flint_and_steel',{label:'Flint and Steel',icon:'flint',durability:64,stack:1});
+for(const [id,name,label,icon,effect] of [[354,'glass_bottle','Glass Bottle','bottle_empty',null],[355,'water_bottle','Water Bottle','bottle_water',null],[356,'awkward_potion','Awkward Potion','bottle_water',null],[357,'sugar','Sugar','sugar',null],[358,'blaze_powder','Blaze Powder','blaze_powder',null],[360,'golden_apple','Golden Apple','golden_apple',null],[361,'speed_potion','Potion of Speed','potion_speed','speed'],[362,'strength_potion','Potion of Strength','potion_strength','strength'],[363,'healing_potion','Potion of Healing','potion_healing','healing'],[364,'night_vision_potion','Potion of Night Vision','potion_night','night_vision'],[365,'fire_resistance_potion','Potion of Fire Resistance','potion_fire','fire_resistance'],[368,'blaze_rod','Blaze Rod','stick',null],[369,'magma_cream','Magma Cream','raw_copper',null],[371,'book','Book','book',null],[373,'slime_ball','Slime Ball','seeds',null],[374,'nether_wart','Nether Wart','raw_beef',null]])defItem(id,name,{label,icon,effect,stack:id>=354&&id<=356||effect?1:64,bottle:id>=354&&id<=356||!!effect});
 const isBlockId = (id)=> id>0 && id<256;
 const itemDef = (id)=> id<256 ? BLOCKS[id] : ITEMS[id];
 const itemLabel = (id)=> { const d=itemDef(id); return d ? d.label : '?'; };
 const maxStack = (id)=> id<256 ? 64 : (ITEMS[id].stack||64);
-function makeStack(id,count=1,source=null){const st={id,count},max=ITEMS[id]?.durability;if(max)st.d=source?.d??max;return st;}
-function packStack(st){return st?[st.id,st.count,st.d??null]:0;}
-function unpackStack(st){return st?makeStack(st[0],st[1],{d:st[2]??undefined}):null;}
+function makeStack(id,count=1,source=null){const st={id,count},max=ITEMS[id]?.durability;if(max)st.d=source?.d??max;if(source?.en)st.en={...source.en};return st;}
+function packStack(st){return st?[st.id,st.count,st.d??null,st.en||null]:0;}
+function unpackStack(st){return st?makeStack(st[0],st[1],{d:st[2]??undefined,en:st[3]||undefined}):null;}
 
 /* =========================================================================
    3. PROCEDURAL PIXEL-ART TEXTURES (16x16 tiles packed into a 256x256 atlas)
@@ -1276,19 +1284,19 @@ addEventListener('resize', ()=>{ renderer.setSize(innerWidth, innerHeight); came
 let atlasTex, waterTex;
 const U = {   // shared uniforms
   uMap:{value:null}, uWater:{value:null}, uSky:{value:1}, uFogColor:{value:new THREE.Color(0x9cc8ff)}, uFog:{value:new THREE.Vector2(60,90)},
-  uTime:{value:0}, uUnderwater:{value:0}, uSkyTint:{value:new THREE.Color(1,1,1)}, uGamma:{value:0.35},
+  uTime:{value:0}, uUnderwater:{value:0}, uSkyTint:{value:new THREE.Color(1,1,1)}, uGamma:{value:0.35},uNightVision:{value:0},
 };
 const VERT = `
 attribute vec3 aLight;attribute vec3 aTint;varying vec3 vTint; varying vec2 vUv; varying vec3 vLight; varying float vFog;
 void main(){vTint=aTint; vUv=uv; vLight=aLight; vec4 mv=modelViewMatrix*vec4(position,1.0); vFog=length(mv.xyz); gl_Position=projectionMatrix*mv; }`;
 const FRAG_COMMON = `
-uniform float uSky; uniform vec3 uFogColor; uniform vec2 uFog; uniform vec3 uSkyTint; uniform float uGamma;
+uniform float uSky; uniform vec3 uFogColor; uniform vec2 uFog; uniform vec3 uSkyTint; uniform float uGamma;uniform float uNightVision;
 varying vec3 vTint;varying vec2 vUv; varying vec3 vLight; varying float vFog;
 vec3 lightColor(){
   float s=vLight.y*uSky, b=vLight.z;
   s = mix(s/(4.0-3.0*s), s, uGamma); b = mix(b/(4.0-3.0*b), b, uGamma);
   vec3 c = max(uSkyTint*s, vec3(1.0,0.86,0.66)*b);
-  return max(c, vec3(0.03)) * vLight.x;
+  return max(c, vec3(mix(.03,.72,uNightVision))) * vLight.x;
 }`;
 function makeMaterials(){
   atlasTex = new THREE.CanvasTexture(atlasCanvas);
@@ -1441,6 +1449,7 @@ function updatePlayer(dt){
   else if(p.inWater) speed = 2.2;
   else if(p.sneaking) speed = 1.31;
   else if(p.sprinting) speed = 5.612;
+  if(player.effects?.speed>0)speed*=1.2;
   const control = p.flying ? 10 : (p.onGround ? 18 : (p.inWater? 6 : 4));
   const k = 1-Math.exp(-control*dt);
   p.vel.x += (wx*speed - p.vel.x)*k;
@@ -1628,6 +1637,7 @@ function canHarvest(blockId){ const b=BLOCKS[blockId]; if(!b.needsTool) return t
 function breakTime(blockId){
   const b=BLOCKS[blockId]; if(b.hardness<0) return Infinity; if(b.hardness===0) return 0.05;
   const t=toolFor(blockId); let time = b.hardness*(canHarvest(blockId)?1.5:5)/(t?t.speed:1);
+  time/=1+(inv.held()?.en?.efficiency||0)*.35;
   if(player.eyeInWater) time*=5; if(!player.onGround && !player.flying && !player.inWater) time*=5;
   return time;
 }
@@ -1648,7 +1658,7 @@ function breakBlock(x,y,z, silent){
   if(b.container) dropContainer(x,y,z);
   if(player.mode==='survival'){
     player.exh+=0.005;
-    if(harvest){ if(!farmDrops(id,x,y,z)){const d=b.drop; if(d) spawnItem(d,1,x+0.5,y+0.4,z+0.5);} }
+    if(harvest){const en=inv.held()?.en;if(en?.silk_touch&&id!==B.bedrock)spawnItem(id,1,x+.5,y+.4,z+.5);else if(!farmDrops(id,x,y,z)){const d=b.drop; if(d) spawnItem(d,1+((en?.fortune&&b.name.endsWith('_ore'))?Math.floor(Math.random()*(en.fortune+1)):0),x+0.5,y+0.4,z+0.5);} }
     if(id===B.gravel && Math.random()<.1)spawnItem(B.flint,1,x+.5,y+.4,z+.5);
     if(id===B.leaves && Math.random()<0.05) spawnItem(B.apple,1,x+0.5,y+0.4,z+0.5);
     const XP={11:1,14:5,35:2}; if(harvest && XP[id]) spawnXP(XP[id] + ((Math.random()*2)|0),x+.5,y+.5,z+.5);
@@ -1665,6 +1675,7 @@ function playerIntersects(x,y,z){
   return p.x+PW>x && p.x-PW<x+1 && p.y+PH>y && p.y<y+1 && p.z+PW>z && p.z-PW<z+1;
 }
 function tryPlace(){
+  if(magicInteract())return true;
   if(redstoneInteract())return true;
   if(bucketInteract())return true;
   if([B.bucket,B.water_bucket,B.lava_bucket].includes(inv.heldId()))return false;
@@ -1847,11 +1858,11 @@ function saveWorld(){
   }
   if(ok) world.dirtyEdits.clear();
   const containers=[]; for(const [k,c] of world.containers) containers.push([k,{t:c.type,s:c.slots.map(st=>packStack(st)),b:c.burn||0,bm:c.burnMax||0,c:c.cook||0}]);
-  const meta = { v:9, advancements:[...advancements], tnt:primedTNT.map(e=>[e.pos.x,e.pos.y,e.pos.z,e.fuse]), days:dayCount,weather:{type:weather.type,remaining:weather.remaining}, generator:world.genVersion||2, signs:[...signTexts], armor:armorSlots.map(packStack), xpOrbs:xpOrbs.map(e=>[e.value,e.pos.x,e.pos.y,e.pos.z]), mobs:saveMobs(), mobChunks:[...mobChunks], name:world.name, seed:world.seed, mode:player.mode, time:dayTime, spawn:world.spawn,
+  const meta = { v:10, effects:player.effects||{}, advancements:[...advancements], tnt:primedTNT.map(e=>[e.pos.x,e.pos.y,e.pos.z,e.fuse]), days:dayCount,weather:{type:weather.type,remaining:weather.remaining}, generator:world.genVersion||2, signs:[...signTexts], armor:armorSlots.map(packStack), xpOrbs:xpOrbs.map(e=>[e.value,e.pos.x,e.pos.y,e.pos.z]), mobs:saveMobs(), mobChunks:[...mobChunks], name:world.name, seed:world.seed, mode:player.mode, time:dayTime, spawn:world.spawn,
     p:{ x:+player.pos.x.toFixed(2), y:+player.pos.y.toFixed(2), z:+player.pos.z.toFixed(2), yaw:+player.yaw.toFixed(3), pitch:+player.pitch.toFixed(3),
         fire:player.fire||0, hp:player.health, food:player.food, sat:player.sat, xp:player.xp, fly:player.flying },
     inv: inv.slots.map(st=>packStack(st)), sel:inv.sel, containers,
-    items: itemEntities.slice(-200).map(e=>[e.id,e.count,+e.pos.x.toFixed(2),+e.pos.y.toFixed(2),+e.pos.z.toFixed(2),Math.round(e.age),e.d??null]) };
+    items: itemEntities.slice(-200).map(e=>[e.id,e.count,+e.pos.x.toFixed(2),+e.pos.y.toFixed(2),+e.pos.z.toFixed(2),Math.round(e.age),e.d??null,e.en||null]) };
   if(!store.set(SAVE_KEY, JSON.stringify(meta))) ok=false;
   if(!ok && !saveFailed){ saveFailed=true; toast('Could not save: browser storage is full or blocked'); }
 }
@@ -1868,6 +1879,7 @@ function xpForLevel(l){ return l<16 ? 2*l+7 : (l<31 ? 5*l-38 : 9*l-158); }
 function xpLevel(total){ let l=0; while(total>=xpForLevel(l)){ total-=xpForLevel(l); l++; } return [l, total/xpForLevel(l)]; }
 function damage(n, cause){
   if(player.mode==='creative' || gameState==='dead' || n<=0) return;
+  if(cause==='fire'&&player.effects?.fire_resistance>0)return;
   n=absorbDamage(n,cause);
   player.health = Math.max(0, player.health-n); player.hurtTime=0.4;
   if(typeof sfx==='object') sfx.hurt(cause);
@@ -1986,7 +1998,7 @@ function matchRecipe(grid, n){
 const posKey=(x,y,z)=>x+','+y+','+z;
 function getContainer(x,y,z, type){
   const k=posKey(x,y,z); let c=world.containers.get(k);
-  if(!c){ c = type==='furnace' ? {type, slots:[null,null,null], burn:0, burnMax:0, cook:0} : {type, slots:new Array(27).fill(null)}; world.containers.set(k,c);
+  if(!c){ c = type==='brewing'?{type,slots:new Array(5).fill(null),burn:0,burnMax:20,cook:0}:type==='furnace' ? {type, slots:[null,null,null], burn:0, burnMax:0, cook:0} : {type, slots:new Array(27).fill(null)}; world.containers.set(k,c);
     const ch=world.get(x>>4,z>>4),li=(x&15)+((z&15)<<4)+(y<<8);
     if(type==='chest'&&world.genVersion>=2&&ch?.data&&world.getBlock(x,y,z)>=B.chest&&world.getBlock(x,y,z)<B.chest+4&&!world.edits.get(ckey(x>>4,z>>4))?.has(li)){
       const R=mulberry32(world.seed^Math.imul(x,73856093)^Math.imul(z,19349663)^y),loot=[[B.bread,3],[B.iron_ingot,3],[B.coal,6],[B.torch,8],[B.seeds,5],[B.apple,2],[B.gold_ingot,2],[B.carrot,3],[B.potato,3]];
@@ -2236,7 +2248,9 @@ function buildGui(){
   const host=$('gui'); host.innerHTML=''; guiSlots=[];
   const wrap=el('div',null,{position:'relative', left: (recipeBookOpen && (guiOpen==='inventory'||guiOpen==='table')) ? g(76) : 0},host);
   let panel;
-  if(guiOpen==='sign'){
+  if(guiOpen==='enchant'){panel=el('div','panel',{width:g(176),height:g(190)},wrap);buildEnchantGui(panel);
+  }else if(guiOpen==='brewing'){panel=el('div','panel',{width:g(176),height:g(166)},wrap);label(panel,58,7,'Brewing Stand');for(let i=0;i<3;i++)addSlot(panel,36+i*36,45,{arr:guiData.slots,i,kind:'brew_bottle'});addSlot(panel,80,18,{arr:guiData.slots,i:3,kind:'brew_ingredient'});addSlot(panel,8,18,{arr:guiData.slots,i:4,kind:'brew_fuel'});label(panel,8,68,'Blaze fuel · 20 seconds per brew');addInvSlots(panel,8,84);
+  }else if(guiOpen==='sign'){
     panel=el('div','panel',{width:g(176),height:g(90)},wrap);label(panel,12,10,'Edit Sign (16 characters)');
     const input=el('input','field',{position:'absolute',left:g(10),top:g(30),width:g(154)},panel);input.maxLength=16;input.value=signTexts.get(posKey(guiData.x,guiData.y,guiData.z))||'';input.setAttribute('aria-label','Sign text');
     const done=el('button','btn',{position:'absolute',left:g(38),top:g(59),width:g(100)},panel,'Done');done.onclick=()=>{setSignText(guiData.x,guiData.y,guiData.z,input.value);closeGui();};setTimeout(()=>input.focus(),0);
@@ -2355,6 +2369,9 @@ function renderGui(){
   else ci.classList.add('hidden');
 }
 function canAccept(ref, id){
+  if(ref.kind==='brew_bottle')return !!ITEMS[id]?.bottle;
+  if(ref.kind==='brew_ingredient')return Object.values(BREW).some(r=>r.ingredient===id);
+  if(ref.kind==='brew_fuel')return id===B.blaze_powder;
   if(ref.kind==='armor')return ITEMS[id]?.armor===ref.i;
   if(ref.kind==='result' || ref.kind==='output' || ref.kind==='palette') return false;
   if(ref.kind==='fuel') return !!FUEL[id];
@@ -2557,7 +2574,7 @@ function beginGame(seed, meta, mode){
     (meta.armor||[]).forEach((s,i)=>{if(i<4)armorSlots[i]=unpackStack(s);});
     for(const o of meta.xpOrbs||[])spawnXP(o[0],o[1],o[2],o[3]); inv.sel=meta.sel||0;
     world.containers.clear();
-    clearItems(); for(const it of (meta.items||[])){ const e=spawnItem(it[0],it[1],it[2],it[3],it[4],false,{d:it[6]??undefined}); if(e){ e.vel.set(0,0,0); e.age=it[5]||0; e.delay=0; } }
+    clearItems(); for(const it of (meta.items||[])){ const e=spawnItem(it[0],it[1],it[2],it[3],it[4],false,{d:it[6]??undefined,en:it[7]||undefined}); if(e){ e.vel.set(0,0,0); e.age=it[5]||0; e.delay=0; } }
     for(const [k,c] of (meta.containers||[])){ const [x,y,z]=k.split(',').map(Number); const o={type:c.t, slots:c.s.map(unpackStack), burn:c.b, burnMax:c.bm, cook:c.c, x,y,z}; world.containers.set(k,o); }
   } else {
     dayTime=0.27; Object.assign(player,{health:20,food:20,sat:5,xp:0,flying:false,air:300,fire:0});
@@ -2565,6 +2582,7 @@ function beginGame(seed, meta, mode){
     if(player.mode==='creative'){ [B.grass,B.dirt,B.stone,B.cobblestone,B.planks,B.log,B.glass,B.torch,B.bricks].forEach((id,i)=>inv.slots[i]={id,count:64}); }
   }
   for(const [key,text] of meta?.signs||[])signTexts.set(key,text);
+  player.effects={...(meta?.effects||{})};
   advancements.clear();for(const a of meta?.advancements||[])advancements.add(a);
   dayCount=meta?.days||0;setWeather(meta?.weather?.type||'clear',meta?.weather?.remaining||300);
   for(const e of meta?.tnt||[])primeTNT(e[0],e[1],e[2],e[3],true);
@@ -2997,7 +3015,7 @@ function localBrightness(){
   let bl=0; const cx=x>>4, cz=z>>4;
   for(let dz=-1;dz<=1;dz++) for(let dx=-1;dx<=1;dx++){ const c=world.get(cx+dx,cz+dz); if(!c||!c.emitters.size) continue;
     for(const li of c.emitters){ const ex=(cx+dx)*16+(li&15), ez=(cz+dz)*16+((li>>4)&15), ey=li>>8; const dd=Math.abs(ex-x)+Math.abs(ey-y)+Math.abs(ez-z); bl=Math.max(bl,(BLOCKS[c.data[li]].light-dd)/15); } }
-  const sky = open ? U.uSky.value : (y<SEA-6 ? 0.06 : 0.35*U.uSky.value);
+  const sky = player.effects?.night_vision>0? .9 : open ? U.uSky.value : (y<SEA-6 ? 0.06 : 0.35*U.uSky.value);
   return clamp(Math.max(sky, bl), 0.06, 1);
 }
 function updateHeld(dt){
@@ -3053,7 +3071,7 @@ function lightAt(x,y,z){
   let bl=0; const cx=bx>>4, cz=bz>>4;
   for(let dz=-1;dz<=1;dz++) for(let dx=-1;dx<=1;dx++){ const c=world.get(cx+dx,cz+dz); if(!c||!c.emitters.size) continue;
     for(const li of c.emitters){ const ex=(cx+dx)*16+(li&15), ez=(cz+dz)*16+((li>>4)&15), ey=li>>8; bl=Math.max(bl,(BLOCKS[c.data[li]].light-Math.abs(ex-bx)-Math.abs(ey-by)-Math.abs(ez-bz))/15); } }
-  return clamp(Math.max(open ? U.uSky.value : (by<SEA-6 ? 0.05 : 0.3*U.uSky.value), bl), 0.05, 1);
+  return clamp(Math.max(player.effects?.night_vision>0?.8:0,open ? U.uSky.value : (by<SEA-6 ? 0.05 : 0.3*U.uSky.value), bl), 0.05, 1);
 }
 function makeItemVisual(id, count){
   const o=heldMeshFor(id), isBlock = o.kind==='block', g=new THREE.Group();
@@ -3070,7 +3088,7 @@ function makeItemVisual(id, count){
 function spawnItem(id, count, x, y, z, scatter,stack=null){
   if(!id || count<=0) return null;
   if(itemEntities.length>=ITEM_MAX) removeItem(itemEntities[0]);
-  const e = { id, count, d:ITEMS[id]?.durability?(stack?.d??ITEMS[id].durability):undefined, pos:new THREE.Vector3(x,y,z),
+  const e = { id, count, en:stack?.en?{...stack.en}:undefined,d:ITEMS[id]?.durability?(stack?.d??ITEMS[id].durability):undefined, pos:new THREE.Vector3(x,y,z),
     vel:new THREE.Vector3((Math.random()-0.5)*(scatter?5:2), 2.2+Math.random()*(scatter?3:1.5), (Math.random()-0.5)*(scatter?5:2)),
     age:0, delay:0.5, spin:Math.random()*Math.PI*2, phase:Math.random()*6.28, onGround:false, lightT:0, mergeT:Math.random()*0.5 };
   e.mesh = makeItemVisual(id, count); itemGroup.add(e.mesh);
@@ -3285,6 +3303,7 @@ function migrateMeta(m){
   if(m.v<7){m.days=0;m.weather={type:'clear',remaining:300};m.v=7;}
   if(m.v<8){m.tnt=[];m.v=8;}
   if(m.v<9){m.advancements=[];m.v=9;}
+  if(m.v<10){m.effects={};m.v=10;}
   return m;
 }
 function saveMobs(){ return entities.filter(e=>!e.dead).map(e=>({kind:e.kind,x:e.pos.x,y:e.pos.y,z:e.pos.z,hp:e.hp,yaw:e.yaw,baby:e.baby,breedCD:e.breedCD,persistent:e.persistent})); }
@@ -3334,9 +3353,9 @@ function hurtMob(e,amount){
 function attackMob(){
  const e=raycastMob();if(!e)return false;
  if(combat.cooldown>0)return true;combat.cooldown=.6;
- const tool=ITEMS[inv.heldId()],base=tool?.tool==='sword'?3+tool.tier:tool?.tool==='axe'?2+tool.tier:1;
+ const tool=ITEMS[inv.heldId()],base=tool?.tool==='sword'?3+tool.tier:tool?.tool==='axe'?2+tool.tier:1;const bonus=(inv.held()?.en?.sharpness||0)+(player.effects?.strength>0?3:0);
  const crit=player.vel.y<-.5&&!player.onGround&&!player.inWater&&!player.flying;
- if(hurtMob(e,Math.floor(base*(crit?1.5:1)))){wearHeld(tool?.tool==='sword'?1:2);player.exh+=.1;if(crit){toast('Critical hit!');for(let i=0;i<8;i++)emitParticle(e.pos.x,e.pos.y+1,e.pos.z,(Math.random()-.5)*2,2,(Math.random()-.5)*2,TEX.item_diamond);}}
+ if(hurtMob(e,Math.floor((base+bonus)*(crit?1.5:1)))){wearHeld(tool?.tool==='sword'?1:2);player.exh+=.1;if(crit){toast('Critical hit!');for(let i=0;i<8;i++)emitParticle(e.pos.x,e.pos.y+1,e.pos.z,(Math.random()-.5)*2,2,(Math.random()-.5)*2,TEX.item_diamond);}}
  return true;
 }
 function feedMob(e){
@@ -3360,7 +3379,7 @@ function spawnPassiveChunks(){
   }
 }
 function tickEntities(dt){
-  const start=performance.now(); entityClock.tick++;if(entityClock.tick%4===0&&player.sprinting&&player.onGround)emitParticle(player.pos.x,player.pos.y+.1,player.pos.z,(Math.random()-.5)*2,.6,(Math.random()-.5)*2,TEX.dirt); combat.cooldown=Math.max(0,combat.cooldown-dt);combat.hurt=Math.max(0,combat.hurt-dt);tickProjectiles(dt);tickXP(dt);tickFluids(dt);tickFire(dt);tickRandomBlocks(dt);updateSigns(dt);tickHostileSpawns(dt);tickSpawners(dt);tickWeatherRoof();tickRedstone(dt);
+  const start=performance.now(); entityClock.tick++;if(entityClock.tick%4===0&&player.sprinting&&player.onGround)emitParticle(player.pos.x,player.pos.y+.1,player.pos.z,(Math.random()-.5)*2,.6,(Math.random()-.5)*2,TEX.dirt); combat.cooldown=Math.max(0,combat.cooldown-dt);combat.hurt=Math.max(0,combat.hurt-dt);tickProjectiles(dt);tickXP(dt);tickFluids(dt);tickFire(dt);tickRandomBlocks(dt);updateSigns(dt);tickHostileSpawns(dt);tickSpawners(dt);tickWeatherRoof();tickRedstone(dt);tickMagic(dt);
   entityClock.spawnT-=dt;if(entityClock.spawnT<=0){entityClock.spawnT=.5;spawnPassiveChunks();}
   for(let i=entities.length-1;i>=0;i--){
     const e=entities[i],p=e.pos,d=MOB_DEFS[e.kind]; e.prev.copy(p);
@@ -3507,11 +3526,11 @@ function buildEquipmentTextures(){
  makeTile('xp_orb',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++)P(x,y,vary(x+y<14?[197,255,82]:[92,184,40],R,30));});
  CREATIVE_TABS[3].items.push(...Array.from({length:5},(_,i)=>320+i),...Array.from({length:16},(_,i)=>330+i),B.iron_nugget,B.gold_nugget,B.bow);
 }
-function wearHeld(n=1){if(player.mode==='creative')return;const s=inv.held(),d=s&&ITEMS[s.id];if(!d?.durability)return;s.d=(s.d??d.durability)-n;if(s.d<=0){inv.slots[inv.sel]=null;sfx.toolBreak();}onInventoryChange();}
+function wearHeld(n=1){if(player.mode==='creative')return;const s=inv.held(),d=s&&ITEMS[s.id];if(!d?.durability)return;if(Math.random()<1-1/(1+(s.en?.unbreaking||0)))return;s.d=(s.d??d.durability)-n;if(s.d<=0){inv.slots[inv.sel]=null;sfx.toolBreak();}onInventoryChange();}
 function absorbDamage(n,cause){
  if(['fall','starve','drown','void'].includes(cause))return Math.max(1,Math.ceil(n));
  let defense=0;
- for(let i=0;i<4;i++){const s=armorSlots[i],d=s&&ITEMS[s.id];if(!d||d.armor!==i)continue;defense+=d.defense;s.d=(s.d??d.durability)-Math.max(1,Math.floor(n/4));if(s.d<=0){armorSlots[i]=null;sfx.toolBreak();}}
+ for(let i=0;i<4;i++){const s=armorSlots[i],d=s&&ITEMS[s.id];if(!d||d.armor!==i)continue;defense+=d.defense+(s.en?.protection||0);s.d=(s.d??d.durability)-Math.max(1,Math.floor(n/4));if(s.d<=0){armorSlots[i]=null;sfx.toolBreak();}}
  return Math.max(1,Math.floor(n*(1-Math.min(20,defense)*.04)));
 }
 let armorPreviewKey='',armorPreviewURL='';
@@ -3626,6 +3645,7 @@ function buildShapeCache(){
   fence:[[.375,0,.375,.625,1.5,.625]],gate:[[0,0,.375,.125,1.5,.625],[.875,0,.375,1,1.5,.625],[.125,.4,.4375,.875,1.2,.5625]],
   gate_open:[[0,0,.375,.125,1.5,.625],[.875,0,.375,1,1.5,.625]],door:[[0,0,0,1,1,.1875]],door_open:[[0,0,0,.1875,1,1]],trapdoor:[[0,0,0,1,.1875,1]],trapdoor_open:[[0,0,0,1,1,.1875]],
   ladder:[[0,0,0,1,1,.0625]],pane:[[.4375,0,.4375,.5625,1,.5625]],bed:[[0,.1875,0,1,.5625,1],[.0625,0,.0625,.1875,.1875,.1875],[.8125,0,.8125,.9375,.1875,.9375]],
+  enchant:[[0,0,0,1,.75,1],[.15,.75,.3,.85,.86,.7]],brewing:[[0,0,0,1,.125,1],[.4375,.125,.4375,.5625,.9,.5625],[.125,.125,.125,.375,.45,.375],[.625,.125,.625,.875,.45,.875]],
   lever:[[.25,0,.25,.75,.2,.75],[.4375,.2,.375,.5625,.7,.5]],button:[[.3125,0,.3125,.6875,.125,.6875]],plate:[[.0625,0,.0625,.9375,.0625,.9375]],repeater:[[0,0,0,1,.125,1],[.25,.125,.2,.375,.4,.325],[.625,.125,.7,.75,.4,.825]],
   sign:[[.4375,0,.4375,.5625,.6,.5625],[0,.5,.4375,1,1,.5625]],wall_torch:[[.4375,.25,0,.5625,.875,.1875]]};
  for(const b of BLOCKS)if(shapes[b.model])SHAPE_CACHE[b.id]=rotateShape(shapes[b.model],b.facing||0);
@@ -4003,14 +4023,74 @@ document.addEventListener('keydown',e=>{
  if(e.code==='KeyT'||e.code==='Slash'){e.preventDefault();openChat();if(e.code==='Slash')chatInput.value='/';}
 });
 /* =========================================================================
+   36. ENCHANTING & BREWING — equipment metadata, XP/lapis costs,
+       bookshelf levels, fueled timed batches and actual survival effects.
+   ========================================================================= */
+const ENCHANTMENTS={efficiency:{label:'Efficiency',tool:true,max:3},unbreaking:{label:'Unbreaking',any:true,max:3},sharpness:{label:'Sharpness',sword:true,max:3},protection:{label:'Protection',armor:true,max:3},fortune:{label:'Fortune',tool:true,max:3},silk_touch:{label:'Silk Touch',tool:true,max:1}};
+const BREW={};let potionUse=0;
+const effectHud=el('div','sh',{position:'fixed',right:g(5),top:g(38),fontSize:g(10),textAlign:'right',pointerEvents:'none'},document.body);
+function enchantHeld(name,desk=null){
+ const st=inv.held(),d=st&&ITEMS[st.id],en=ENCHANTMENTS[name];if(!d?.durability||!en)return false;
+ if(!(en.any||en.tool&&d.tool&&d.tool!=='sword'||en.sword&&d.tool==='sword'||en.armor&&d.armor!==undefined))return false;
+ if(name==='silk_touch'&&st.en?.fortune||name==='fortune'&&st.en?.silk_touch)return false;
+ let shelves=0;if(desk)for(let dz=-2;dz<=2;dz++)for(let dx=-2;dx<=2;dx++)for(let dy=0;dy<2;dy++)if(world.getBlock(desk.x+dx,desk.y+dy,desk.z+dz)===B.bookshelf)shelves++;
+ const level=(st.en?.[name]||0)+1,max=Math.min(en.max,1+Math.floor(shelves/5)),cost=2+level;
+ if(level>max){toast('More bookshelves are needed, or this enchantment is at its maximum');return false;}
+ if(player.mode!=='creative'){
+  if(xpLevel(player.xp)[0]<cost||!inv.slots.some(s=>s?.id===B.lapis)){toast('Need '+cost+' XP levels and 1 lapis');return false;}
+  let remove=0;for(let i=xpLevel(player.xp)[0]-cost;i<xpLevel(player.xp)[0];i++)remove+=xpForLevel(i);player.xp=Math.max(0,player.xp-remove);
+  const i=inv.slots.findIndex(s=>s?.id===B.lapis);if(--inv.slots[i].count<=0)inv.slots[i]=null;
+ }
+ if(!st.en)st.en={};st.en[name]=level;onInventoryChange();sfx.xp();toast(en.label+' '+level);return true;
+}
+function buildEnchantGui(panel){
+ label(panel,12,9,'Enchant held equipment');label(panel,12,23,'Lapis + XP; shelves raise levels');
+ Object.entries(ENCHANTMENTS).forEach(([name,en],i)=>{const button=el('button','btn',{position:'absolute',left:g(12),top:g(39+i*22),width:g(150)},panel,en.label);button.onclick=()=>enchantHeld(name,guiData);});
+}
+function drinkPotion(id){
+ const effect=ITEMS[id]?.effect;if(!effect)return false;if(!player.effects)player.effects={};
+ if(effect==='healing')player.health=Math.min(20,player.health+8);else player.effects[effect]=180;
+ if(player.mode==='survival'){inv.consumeHeld();if(inv.add(B.glass_bottle,1))spawnItem(B.glass_bottle,1,player.pos.x,player.pos.y+1,player.pos.z);}sfx.burp();return true;
+}
+function magicInteract(){
+ if(target?.id===B.enchanting_table&&!player.sneaking){openGui('enchant',{x:target.x,y:target.y,z:target.z});return true;}
+ if(inv.heldId()===B.glass_bottle){const t=raycastBlock(REACH,true);if(BLOCKS[t?.id]?.fluid==='water'){if(player.mode==='survival')inv.consumeHeld();inv.add(B.water_bottle,1);sfx.splash();return true;}}
+ return false;
+}
+function tickMagic(dt){
+ U.uNightVision.value=player.effects?.night_vision>0?1:0;
+ if(player.effects)for(const key in player.effects){player.effects[key]=Math.max(0,player.effects[key]-dt);if(player.effects[key]===0)delete player.effects[key];}
+ const st=inv.held(),effect=ITEMS[st?.id]?.effect;if(mouse.right&&effect){potionUse+=dt;if(potionUse>=1.2){potionUse=0;drinkPotion(st.id);}}else potionUse=0;
+ if(entityClock.tick%20===0){effectHud.innerHTML='';for(const [key,time] of Object.entries(player.effects||{})){const row=el('div',null,null,effectHud),img=el('img',null,{width:g(12),height:g(12),verticalAlign:'middle',marginRight:g(3)},row);img.src=iconURL(B[({speed:'speed_potion',strength:'strength_potion',night_vision:'night_vision_potion',fire_resistance:'fire_resistance_potion'})[key]]);const text=el('span',null,null,row);text.textContent=key.replaceAll('_',' ')+' '+Math.ceil(time)+'s';}effectHud.style.display=gameState==='title'?'none':'block';}
+ for(const c of world.containers.values()){
+  if(c.type!=='brewing'||world.getBlock(c.x,c.y,c.z)<0)continue;
+  const ingredient=c.slots[3],can=ingredient&&c.slots.slice(0,3).some(s=>s&&BREW[s.id+':'+ingredient.id]);
+  if(!can){c.cook=0;continue;}
+  if(c.burn<=0&&c.slots[4]?.id===B.blaze_powder){if(--c.slots[4].count<=0)c.slots[4]=null;c.burn=20;}
+  if(c.burn<=0)continue;c.cook+=dt;
+  if(c.cook>=20){for(let i=0;i<3;i++){const s=c.slots[i],r=s&&BREW[s.id+':'+ingredient.id];if(r)c.slots[i]=makeStack(r.out,1);}if(--ingredient.count<=0)c.slots[3]=null;c.burn--;c.cook=0;if(guiOpen==='brewing'&&guiData===c)renderGui();}
+ }
+}
+function buildMagicTextures(){
+ const potions=[['bottle_empty',null],['bottle_water',[65,124,219]],['potion_speed',[139,210,225]],['potion_strength',[193,75,65]],['potion_healing',[238,91,122]],['potion_night',[105,87,194]],['potion_fire',[226,156,53]]];
+ for(const [name,c] of potions)makeTile('item_'+name,(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++){const neck=x>=6&&x<=9&&y>=2&&y<7,body=(x-7.5)**2+(y-10)**2<24&&y>=6,edge=body&&((x-7.5)**2+(y-10)**2>14);P(x,y,vary(y<4?[165,125,70]:neck||edge?[198,220,228]:c||[161,190,205],R,18),neck||body?255:0);}});
+ for(const [name,col] of [['sugar',[230,229,211]],['blaze_powder',[241,163,40]],['golden_apple',[232,191,56]],['book',[122,78,49]]])makeTile('item_'+name,(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++)P(x,y,vary(col,R,30),name==='book'?x>2&&x<13&&y>2&&y<14?255:0:Math.abs(x-8)+Math.abs(y-8)<7?255:0);});
+ makeTile('enchant_top',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++)P(x,y,vary((x+y)%7<2?[93,168,171]:[114,56,53],R,24));});makeTile('enchant_side',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++)P(x,y,vary(y<3?[161,67,49]:x%7===0?[71,171,177]:[31,32,47],R,20));});
+ const brew=(input,ingredient,out)=>BREW[input+':'+ingredient]={ingredient,out};brew(B.water_bottle,B.nether_wart,B.awkward_potion);brew(B.awkward_potion,B.sugar,B.speed_potion);brew(B.awkward_potion,B.blaze_powder,B.strength_potion);brew(B.awkward_potion,B.golden_apple,B.healing_potion);brew(B.awkward_potion,B.carrot,B.night_vision_potion);brew(B.awkward_potion,B.magma_cream,B.fire_resistance_potion);
+ CREATIVE_TABS[2].items.push(B.enchanting_table,B.brewing_stand);CREATIVE_TABS[3].items.push(...Object.values(ITEMS).filter(d=>d.id>=354&&d.id<=374).map(d=>d.id));
+ shaped(['G G',' G '],{G:[B.glass]},B.glass_bottle,3);shapeless([B.sugar_cane],B.sugar);shapeless([B.blaze_rod],B.blaze_powder,2);shapeless([B.slime_ball,B.blaze_powder],B.magma_cream);
+ shapeless([B.paper,B.paper,B.paper,B.leather],B.book);shaped(['PPP','BBB','PPP'],{P:PLANKS,B:[B.book]},B.bookshelf);
+ shaped([' B ','DOD','OOO'],{B:[B.book],D:[B.diamond],O:[B.obsidian]},B.enchanting_table);shaped([' R ','CCC'],{R:[B.blaze_rod],C:[B.cobblestone]},B.brewing_stand);shaped(['GGG','GAG','GGG'],{G:[B.gold_nugget],A:[B.apple]},B.golden_apple);
+}
+/* =========================================================================
    20. BOOT
    ========================================================================= */
-buildTextures(); buildEntityTextures(); buildEquipmentTextures(); buildFarmTextures(); buildShapeTextures(); buildFluidTextures();buildBiomeTextures();buildRedstoneTextures();
+buildTextures(); buildEntityTextures(); buildEquipmentTextures(); buildFarmTextures(); buildShapeTextures(); buildFluidTextures();buildBiomeTextures();buildRedstoneTextures();buildMagicTextures();
 for(const n in TEX) TEX_NAME[TEX[n]]=n;
 buildShapeCache(); buildBlockTables(); makeMaterials(); initFluidMaterial(); makeCrackMats(); makeParticles();
 buildGuiImages(); buildHud(); applyGuiScale(); buildSky();buildWeather();buildPlayerModel(); if(CONFIG.soundPack===false) sfx.usePack=false; soundLabel();
 scene.background = new THREE.Color(0x9cc8ff);
-window.__bc = { command, pickBlock, advancements, awardAdvancement, get cameraMode(){return cameraMode;}, setCameraMode:(m)=>cameraMode=((m%3)+3)%3, updateThirdPerson, redstoneClock, powerAt, tickRedstone, wakeRedstone, primeTNT, primedTNT, redstoneInteract, weather, setWeather, updateWeather, tickWeatherRoof, lightning, makeGenMain, WORLDGEN_SRC, tickSpawners, tickFluids, tickFire, fluidClock, wakeFluids, bucketInteract, sourceFluid, shapeBoxes, shapeRayHit, shapePlayerIntersects, toggleShape, sleepBed, signTexts, setSignText, SHAPE_CACHE, collectBoxes, hydrateFarmland, growCrop, growTree, randomBlockTick, farmInteract, tickRandomBlocks, farmClock, farmDrops, wearHeld, absorbDamage, spawnXP, xpOrbs, tickXP, makeStack, packStack, unpackStack, quickMove, canAccept, armorPreview, attackMob, mobDamage, combat, projectiles, spawnArrow, tickProjectiles, explode, skyVisible, blockLightAt, tickHostile, releaseBow, entities, MOB_DEFS, spawnMob, hurtMob, feedMob, updateEntities, raycastMob, resetMobs, saveMobs, migrateMeta, getContainer, updateFurnaces, ITEMS, armorSlots, moveAxis, itemEntities, spawnItem, throwItem, updateItems, setSwing:(v)=>{held.forceP=v; held.equip=1;}, step:(dt,n)=>{ for(let i=0;i<n;i++){ updatePlayer(dt); updateCamera(dt); updateInteraction(dt); updateSurvival(dt); updateChunks(player.pos.x,player.pos.z,50); } }, prof, get locked(){return locked;}, get noLock(){return noLock;}, sfx, setDay:(t)=>{dayTime=t;}, get gen(){return gen;}, inv, mouse, mining, get target(){return target;}, breakBlock, tryPlace, world, player, B, BLOCKS, CONFIG, keys, meshStats, stats, camera, renderer, scene, setState, startWorld, beginGame, openGui, closeGui, saveWorld, readMeta, matchRecipe, craftGrid2, craftGrid3, craftOut, getFps:()=>fps, get state(){return gameState;}, get cursor(){return cursor;}, clickSlot };
+window.__bc = { enchantHeld, tickMagic, BREW, drinkPotion, command, pickBlock, advancements, awardAdvancement, get cameraMode(){return cameraMode;}, setCameraMode:(m)=>cameraMode=((m%3)+3)%3, updateThirdPerson, redstoneClock, powerAt, tickRedstone, wakeRedstone, primeTNT, primedTNT, redstoneInteract, weather, setWeather, updateWeather, tickWeatherRoof, lightning, makeGenMain, WORLDGEN_SRC, tickSpawners, tickFluids, tickFire, fluidClock, wakeFluids, bucketInteract, sourceFluid, shapeBoxes, shapeRayHit, shapePlayerIntersects, toggleShape, sleepBed, signTexts, setSignText, SHAPE_CACHE, collectBoxes, hydrateFarmland, growCrop, growTree, randomBlockTick, farmInteract, tickRandomBlocks, farmClock, farmDrops, wearHeld, absorbDamage, spawnXP, xpOrbs, tickXP, makeStack, packStack, unpackStack, quickMove, canAccept, armorPreview, attackMob, mobDamage, combat, projectiles, spawnArrow, tickProjectiles, explode, skyVisible, blockLightAt, tickHostile, releaseBow, entities, MOB_DEFS, spawnMob, hurtMob, feedMob, updateEntities, raycastMob, resetMobs, saveMobs, migrateMeta, getContainer, updateFurnaces, ITEMS, armorSlots, moveAxis, itemEntities, spawnItem, throwItem, updateItems, setSwing:(v)=>{held.forceP=v; held.equip=1;}, step:(dt,n)=>{ for(let i=0;i<n;i++){ updatePlayer(dt); updateCamera(dt); updateInteraction(dt); updateSurvival(dt); updateChunks(player.pos.x,player.pos.z,50); } }, prof, get locked(){return locked;}, get noLock(){return noLock;}, sfx, setDay:(t)=>{dayTime=t;}, get gen(){return gen;}, inv, mouse, mining, get target(){return target;}, breakBlock, tryPlace, world, player, B, BLOCKS, CONFIG, keys, meshStats, stats, camera, renderer, scene, setState, startWorld, beginGame, openGui, closeGui, saveWorld, readMeta, matchRecipe, craftGrid2, craftGrid3, craftOut, getFps:()=>fps, get state(){return gameState;}, get cursor(){return cursor;}, clickSlot };
 const QS = new URLSearchParams(location.search);
 if(QS.has('autostart')){ world.persist=false; startWorld(12345); player.mode=QS.get('mode')||'creative'; if(player.mode==='creative') [B.grass,B.dirt,B.stone,B.cobblestone,B.planks,B.log,B.glass,B.torch,B.bricks].forEach((id,i)=>inv.slots[i]={id,count:64}); onInventoryChange(); setState('playing'); }
 else { toTitle(); }
