@@ -553,7 +553,12 @@ if(typeof importScripts === 'function'){
  * persisted weather/day count, v1–v6→v7. 6 browser checks pass; zero errors.
  * F3 CPU 7.44 ms in active fluid streaming (SwiftShader R2). Self-directed:
  * count urgent meshes against the same per-frame total as regular meshes.
- * Next: M9 redstone;
+ * M9 COMPLETE — wire levels 0–15 with decay, levers/buttons/plates,
+ * torches/lamps, directional delayed repeaters, powered doors/gates/
+ * trapdoors and saved primed TNT/chain reactions. Pistons deferred.
+ * v1–v7→v8. 6 circuit/explosion browser checks pass; zero errors;
+ * F3 CPU 5.78 ms, render .99 ms, chunks 3.56 ms (SwiftShader R2).
+ * Next: M10 player/QoL;
  * M5 shapes; M6 fluids; M7 worldgen; M8 weather; M9 redstone;
  * M10 player/QoL; M11 enchanting; M12 Nether; M13 performance.
  * Each milestone receives browser functional tests, F3 timing checks and a commit.
@@ -675,6 +680,10 @@ for(const [i,name] of ['red_mushroom','brown_mushroom'].entries())defBlock(189+i
 defBlock(191,'spawner',{label:'Monster Spawner',tex:{all:'spawner'},opaque:false,cutout:true,hardness:5,tool:'pickaxe',needsTool:true,drop:0});
 defBlock(192,'copper_block',{label:'Copper Block',tex:{all:'copper_block'},hardness:3,tool:'pickaxe',needsTool:true});
 defBlock(193,'mushroom_stem',{label:'Mushroom Stem',tex:{all:'mushroom_stem'},hardness:.2,sound:'wood'});defBlock(194,'mushroom_cap',{label:'Mushroom Cap',tex:{all:'mushroom_cap'},hardness:.2,sound:'grass'});
+for(let power=0;power<16;power++)defBlock(195+power,power?'wire_'+power:'wire',{label:'Redstone Wire ('+power+')',tex:{all:power?'wire_on':'wire_off'},model:'flat',solid:false,opaque:false,ao:false,hardness:0,drop:B.redstone,wire:power,sound:'stone'});
+for(const [id,name,model,tex,powered] of [[211,'lever','lever','lever',false],[212,'lever_on','lever','lever',true],[213,'button','button','stone',false],[214,'button_on','button','stone',true],[215,'pressure_plate','plate','planks',false],[216,'pressure_plate_on','plate','planks',true],[217,'redstone_torch','torch','redstone_torch',true],[218,'redstone_torch_off','torch','torch',false],[219,'redstone_lamp','cube','lamp_off',false],[220,'redstone_lamp_on','cube','lamp_on',true]])defBlock(id,name,{label:name.replaceAll('_',' '),tex:{all:tex},model,solid:model==='cube',opaque:model==='cube',ao:model==='cube',hardness:.5,sound:'wood',powered,light:id===220?15:id===217?7:0,drop:({212:211,214:213,216:215,218:217,220:219})[id]||id});
+defFacing(221,'repeater',{label:'Repeater',tex:{all:'repeater'},model:'repeater',opaque:false,ao:false,hardness:0,powered:false});defFacing(225,'repeater_on',{label:'Powered Repeater',tex:{all:'repeater_on'},model:'repeater',opaque:false,ao:false,hardness:0,powered:true,drop:221});
+defBlock(229,'tnt',{label:'TNT',tex:{all:'tnt'},hardness:0,sound:'grass'});
 const BLOCK_COUNT = BLOCKS.length;
 const LEAVES = new Set([8,30,39,41]);
 
@@ -706,6 +715,7 @@ ARMOR_MATS.forEach(([m,ingredient,points,dur],mi)=>['helmet','chestplate','leggi
 defItem(295,'carrot',{label:'Carrot',food:3});defItem(296,'potato',{label:'Potato',food:1});defItem(297,'baked_potato',{label:'Baked Potato',food:5});defItem(298,'bone_meal',{label:'Bone Meal'});defItem(299,'paper',{label:'Paper'});
 defItem(346,'bucket',{label:'Bucket',stack:16});defItem(347,'water_bucket',{label:'Water Bucket',stack:1});defItem(348,'lava_bucket',{label:'Lava Bucket',stack:1});
 defItem(350,'raw_copper',{label:'Raw Copper'});defItem(351,'copper_ingot',{label:'Copper Ingot'});defItem(352,'lapis',{label:'Lapis Lazuli'});defItem(353,'emerald',{label:'Emerald'});
+defItem(349,'flint_and_steel',{label:'Flint and Steel',icon:'flint',durability:64,stack:1});
 const isBlockId = (id)=> id>0 && id<256;
 const itemDef = (id)=> id<256 ? BLOCKS[id] : ITEMS[id];
 const itemLabel = (id)=> { const d=itemDef(id); return d ? d.label : '?'; };
@@ -979,7 +989,7 @@ const world = {
     const old=c.data[li]; if(old===id) return;
     c.data[li]=id;
     if(id===B.spawner)c.spawners.add(li);else c.spawners.delete(li);
-    wakeFluids(x,y,z);
+    wakeFluids(x,y,z);wakeRedstone(x,y,z);
     if(BLOCKS[id].light) c.emitters.add(li); else c.emitters.delete(li);
     if(record){ const k=ckey(cx,cz); let m=this.edits.get(k); if(!m){m=new Map();this.edits.set(k,m);} m.set(li,id); this.dirtyEdits.add(k); }
     // re-mesh this chunk and any neighbour whose padded volume (lighting reach) includes the block
@@ -997,7 +1007,7 @@ function onChunkData(cx,cz,data){
   const ed = loadChunkEdits(cx,cz);
   if(ed) for(const [li,id] of ed) data[li]=id;
   for(let i=0;i<data.length;i++){ const id=data[i]; if(id && BLOCKS[id].light) c.emitters.add(i);if(id===B.spawner)c.spawners.add(i); }
-  seedFluidChunk(c);
+  seedFluidChunk(c);seedRedstoneChunk(c);
   c.dirty = true;
   for(let dz=-1;dz<=1;dz++) for(let dx=-1;dx<=1;dx++){ const n=world.get(cx+dx,cz+dz); if(n&&n.data) n.dirty=true; }
 }
@@ -1648,6 +1658,7 @@ function playerIntersects(x,y,z){
   return p.x+PW>x && p.x-PW<x+1 && p.y+PH>y && p.y<y+1 && p.z+PW>z && p.z-PW<z+1;
 }
 function tryPlace(){
+  if(redstoneInteract())return true;
   if(bucketInteract())return true;
   if([B.bucket,B.water_bucket,B.lava_bucket].includes(inv.heldId()))return false;
   if(shapeInteract())return true;
@@ -1660,8 +1671,8 @@ function tryPlace(){
     if(tb.name==='crafting_table'){ openInventory(true); return true; }
     if(tb.container){ openContainerAt(target); return true; }
   }
-  const held=inv.held(); if(!held || !isBlockId(held.id)) return false;
-  let id=held.id; const b=BLOCKS[id];
+  const held=inv.held(); if(!held || !isBlockId(held.id)&&held.id!==B.redstone) return false;
+  let id=held.id===B.redstone?B.wire:held.id; const b=BLOCKS[id];
   if(b.model==='ladder'&&target.ny===0)id=b.base+SHAPE_DIR.findIndex(d=>d[0]===target.nx&&d[1]===target.nz);
   else if(b.facing!==undefined){ const k=((Math.round(player.yaw/(Math.PI/2))%4)+4)%4; id = b.base + (4-k)%4; }
   let x=target.x+target.nx, y=target.y+target.ny, z=target.z+target.nz;
@@ -1676,7 +1687,8 @@ function tryPlace(){
   if(b.model==='ladder'){const dir=SHAPE_DIR[BLOCKS[id].facing];if(!isSolidAt(x-dir[0],y,z-dir[1]))return false;}
   const below=world.getBlock(x,y-1,z);
   if(b.plant && !(below===B.grass||below===B.dirt||below===B.grass_snow||below===B.grass_taiga||(id===B.dead_bush&&below===B.sand))) return false;
-  if(b.model==='torch'){if(target.ny===0){const f=SHAPE_DIR.findIndex(d=>d[0]===target.nx&&d[1]===target.nz);if(f<0)return false;id=B.wall_torch+f;}else if(!(below>0 && BLOCKS[below].opaque)) return false;}
+  if(b.model==='torch'){if(target.ny===0&&held.id===B.torch){const f=SHAPE_DIR.findIndex(d=>d[0]===target.nx&&d[1]===target.nz);if(f<0)return false;id=B.wall_torch+f;}else if(!(below>0 && BLOCKS[below].opaque)) return false;}
+  if((id>=195&&id<=218||id>=221&&id<=228)&&!(below>0&&BLOCKS[below].solid))return false;
   if(id===B.cactus && !(below===B.sand||below===B.cactus)) return false;
   world.setBlock(x,y,z,id);
   if(player.mode==='survival') inv.consumeHeld(1);
@@ -1828,7 +1840,7 @@ function saveWorld(){
   }
   if(ok) world.dirtyEdits.clear();
   const containers=[]; for(const [k,c] of world.containers) containers.push([k,{t:c.type,s:c.slots.map(st=>packStack(st)),b:c.burn||0,bm:c.burnMax||0,c:c.cook||0}]);
-  const meta = { v:7, days:dayCount,weather:{type:weather.type,remaining:weather.remaining}, generator:world.genVersion||2, signs:[...signTexts], armor:armorSlots.map(packStack), xpOrbs:xpOrbs.map(e=>[e.value,e.pos.x,e.pos.y,e.pos.z]), mobs:saveMobs(), mobChunks:[...mobChunks], name:world.name, seed:world.seed, mode:player.mode, time:dayTime, spawn:world.spawn,
+  const meta = { v:8, tnt:primedTNT.map(e=>[e.pos.x,e.pos.y,e.pos.z,e.fuse]), days:dayCount,weather:{type:weather.type,remaining:weather.remaining}, generator:world.genVersion||2, signs:[...signTexts], armor:armorSlots.map(packStack), xpOrbs:xpOrbs.map(e=>[e.value,e.pos.x,e.pos.y,e.pos.z]), mobs:saveMobs(), mobChunks:[...mobChunks], name:world.name, seed:world.seed, mode:player.mode, time:dayTime, spawn:world.spawn,
     p:{ x:+player.pos.x.toFixed(2), y:+player.pos.y.toFixed(2), z:+player.pos.z.toFixed(2), yaw:+player.yaw.toFixed(3), pitch:+player.pitch.toFixed(3),
         fire:player.fire||0, hp:player.health, food:player.food, sat:player.sat, xp:player.xp, fly:player.flying },
     inv: inv.slots.map(st=>packStack(st)), sel:inv.sel, containers,
@@ -2521,7 +2533,7 @@ function titleUpdate(dt){
 
 /* ---- starting / continuing a world ---- */
 function beginGame(seed, meta, mode){
-  resetMobs();clearSigns();
+  resetMobs();clearSigns();resetRedstone();
   world.genVersion=meta?.generator||2;
   world.persist = true;
   if(!meta){ world.edits.clear(); world.containers.clear(); }
@@ -2544,6 +2556,7 @@ function beginGame(seed, meta, mode){
   }
   for(const [key,text] of meta?.signs||[])signTexts.set(key,text);
   dayCount=meta?.days||0;setWeather(meta?.weather?.type||'clear',meta?.weather?.remaining||300);
+  for(const e of meta?.tnt||[])primeTNT(e[0],e[1],e[2],e[3],true);
   restoreMobs(meta);
   onInventoryChange();
   loadingStart=performance.now();
@@ -2606,7 +2619,7 @@ function settleSpawn(){
 function startWorld(seed, state, keepChunks){
   if(!keepChunks || world.seed!==seed||world.builtGenVersion!==(world.genVersion||2)){
     for(const c of world.chunks.values()) disposeChunk(c);
-    world.chunks.clear();clearFluidQueue(); lastCenter=null; pendingLocal.length=0;
+    world.chunks.clear();clearFluidQueue();resetRedstone(); lastCenter=null; pendingLocal.length=0;
     world.seed=seed;world.builtGenVersion=world.genVersion||2; startWorkers(seed);
   }
   if(typeof clearItems==='function') clearItems();
@@ -3259,6 +3272,7 @@ function migrateMeta(m){
   if(m.v<5){if(m.p)m.p.fire=0;m.v=5;}
   if(m.v<6){m.generator=1;m.v=6;}
   if(m.v<7){m.days=0;m.weather={type:'clear',remaining:300};m.v=7;}
+  if(m.v<8){m.tnt=[];m.v=8;}
   return m;
 }
 function saveMobs(){ return entities.filter(e=>!e.dead).map(e=>({kind:e.kind,x:e.pos.x,y:e.pos.y,z:e.pos.z,hp:e.hp,yaw:e.yaw,baby:e.baby,breedCD:e.breedCD,persistent:e.persistent})); }
@@ -3334,7 +3348,7 @@ function spawnPassiveChunks(){
   }
 }
 function tickEntities(dt){
-  const start=performance.now(); entityClock.tick++; combat.cooldown=Math.max(0,combat.cooldown-dt);combat.hurt=Math.max(0,combat.hurt-dt);tickProjectiles(dt);tickXP(dt);tickFluids(dt);tickFire(dt);tickRandomBlocks(dt);updateSigns(dt);tickHostileSpawns(dt);tickSpawners(dt);tickWeatherRoof();
+  const start=performance.now(); entityClock.tick++; combat.cooldown=Math.max(0,combat.cooldown-dt);combat.hurt=Math.max(0,combat.hurt-dt);tickProjectiles(dt);tickXP(dt);tickFluids(dt);tickFire(dt);tickRandomBlocks(dt);updateSigns(dt);tickHostileSpawns(dt);tickSpawners(dt);tickWeatherRoof();tickRedstone(dt);
   entityClock.spawnT-=dt;if(entityClock.spawnT<=0){entityClock.spawnT=.5;spawnPassiveChunks();}
   for(let i=entities.length-1;i>=0;i--){
     const e=entities[i],p=e.pos,d=MOB_DEFS[e.kind]; e.prev.copy(p);
@@ -3458,6 +3472,7 @@ function explode(x,y,z,radius){
    if(dx*dx+dy*dy+dz*dz>radius*radius)continue;
    const bx=Math.floor(x)+dx,by=Math.floor(y)+dy,bz=Math.floor(z)+dz,id=world.getBlock(bx,by,bz),b=BLOCKS[id];
    if(id<=0||b.hardness<0||b.liquid)continue;
+   if(id===B.tnt){primeTNT(bx,by,bz,.5+Math.random());continue;}
    if(b.container)dropContainer(bx,by,bz);world.setBlock(bx,by,bz,0);if(b.drop&&Math.random()<.2)spawnItem(b.drop,1,bx+.5,by+.4,bz+.5);
  }
  for(const e of entities){const dist=Math.hypot(e.pos.x-x,e.pos.y-y,e.pos.z-z);if(dist<radius*2)hurtMob(e,Math.ceil((1-dist/(radius*2))*18));}
@@ -3599,6 +3614,7 @@ function buildShapeCache(){
   fence:[[.375,0,.375,.625,1.5,.625]],gate:[[0,0,.375,.125,1.5,.625],[.875,0,.375,1,1.5,.625],[.125,.4,.4375,.875,1.2,.5625]],
   gate_open:[[0,0,.375,.125,1.5,.625],[.875,0,.375,1,1.5,.625]],door:[[0,0,0,1,1,.1875]],door_open:[[0,0,0,.1875,1,1]],trapdoor:[[0,0,0,1,.1875,1]],trapdoor_open:[[0,0,0,1,1,.1875]],
   ladder:[[0,0,0,1,1,.0625]],pane:[[.4375,0,.4375,.5625,1,.5625]],bed:[[0,.1875,0,1,.5625,1],[.0625,0,.0625,.1875,.1875,.1875],[.8125,0,.8125,.9375,.1875,.9375]],
+  lever:[[.25,0,.25,.75,.2,.75],[.4375,.2,.375,.5625,.7,.5]],button:[[.3125,0,.3125,.6875,.125,.6875]],plate:[[.0625,0,.0625,.9375,.0625,.9375]],repeater:[[0,0,0,1,.125,1],[.25,.125,.2,.375,.4,.325],[.625,.125,.7,.75,.4,.825]],
   sign:[[.4375,0,.4375,.5625,.6,.5625],[0,.5,.4375,1,1,.5625]],wall_torch:[[.4375,.25,0,.5625,.875,.1875]]};
  for(const b of BLOCKS)if(shapes[b.model])SHAPE_CACHE[b.id]=rotateShape(shapes[b.model],b.facing||0);
  for(const type of ['fence','pane'])for(let mask=0;mask<16;mask++){
@@ -3858,14 +3874,74 @@ function updateWeather(dt){
  sfx.rain(weather.snow||gameState!=='playing'||!skyVisible(player.pos.x,player.pos.y+1.6,player.pos.z)?weather.strength*.2:weather.strength);
 }
 /* =========================================================================
+   34. REDSTONE — bounded work queue, decaying wire levels, directional
+       repeaters and edge-triggered devices; TNT uses shared swept physics.
+   ========================================================================= */
+const redstoneQueue=[],redstonePending=new Set(),redstoneDevices=new Map(),redstoneTimers=new Map(),primedTNT=[];
+const redstoneClock={tick:0,head:0,ms:0};
+function queueRedstone(x,y,z){if(y<0||y>=CH||redstoneQueue.length-redstoneClock.head>8192)return;const key=posKey(x,y,z);if(redstonePending.has(key))return;redstonePending.add(key);redstoneQueue.push([x,y,z,key]);}
+function wakeRedstone(x,y,z){queueRedstone(x,y,z);for(const d of FLUID_DIR)queueRedstone(x+d[0],y+d[1],z+d[2]);}
+function seedRedstoneChunk(c){for(let i=0;i<c.data.length;i++){const id=c.data[i];if(id>=195&&id<=229){const x=c.cx*16+(i&15),y=i>>8,z=c.cz*16+((i>>4)&15);wakeRedstone(x,y,z);if(id===B.button_on)redstoneTimers.set(posKey(x,y,z),{tick:redstoneClock.tick+20,id:B.button});}}}
+function powerAt(x,y,z,fromX=null,fromZ=null){
+ const id=world.getBlock(x,y,z),b=BLOCKS[id];if(!b)return 0;if(b.wire!==undefined)return b.wire;
+ if(b.powered&&['lever','button','plate','torch'].includes(b.model))return 15;
+ if(b.model==='repeater'&&b.powered){const d=SHAPE_DIR[b.facing];return fromX===null||fromX-x===d[0]&&fromZ-z===d[1]?15:0;}return 0;
+}
+function adjacentPower(x,y,z){let p=0;for(const d of FLUID_DIR)p=Math.max(p,powerAt(x+d[0],y+d[1],z+d[2],x,z));return p;}
+function redstoneCell(x,y,z,key){
+ const id=world.getBlock(x,y,z),b=BLOCKS[id];if(!b)return;
+ if(b.wire!==undefined){if(!isSolidAt(x,y-1,z)){world.setBlock(x,y,z,0);spawnItem(B.redstone,1,x+.5,y,z+.5);return;}
+  let p=0;for(const d of FLUID_DIR){const nx=x+d[0],ny=y+d[1],nz=z+d[2],nid=world.getBlock(nx,ny,nz),n=BLOCKS[nid];const power=powerAt(nx,ny,nz,x,z);p=Math.max(p,n?.wire!==undefined?Math.max(0,power-1):power);}
+  if(p!==b.wire)world.setBlock(x,y,z,195+p);return;
+ }
+ if(id===B.pressure_plate||id===B.pressure_plate_on){const p=player.pos,on=Math.abs(p.x-(x+.5))<.7&&Math.abs(p.z-(z+.5))<.7&&p.y>=y-.1&&p.y<y+.3;const next=on?B.pressure_plate_on:B.pressure_plate;if(next!==id)world.setBlock(x,y,z,next);queueRedstone(x,y,z);return;}
+ if(b.model==='repeater'){
+  const d=SHAPE_DIR[b.facing],input=powerAt(x-d[0],y,z-d[1],x,z)>0,next=(input?225:221)+b.facing;
+  if(next!==id&&!redstoneTimers.has(key))redstoneTimers.set(key,{tick:redstoneClock.tick+2,id:next});return;
+ }
+ if(id===B.redstone_torch||id===B.redstone_torch_off){let power=0;for(const d of FLUID_DIR){const nx=x+d[0],ny=y-1+d[1],nz=z+d[2];if(nx===x&&ny===y&&nz===z)continue;power=Math.max(power,powerAt(nx,ny,nz,x,z));}const below=power>0,next=below?B.redstone_torch_off:B.redstone_torch;if(next!==id)world.setBlock(x,y,z,next);return;}
+ if(id===B.redstone_lamp||id===B.redstone_lamp_on){const next=adjacentPower(x,y,z)>0?B.redstone_lamp_on:B.redstone_lamp;if(next!==id)world.setBlock(x,y,z,next);return;}
+ const power=adjacentPower(x,y,z)>0,prev=redstoneDevices.get(key);redstoneDevices.set(key,power);
+ if(id===B.tnt&&power){primeTNT(x,y,z);return;}
+ if((prev!==undefined||power)&&prev!==power&&(id>=108&&id<116||id>=124&&id<=131||id>=100&&id<=107)){const open=b.model.endsWith('_open');if(open!==power)toggleShape(x,y,z);}
+}
+function tickRedstone(dt){
+ redstoneClock.tick++;const t=performance.now();
+ for(const [key,timer] of redstoneTimers)if(timer.tick<=redstoneClock.tick){const [x,y,z]=key.split(',').map(Number),id=world.getBlock(x,y,z);redstoneTimers.delete(key);if(id===B.button_on||BLOCKS[id]?.model==='repeater')world.setBlock(x,y,z,timer.id);}
+ const stop=Math.min(redstoneQueue.length,redstoneClock.head+128);
+ while(redstoneClock.head<stop&&performance.now()-t<.6){const [x,y,z,key]=redstoneQueue[redstoneClock.head++];redstonePending.delete(key);redstoneCell(x,y,z,key);}
+ if(redstoneClock.head>4096){redstoneQueue.splice(0,redstoneClock.head);redstoneClock.head=0;}
+ for(let i=primedTNT.length-1;i>=0;i--){const e=primedTNT[i];e.fuse-=dt;e.vel.y=Math.max(-20,e.vel.y-28*dt);for(let axis=0;axis<3;axis++){const amount=e.vel.getComponent(axis)*dt;if(moveAxis(e.pos,axis,amount,.48,.96)!==amount)e.vel.setComponent(axis,0);}e.mesh.position.set(e.pos.x,e.pos.y+.48,e.pos.z);e.mesh.material.color.setScalar(e.fuse<1&&redstoneClock.tick%4<2?1.8:1);if(e.fuse<=0){scene.remove(e.mesh);e.mesh.material.dispose();primedTNT.splice(i,1);explode(e.pos.x,e.pos.y+.5,e.pos.z,4);}}
+ redstoneClock.ms=performance.now()-t;
+}
+function resetRedstone(){redstoneQueue.length=0;redstoneClock.head=0;redstonePending.clear();redstoneDevices.clear();redstoneTimers.clear();while(primedTNT.length){const e=primedTNT.pop();scene.remove(e.mesh);e.mesh.material.dispose();}}
+function primeTNT(x,y,z,fuse=4,restoring=false){
+ if(primedTNT.length>=32)return null;if(!restoring){if(world.getBlock(x,y,z)!==B.tnt)return null;world.setBlock(x,y,z,0);x+=.5;z+=.5;}
+ const source=heldMeshFor(B.tnt).mesh,mesh=new THREE.Mesh(source.geometry,source.material.clone());mesh.scale.setScalar(.96);const e={pos:new THREE.Vector3(x,y,z),vel:new THREE.Vector3(0,2,0),fuse,mesh};scene.add(mesh);primedTNT.push(e);sfx.fuse();return e;
+}
+function redstoneInteract(){
+ if(!target)return false;const t=target;
+ if(!player.sneaking&&(t.id===B.lever||t.id===B.lever_on)){world.setBlock(t.x,t.y,t.z,t.id===B.lever?B.lever_on:B.lever);sfx.click();return true;}
+ if(!player.sneaking&&(t.id===B.button||t.id===B.button_on)){world.setBlock(t.x,t.y,t.z,B.button_on);redstoneTimers.set(posKey(t.x,t.y,t.z),{tick:redstoneClock.tick+20,id:B.button});sfx.click();return true;}
+ if(t.id===B.tnt&&inv.heldId()===B.flint_and_steel){primeTNT(t.x,t.y,t.z);wearHeld();return true;}return false;
+}
+function buildRedstoneTextures(){
+ for(const [name,powered] of [['wire_off',false],['wire_on',true]])makeTile(name,(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++)P(x,y,vary(powered?[241,54,37]:[114,26,24],R,22),Math.abs(x-7.5)<1.5||Math.abs(y-7.5)<1.5?255:0);});
+ for(const [name,c] of [['lever',[143,125,92]],['lamp_off',[103,74,44]],['lamp_on',[244,196,93]],['repeater',[167,150,133]],['repeater_on',[214,127,112]],['tnt',[195,78,41]],['redstone_torch',[223,45,28]]])makeTile(name,(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++){const color=name==='tnt'&&y>5&&y<11?[225,211,174]:name.startsWith('lamp')&&(x%5===0||y%5===0)?[70,55,41]:c;P(x,y,vary(color,R,24));}});
+ CREATIVE_TABS[2].items.push(B.wire,B.lever,B.button,B.pressure_plate,B.redstone_torch,B.redstone_lamp,B.repeater,B.tnt);CREATIVE_TABS[3].items.push(B.flint_and_steel);
+ shapeless([B.stick,B.cobblestone],B.lever);shapeless([B.stone],B.button);shaped(['PP'],{P:PLANKS},B.pressure_plate);shaped(['R','S'],{R:[B.redstone],S:[B.stick]},B.redstone_torch);
+ shaped([' R ','RGR',' R '],{R:[B.redstone],G:[B.glowstone]},B.redstone_lamp);shaped(['TRT','SSS'],{T:[B.redstone_torch],R:[B.redstone],S:[B.stone]},B.repeater);
+ shaped(['GSG','SGS','GSG'],{G:[B.gunpowder],S:[B.sand]},B.tnt);shapeless([B.iron_ingot,B.flint],B.flint_and_steel);
+}
+/* =========================================================================
    20. BOOT
    ========================================================================= */
-buildTextures(); buildEntityTextures(); buildEquipmentTextures(); buildFarmTextures(); buildShapeTextures(); buildFluidTextures();buildBiomeTextures();
+buildTextures(); buildEntityTextures(); buildEquipmentTextures(); buildFarmTextures(); buildShapeTextures(); buildFluidTextures();buildBiomeTextures();buildRedstoneTextures();
 for(const n in TEX) TEX_NAME[TEX[n]]=n;
 buildShapeCache(); buildBlockTables(); makeMaterials(); initFluidMaterial(); makeCrackMats(); makeParticles();
 buildGuiImages(); buildHud(); applyGuiScale(); buildSky();buildWeather(); if(CONFIG.soundPack===false) sfx.usePack=false; soundLabel();
 scene.background = new THREE.Color(0x9cc8ff);
-window.__bc = { weather, setWeather, updateWeather, tickWeatherRoof, lightning, makeGenMain, WORLDGEN_SRC, tickSpawners, tickFluids, tickFire, fluidClock, wakeFluids, bucketInteract, sourceFluid, shapeBoxes, shapeRayHit, shapePlayerIntersects, toggleShape, sleepBed, signTexts, setSignText, SHAPE_CACHE, collectBoxes, hydrateFarmland, growCrop, growTree, randomBlockTick, farmInteract, tickRandomBlocks, farmClock, farmDrops, wearHeld, absorbDamage, spawnXP, xpOrbs, tickXP, makeStack, packStack, unpackStack, quickMove, canAccept, armorPreview, attackMob, mobDamage, combat, projectiles, spawnArrow, tickProjectiles, explode, skyVisible, blockLightAt, tickHostile, releaseBow, entities, MOB_DEFS, spawnMob, hurtMob, feedMob, updateEntities, raycastMob, resetMobs, saveMobs, migrateMeta, getContainer, updateFurnaces, ITEMS, armorSlots, moveAxis, itemEntities, spawnItem, throwItem, updateItems, setSwing:(v)=>{held.forceP=v; held.equip=1;}, step:(dt,n)=>{ for(let i=0;i<n;i++){ updatePlayer(dt); updateCamera(dt); updateInteraction(dt); updateSurvival(dt); updateChunks(player.pos.x,player.pos.z,50); } }, prof, get locked(){return locked;}, get noLock(){return noLock;}, sfx, setDay:(t)=>{dayTime=t;}, get gen(){return gen;}, inv, mouse, mining, get target(){return target;}, breakBlock, tryPlace, world, player, B, BLOCKS, CONFIG, keys, meshStats, stats, camera, renderer, scene, setState, startWorld, beginGame, openGui, closeGui, saveWorld, readMeta, matchRecipe, craftGrid2, craftGrid3, craftOut, getFps:()=>fps, get state(){return gameState;}, get cursor(){return cursor;}, clickSlot };
+window.__bc = { redstoneClock, powerAt, tickRedstone, wakeRedstone, primeTNT, primedTNT, redstoneInteract, weather, setWeather, updateWeather, tickWeatherRoof, lightning, makeGenMain, WORLDGEN_SRC, tickSpawners, tickFluids, tickFire, fluidClock, wakeFluids, bucketInteract, sourceFluid, shapeBoxes, shapeRayHit, shapePlayerIntersects, toggleShape, sleepBed, signTexts, setSignText, SHAPE_CACHE, collectBoxes, hydrateFarmland, growCrop, growTree, randomBlockTick, farmInteract, tickRandomBlocks, farmClock, farmDrops, wearHeld, absorbDamage, spawnXP, xpOrbs, tickXP, makeStack, packStack, unpackStack, quickMove, canAccept, armorPreview, attackMob, mobDamage, combat, projectiles, spawnArrow, tickProjectiles, explode, skyVisible, blockLightAt, tickHostile, releaseBow, entities, MOB_DEFS, spawnMob, hurtMob, feedMob, updateEntities, raycastMob, resetMobs, saveMobs, migrateMeta, getContainer, updateFurnaces, ITEMS, armorSlots, moveAxis, itemEntities, spawnItem, throwItem, updateItems, setSwing:(v)=>{held.forceP=v; held.equip=1;}, step:(dt,n)=>{ for(let i=0;i<n;i++){ updatePlayer(dt); updateCamera(dt); updateInteraction(dt); updateSurvival(dt); updateChunks(player.pos.x,player.pos.z,50); } }, prof, get locked(){return locked;}, get noLock(){return noLock;}, sfx, setDay:(t)=>{dayTime=t;}, get gen(){return gen;}, inv, mouse, mining, get target(){return target;}, breakBlock, tryPlace, world, player, B, BLOCKS, CONFIG, keys, meshStats, stats, camera, renderer, scene, setState, startWorld, beginGame, openGui, closeGui, saveWorld, readMeta, matchRecipe, craftGrid2, craftGrid3, craftOut, getFps:()=>fps, get state(){return gameState;}, get cursor(){return cursor;}, clickSlot };
 const QS = new URLSearchParams(location.search);
 if(QS.has('autostart')){ world.persist=false; startWorld(12345); player.mode=QS.get('mode')||'creative'; if(player.mode==='creative') [B.grass,B.dirt,B.stone,B.cobblestone,B.planks,B.log,B.glass,B.torch,B.bricks].forEach((id,i)=>inv.slots[i]={id,count:64}); onInventoryChange(); setState('playing'); }
 else { toTitle(); }
