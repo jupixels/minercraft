@@ -232,7 +232,8 @@ function makeNoise(seed){
 }
 
 /* ---- Terrain generator ---- */
-function makeGen(seed, B, version=1){
+function makeGen(seed, B, version=1,dimension='overworld'){
+  if(dimension==='nether')return makeNetherGen(seed,B);
   const N = makeNoise(seed), N2 = makeNoise(seed+101), N3 = makeNoise(seed+202);
   const smooth = (a,b,x)=>{ const t=Math.min(1,Math.max(0,(x-a)/(b-a))); return t*t*(3-2*t); };
 
@@ -496,11 +497,33 @@ function makeGen(seed, B, version=1){
   return {genChunk, heightAt, biomeAt, mountainAt, BIOME_NAMES};
 }
 
+/* Original Nether generator: self-contained, deterministic worker code. */
+function makeNetherGen(seed,B){
+ const N=makeNoise(seed^0x672ab),SEA=30;
+ const heightAt=(x,z)=>Math.floor(39+N.fbm2(x/90,z/90,3)*13);
+ function genChunk(cx,cz){
+  const d=new Uint8Array(16*16*128),R=mulberry32(seed^Math.imul(cx,73856093)^Math.imul(cz,19349663)),I=(x,y,z)=>x+(z<<4)+(y<<8);
+  for(let z=0;z<16;z++)for(let x=0;x<16;x++){
+   const wx=cx*16+x,wz=cz*16+z,h=heightAt(wx,wz);
+   for(let y=0;y<128;y++){
+    let id=0;if(y<2||y>125)id=B.bedrock;else if(y<=h||y>99+N.n2(wx/60,wz/60)*12)id=B.netherrack;
+    if(id===B.netherrack&&y>h-3&&y<=h&&N.n2(wx/45,wz/45)>.25)id=B.soul_sand;
+    if(y>5&&y<h-4&&N.n3(wx/26,y/19,wz/26)>.37)id=0;
+    if(!id&&y<=SEA)id=B.lava;d[I(x,y,z)]=id;
+   }
+   if(d[I(x,h,z)]===B.soul_sand&&R()<.06)d[I(x,h+1,z)]=B.nether_wart_block||0;
+  }
+  for(let n=0;n<16;n++){let x=(R()*16)|0,y=8+((R()*105)|0),z=(R()*16)|0;for(let k=0;k<8;k++){if(x>=0&&x<16&&z>=0&&z<16&&y>1&&y<126&&d[I(x,y,z)]===B.netherrack)d[I(x,y,z)]=B.nether_quartz_ore;x+=R()<.5?1:-1;y+=R()<.5?1:-1;}}
+  for(let n=0;n<8;n++){const x=2+((R()*12)|0),z=2+((R()*12)|0);for(let y=123;y>60;y--)if(d[I(x,y,z)]===0&&d[I(x,y+1,z)]===B.netherrack){for(let dy=0;dy<3;dy++)d[I(x,y-dy,z)]=B.glowstone;break;}}
+  return d;
+ }
+ return {genChunk,heightAt,biomeAt:()=>0,mountainAt:()=>0,BIOME_NAMES:['Ember Barrens']};
+}
 if(typeof importScripts === 'function'){
   let gen=null;
   onmessage = (e)=>{
     const m=e.data;
-    if(m.type==='init'){ gen = makeGen(m.seed, m.B,m.version||1); return; }
+    if(m.type==='init'){ gen = makeGen(m.seed, m.B,m.version||1,m.dimension||'overworld'); return; }
     if(m.type==='gen'){ const d=gen.genChunk(m.cx,m.cz); postMessage({type:'chunk',cx:m.cx,cz:m.cz,data:d},[d.buffer]); }
   };
 }
@@ -568,7 +591,14 @@ if(typeof importScripts === 'function'){
  * effects with HUD icons; recipes and original pixel bottles. v1–v9→v10.
  * 8 browser checks pass, zero errors; F3 CPU 4.72 ms, render .88 ms,
  * chunks 2.76 ms (SwiftShader R2), 246/256 atlas tiles.
- * Next: M12 Nether;
+ * M12 COMPLETE — lit obsidian portals, isolated dimension saves and return
+ * positions, original Nether terrain/lava/quartz/glowstone/soul sand and
+ * flying ember kites with explosive fireballs. v1–v10→v11. Round trip,
+ * inventory/enchantments/XP and Overworld edits pass; zero console errors.
+ * F3 CPU 4.49 ms, render 1.03 ms, chunks 2.54 ms (SwiftShader R2).
+ * Self-directed fixes: loading readiness matched to circular mesh range;
+ * enough padded generation neighbours; no urgent meshes outside view;
+ * bounded fluid simulation distance. Next: M13 performance/settings.
  * M5 shapes; M6 fluids; M7 worldgen; M8 weather; M9 redstone;
  * M10 player/QoL; M11 enchanting; M12 Nether; M13 performance.
  * Each milestone receives browser functional tests, F3 timing checks and a commit.
@@ -696,6 +726,10 @@ defFacing(221,'repeater',{label:'Repeater',tex:{all:'repeater'},model:'repeater'
 defBlock(229,'tnt',{label:'TNT',tex:{all:'tnt'},hardness:0,sound:'grass'});
 defBlock(230,'enchanting_table',{label:'Enchanting Table',tex:{top:'enchant_top',bottom:'obsidian',side:'enchant_side'},model:'enchant',opaque:false,ao:false,hardness:5,tool:'pickaxe',needsTool:true});
 defBlock(231,'brewing_stand',{label:'Brewing Stand',tex:{all:'cobblestone'},model:'brewing',opaque:false,ao:false,hardness:.5,container:'brewing'});
+defBlock(232,'netherrack',{label:'Netherrack',tex:{all:'netherrack'},hardness:.4,tool:'pickaxe',needsTool:true});
+defBlock(233,'soul_sand',{label:'Soul Sand',tex:{all:'soul_sand'},hardness:.5,sound:'sand',tool:'shovel'});
+defBlock(234,'nether_quartz_ore',{label:'Nether Quartz Ore',tex:{all:'nether_quartz_ore'},hardness:3,tool:'pickaxe',needsTool:true,drop:367});
+defBlock(235,'portal',{label:'Portal',tex:{all:'portal'},model:'portal',solid:false,opaque:false,ao:false,hardness:-1,light:11,drop:0});
 const BLOCK_COUNT = BLOCKS.length;
 const LEAVES = new Set([8,30,39,41]);
 
@@ -729,6 +763,7 @@ defItem(346,'bucket',{label:'Bucket',stack:16});defItem(347,'water_bucket',{labe
 defItem(350,'raw_copper',{label:'Raw Copper'});defItem(351,'copper_ingot',{label:'Copper Ingot'});defItem(352,'lapis',{label:'Lapis Lazuli'});defItem(353,'emerald',{label:'Emerald'});
 defItem(349,'flint_and_steel',{label:'Flint and Steel',icon:'flint',durability:64,stack:1});
 for(const [id,name,label,icon,effect] of [[354,'glass_bottle','Glass Bottle','bottle_empty',null],[355,'water_bottle','Water Bottle','bottle_water',null],[356,'awkward_potion','Awkward Potion','bottle_water',null],[357,'sugar','Sugar','sugar',null],[358,'blaze_powder','Blaze Powder','blaze_powder',null],[360,'golden_apple','Golden Apple','golden_apple',null],[361,'speed_potion','Potion of Speed','potion_speed','speed'],[362,'strength_potion','Potion of Strength','potion_strength','strength'],[363,'healing_potion','Potion of Healing','potion_healing','healing'],[364,'night_vision_potion','Potion of Night Vision','potion_night','night_vision'],[365,'fire_resistance_potion','Potion of Fire Resistance','potion_fire','fire_resistance'],[368,'blaze_rod','Blaze Rod','stick',null],[369,'magma_cream','Magma Cream','raw_copper',null],[371,'book','Book','book',null],[373,'slime_ball','Slime Ball','seeds',null],[374,'nether_wart','Nether Wart','raw_beef',null]])defItem(id,name,{label,icon,effect,stack:id>=354&&id<=356||effect?1:64,bottle:id>=354&&id<=356||!!effect});
+defItem(367,'nether_quartz',{label:'Nether Quartz'});
 const isBlockId = (id)=> id>0 && id<256;
 const itemDef = (id)=> id<256 ? BLOCKS[id] : ITEMS[id];
 const itemLabel = (id)=> { const d=itemDef(id); return d ? d.label : '?'; };
@@ -966,7 +1001,7 @@ let workers = [];
 let workerBusy = [];
 function startWorkers(seed){
   workers.forEach(w=>w.terminate()); workers=[]; workerBusy=[];
-  gen = makeGenMain(seed, B,world.genVersion||2);
+  gen = makeGenMain(seed, B,world.genVersion||2,world.dimension||'overworld');
   const n = clamp((navigator.hardwareConcurrency||4)-1, 1, 3);
   try{
     const url = URL.createObjectURL(new Blob([WORLDGEN_SRC],{type:'text/javascript'}));
@@ -974,7 +1009,7 @@ function startWorkers(seed){
       const w = new Worker(url);
       w.onmessage = (e)=>{ workerBusy[i]--; onChunkData(e.data.cx, e.data.cz, e.data.data); };
       w.onerror = ()=>{ workers=[]; };
-      w.postMessage({type:'init', seed, B,version:world.genVersion||2});
+      w.postMessage({type:'init', seed, B,version:world.genVersion||2,dimension:world.dimension||'overworld'});
       workers.push(w); workerBusy.push(0);
     }
   }catch(err){ workers=[]; }
@@ -1337,7 +1372,7 @@ function updateChunks(px, pz, budgetMs){
   const centerKey = pcx+','+pcz+','+R;
   if(centerKey!==lastCenter){
     lastCenter=centerKey; wanted=[];
-    const RR=R+1;
+    const RR=R+2;
     for(let dz=-RR;dz<=RR;dz++) for(let dx=-RR;dx<=RR;dx++){ const d2=dx*dx+dz*dz; if(d2<=(RR+0.5)*(RR+0.5)) wanted.push([pcx+dx,pcz+dz,d2]); }
     wanted.sort((a,b)=>a[2]-b[2]);
     for(const w of wanted) if(!world.get(w[0],w[1])) world.chunks.set(ckey(w[0],w[1]), new Chunk(w[0],w[1]));
@@ -1353,12 +1388,13 @@ function updateChunks(px, pz, budgetMs){
       c.requested=true; workerBusy[best]++; workers[best].postMessage({type:'gen',cx:c.cx,cz:c.cz});
     } else { c.requested=true; pendingLocal.push(c); }
   }
+  for(const c of world.chunks.values()){const visible=(c.cx-pcx)*(c.cx-pcx)+(c.cz-pcz)*(c.cz-pcz)<=(R+.5)*(R+.5);if(c.mesh)c.mesh.visible=visible;if(c.water)c.water.visible=visible;}
   const t0=performance.now();
   while(pendingLocal.length && performance.now()-t0<budgetMs*0.5){ const c=pendingLocal.shift(); if(world.get(c.cx,c.cz)===c) onChunkData(c.cx,c.cz,gen.genChunk(c.cx,c.cz)); }
   // mesh: urgent (player edits) first, then nearest dirty chunks with all neighbours ready
   const R2=(R+0.5)*(R+0.5);
   let meshed=0;
-  for(const c of world.chunks.values()) if(c.urgent && c.data && neighboursReady(c)){ if(meshed>0&&performance.now()-t0+meshStats.avg>budgetMs) break; meshChunk(c);meshed++; }
+  for(const c of world.chunks.values()) if((c.cx-pcx)*(c.cx-pcx)+(c.cz-pcz)*(c.cz-pcz)<=R2&&c.urgent && c.data && neighboursReady(c)){ if(meshed>0&&performance.now()-t0+meshStats.avg>budgetMs) break; meshChunk(c);meshed++; }
   for(const w of wanted){
     if(w[2]>R2) break;
     const c=world.get(w[0],w[1]);
@@ -1676,6 +1712,7 @@ function playerIntersects(x,y,z){
 }
 function tryPlace(){
   if(magicInteract())return true;
+  if(portalInteract())return true;
   if(redstoneInteract())return true;
   if(bucketInteract())return true;
   if([B.bucket,B.water_bucket,B.lava_bucket].includes(inv.heldId()))return false;
@@ -1839,13 +1876,13 @@ world.persist = false;world.genVersion=2; world.containers = new Map(); world.na
 function loadChunkEdits(cx,cz){
   const k=ckey(cx,cz); if(world.edits.has(k)) return world.edits.get(k);
   if(!world.persist) return null;
-  const raw=store.get(CHUNK_PREFIX+cx+','+cz); if(!raw) return null;
+  const raw=store.get(chunkPrefix()+cx+','+cz); if(!raw) return null;
   const m=new Map();
   for(const part of raw.split(',')){ if(!part) continue; const [a,b]=part.split('.'); m.set(parseInt(a,36), parseInt(b,36)); }
   world.edits.set(k,m); return m;
 }
 function readMeta(){ try{ const r=store.get(SAVE_KEY); return r?migrateMeta(JSON.parse(r)):null; }catch(e){ return null; } }
-function wipeSave(){ for(const k of store.keys()) if(k===SAVE_KEY || k.indexOf(CHUNK_PREFIX)===0) store.del(k); }
+function wipeSave(){ for(const k of store.keys()) if(k===SAVE_KEY || k.indexOf(CHUNK_PREFIX)===0||k.startsWith('bc.n.')) store.del(k); }
 let saveFailed=false;
 function saveWorld(){
   if(!world.persist) return;
@@ -1854,11 +1891,11 @@ function saveWorld(){
     const m=world.edits.get(k); if(!m) continue;
     const cx=Math.floor(k/65536)-32768, cz=(k%65536)-32768;
     let out=''; for(const [li,id] of m) out+=li.toString(36)+'.'+id.toString(36)+',';
-    if(!store.set(CHUNK_PREFIX+cx+','+cz, out)) ok=false;
+    if(!store.set(chunkPrefix()+cx+','+cz, out)) ok=false;
   }
   if(ok) world.dirtyEdits.clear();
   const containers=[]; for(const [k,c] of world.containers) containers.push([k,{t:c.type,s:c.slots.map(st=>packStack(st)),b:c.burn||0,bm:c.burnMax||0,c:c.cook||0}]);
-  const meta = { v:10, effects:player.effects||{}, advancements:[...advancements], tnt:primedTNT.map(e=>[e.pos.x,e.pos.y,e.pos.z,e.fuse]), days:dayCount,weather:{type:weather.type,remaining:weather.remaining}, generator:world.genVersion||2, signs:[...signTexts], armor:armorSlots.map(packStack), xpOrbs:xpOrbs.map(e=>[e.value,e.pos.x,e.pos.y,e.pos.z]), mobs:saveMobs(), mobChunks:[...mobChunks], name:world.name, seed:world.seed, mode:player.mode, time:dayTime, spawn:world.spawn,
+  const meta = { v:11, dimension:world.dimension||'overworld',dimensions:world.dimensionStates||{}, effects:player.effects||{}, advancements:[...advancements], tnt:primedTNT.map(e=>[e.pos.x,e.pos.y,e.pos.z,e.fuse]), days:dayCount,weather:{type:weather.type,remaining:weather.remaining}, generator:world.genVersion||2, signs:[...signTexts], armor:armorSlots.map(packStack), xpOrbs:xpOrbs.map(e=>[e.value,e.pos.x,e.pos.y,e.pos.z]), mobs:saveMobs(), mobChunks:[...mobChunks], name:world.name, seed:world.seed, mode:player.mode, time:dayTime, spawn:world.spawn,
     p:{ x:+player.pos.x.toFixed(2), y:+player.pos.y.toFixed(2), z:+player.pos.z.toFixed(2), yaw:+player.yaw.toFixed(3), pitch:+player.pitch.toFixed(3),
         fire:player.fire||0, hp:player.health, food:player.food, sat:player.sat, xp:player.xp, fly:player.flying },
     inv: inv.slots.map(st=>packStack(st)), sel:inv.sel, containers,
@@ -2544,9 +2581,11 @@ function closeGuiSilently(){ if(guiOpen){ const grid=guiOpen==='table'?craftGrid
 let titleCam = { x:0, y:90, z:0, yaw:0 };
 function setupTitleWorld(meta){
   const seed = meta ? meta.seed : 20261018;
+  world.dimension=meta?.dimension||'overworld';world.dimensionStates=meta?.dimensions||{};
+  world.dimension=meta?.dimension||'overworld';
   world.genVersion=meta?.generator||2;
   world.persist = !!meta;            // read saved edits so the panorama shows your builds
-  if(world.seed!==seed || !workers.length||world.builtGenVersion!==world.genVersion){ world.edits.clear(); world.dirtyEdits.clear(); startWorld(seed, null, false); }
+  if(world.seed!==seed || !workers.length||world.builtGenVersion!==world.genVersion||world.builtDimension!==(world.dimension||'overworld')){ world.edits.clear(); world.dirtyEdits.clear(); startWorld(seed, null, false); }
   if(meta){ titleCam.x=meta.p.x; titleCam.z=meta.p.z; titleCam.y=Math.max(meta.p.y+6, SEA+12); }
   else { const [sx,sz]=findSpawn(); titleCam.x=sx; titleCam.z=sz; titleCam.y=gen.heightAt(Math.floor(sx),Math.floor(sz))+14; }
 }
@@ -2560,6 +2599,7 @@ function titleUpdate(dt){
 
 /* ---- starting / continuing a world ---- */
 function beginGame(seed, meta, mode){
+  world.dimension=meta?.dimension||'overworld';world.dimensionStates=meta?.dimensions||{};
   resetMobs();clearSigns();resetRedstone();
   world.genVersion=meta?.generator||2;
   world.persist = true;
@@ -2595,7 +2635,7 @@ let loadingStart=0;
 function checkLoading(){
   const pcx=Math.floor(player.pos.x)>>4, pcz=Math.floor(player.pos.z)>>4;
   let need=0, done=0; const r=Math.min(2,CONFIG.renderDistance);
-  for(let dz=-r;dz<=r;dz++) for(let dx=-r;dx<=r;dx++){ need++; const c=world.get(pcx+dx,pcz+dz); if(c&&c.meshed) done++; }
+  for(let dz=-r;dz<=r;dz++) for(let dx=-r;dx<=r;dx++){ if(dx*dx+dz*dz>(r+.5)*(r+.5))continue;need++; const c=world.get(pcx+dx,pcz+dz); if(c&&c.meshed) done++; }
   $('loadingBar').style.width=(done/need*100)+'%';
   $('loadingText').textContent = done<need ? 'Loading terrain' : 'Building terrain';
   if(done>=need && !spawnPending){
@@ -2641,15 +2681,16 @@ function findSpawn(){
   return [0.5,0.5];
 }
 function settleSpawn(){
+  if(world.dimension==='nether'){settleNetherSpawn();return;}
   const x=Math.floor(player.pos.x), z=Math.floor(player.pos.z);
   for(let y=CH-1;y>0;y--){ const id=world.getBlock(x,y,z); if(id>0 && (BLOCKS[id].solid || BLOCKS[id].liquid)){ player.pos.y=y+1; break; } }
   player.vel.set(0,0,0); spawnPending=false;
 }
 function startWorld(seed, state, keepChunks){
-  if(!keepChunks || world.seed!==seed||world.builtGenVersion!==(world.genVersion||2)){
+  if(!keepChunks || world.seed!==seed||world.builtGenVersion!==(world.genVersion||2)||world.builtDimension!==(world.dimension||'overworld')){
     for(const c of world.chunks.values()) disposeChunk(c);
     world.chunks.clear();clearFluidQueue();resetRedstone(); lastCenter=null; pendingLocal.length=0;
-    world.seed=seed;world.builtGenVersion=world.genVersion||2; startWorkers(seed);
+    world.seed=seed;world.builtDimension=world.dimension||'overworld';world.builtGenVersion=world.genVersion||2; startWorkers(seed);
   }
   if(typeof clearItems==='function') clearItems();
   resetMobs();
@@ -3215,6 +3256,7 @@ function addRecipeButton(panel, x, y){
        original procedural skins, passive AI, breeding and v1 save migration.
    ========================================================================= */
 const MOB_DEFS = {
+  ember_kite:{hp:20,w:.75,h:1.6,speed:1.2,color:[197,155,118],hostile:true,flying:true,fireImmune:true,loot:[['blaze_rod',2],['nether_wart',2]]},
   pig: {hp:10,w:.42,h:.95,speed:1.25,color:[218,142,139],food:'wheat',loot:[['raw_pork',2]]},
   cow: {hp:16,w:.45,h:1.4,speed:1.1,color:[109,77,57],food:'wheat',loot:[['raw_beef',2],['leather',1]]},
   sheep: {hp:8,w:.42,h:1.2,speed:1.2,color:[220,218,195],food:'wheat',loot:[['wool',2]]},
@@ -3266,6 +3308,7 @@ function mobModel(kind){
   const d=MOB_DEFS[kind], g=new THREE.Group(), parts=[], legs=[];
   const box=(w,h,l,x,y,z,parent=g)=>{ const m=new THREE.Mesh(mobGeometry,mobMaterial(kind).normal); m.scale.set(w,h,l); m.position.set(x,y,z); parent.add(m); parts.push(m); return m; };
   const bird=kind==='chicken';
+  if(kind==='ember_kite'){box(1.4,1.05,1.25,0,1,0);const head=new THREE.Group();g.add(head);for(let i=0;i<6;i++){const leg=new THREE.Group();leg.position.set((i%3-1)*.4,.5,(i<3?-.35:.35));g.add(leg);box(.15,.65,.15,0,-.3,0,leg);legs.push(leg);}return {g,parts,head,legs};}
   if(kind==='zombie'||kind==='skeleton'){
     box(.5,.7,.3,0,.95,0);const head=new THREE.Group();head.position.y=1.55;g.add(head);box(.48,.48,.43,0,0,0,head);
     for(let i=0;i<4;i++){const pivot=new THREE.Group();pivot.position.set((i&1?1:-1)*(i<2?.14:.36),i<2?.65:1.25,0);g.add(pivot);box(i<2?.2:.16,i<2?.65:.6,.2,0,i<2?-.32:-.2,i<2?0:-.22,pivot);legs.push(pivot);}
@@ -3304,6 +3347,7 @@ function migrateMeta(m){
   if(m.v<8){m.tnt=[];m.v=8;}
   if(m.v<9){m.advancements=[];m.v=9;}
   if(m.v<10){m.effects={};m.v=10;}
+  if(m.v<11){m.dimension='overworld';m.dimensions={};m.v=11;}
   return m;
 }
 function saveMobs(){ return entities.filter(e=>!e.dead).map(e=>({kind:e.kind,x:e.pos.x,y:e.pos.y,z:e.pos.z,hp:e.hp,yaw:e.yaw,baby:e.baby,breedCD:e.breedCD,persistent:e.persistent})); }
@@ -3316,8 +3360,8 @@ function mobScale(e){ return e.baby>0?.55:1; }
 function mobPhysics(e,dt){
   const p=e.pos,v=e.vel,d=MOB_DEFS[e.kind],scale=mobScale(e),w=d.w*scale,h=d.h*scale;
   if(world.getBlock(Math.floor(p.x),Math.floor(p.y),Math.floor(p.z))<0) return;
-  const fluid=BLOCKS[world.getBlock(Math.floor(p.x),Math.floor(p.y+.2),Math.floor(p.z))]?.fluid;const inWater=!!fluid;if(fluid==='lava'){e.lavaT=(e.lavaT||0)+dt;if(e.lavaT>=1){e.lavaT=0;hurtMob(e,4);}}
-  v.y=inWater?Math.min(3,v.y+dt*12):Math.max(-35,v.y-28*dt);
+  const fluid=BLOCKS[world.getBlock(Math.floor(p.x),Math.floor(p.y+.2),Math.floor(p.z))]?.fluid;const inWater=!!fluid;if(fluid==='lava'&&!d.fireImmune){e.lavaT=(e.lavaT||0)+dt;if(e.lavaT>=1){e.lavaT=0;hurtMob(e,4);}}
+  v.y=d.flying?Math.sin(e.age)*.5:inWater?Math.min(3,v.y+dt*12):Math.max(-35,v.y-28*dt);
   if(e.kind==='chicken' && v.y<-3) v.y=-3;
   const steps=Math.max(1,Math.ceil(Math.max(Math.abs(v.x),Math.abs(v.y),Math.abs(v.z))*dt/.4)),sd=dt/steps;
   e.onGround=false;
@@ -3364,7 +3408,7 @@ function feedMob(e){
 }
 function feedTargetMob(){return feedMob(raycastMob());}
 function spawnPassiveChunks(){
-  if(entities.length>=24)return;
+  if(world.dimension==='nether'||entities.length>=24)return;
   let checked=0;
   for(const c of world.chunks.values()){
     if(!c.data||mobChunks.has(ckey(c.cx,c.cz)))continue;
@@ -3379,7 +3423,7 @@ function spawnPassiveChunks(){
   }
 }
 function tickEntities(dt){
-  const start=performance.now(); entityClock.tick++;if(entityClock.tick%4===0&&player.sprinting&&player.onGround)emitParticle(player.pos.x,player.pos.y+.1,player.pos.z,(Math.random()-.5)*2,.6,(Math.random()-.5)*2,TEX.dirt); combat.cooldown=Math.max(0,combat.cooldown-dt);combat.hurt=Math.max(0,combat.hurt-dt);tickProjectiles(dt);tickXP(dt);tickFluids(dt);tickFire(dt);tickRandomBlocks(dt);updateSigns(dt);tickHostileSpawns(dt);tickSpawners(dt);tickWeatherRoof();tickRedstone(dt);tickMagic(dt);
+  const start=performance.now(); entityClock.tick++;if(entityClock.tick%4===0&&player.sprinting&&player.onGround)emitParticle(player.pos.x,player.pos.y+.1,player.pos.z,(Math.random()-.5)*2,.6,(Math.random()-.5)*2,TEX.dirt); combat.cooldown=Math.max(0,combat.cooldown-dt);combat.hurt=Math.max(0,combat.hurt-dt);tickProjectiles(dt);tickXP(dt);tickFluids(dt);tickFire(dt);tickRandomBlocks(dt);updateSigns(dt);tickHostileSpawns(dt);tickSpawners(dt);tickWeatherRoof();tickRedstone(dt);tickMagic(dt);tickPortals(dt);
   entityClock.spawnT-=dt;if(entityClock.spawnT<=0){entityClock.spawnT=.5;spawnPassiveChunks();}
   for(let i=entities.length-1;i>=0;i--){
     const e=entities[i],p=e.pos,d=MOB_DEFS[e.kind]; e.prev.copy(p);
@@ -3446,7 +3490,8 @@ function tickHostile(e,dt,dist){
  let speed=0;
  if(e.sees&&player.mode!=='creative'&&gameState==='playing'){
    e.yaw=Math.atan2(pp.x-p.x,pp.z-p.z);speed=d.speed;
-   if(e.kind==='skeleton'){
+   if(e.kind==='ember_kite'){speed=dist<100?-.7:1;if(e.attackT<=0){e.attackT=3;const dx=pp.x-p.x,dy=pp.y+1-p.y,dz=pp.z-p.z,l=Math.hypot(dx,dy,dz)||1;spawnFireball(p.x,p.y+1,p.z,dx/l*12,dy/l*12,dz/l*12);}}
+   else if(e.kind==='skeleton'){
      if(dist<100)speed=dist<16?-d.speed:0;
      if(e.attackT<=0){e.attackT=2;const dx=pp.x-p.x,dz=pp.z-p.z,dy=pp.y+1.1-(p.y+1.4),l=Math.hypot(dx,dy,dz)||1;spawnArrow(p.x,p.y+1.4,p.z,dx/l*17,(dy/l+Math.sqrt(dist)/400)*17,dz/l*17,'hostile');}
    }else if(e.kind==='creeper'){
@@ -3466,8 +3511,8 @@ function tickHostileSpawns(dt){
    if(!c?.meshed||c.dirty)continue;
    const y=attempt<3?gen.heightAt(x,z)+1:Math.floor(8+Math.random()*Math.max(1,pp.y-8));
    if(y>=CH-2||world.getBlock(x,y,z)!==0||world.getBlock(x,y+1,z)!==0||!isSolidAt(x,y-1,z)||blockLightAt(x,y,z)>0)continue;
-   if(U.uSky.value>.3&&skyVisible(x,y+1,z))continue;
-   const kinds=['zombie','skeleton','spider','creeper'];spawnMob(kinds[(Math.random()*4)|0],x+.5,y,z+.5);break;
+   if(world.dimension!=='nether'&&U.uSky.value>.3&&skyVisible(x,y+1,z))continue;
+   const kinds=['zombie','skeleton','spider','creeper'];spawnMob(world.dimension==='nether'?'ember_kite':kinds[(Math.random()*4)|0],x+.5,y,z+.5);break;
  }
 }
 function spawnArrow(x,y,z,vx,vy,vz,owner='player'){
@@ -3488,9 +3533,9 @@ function tickProjectiles(dt){
    e.vel.y-=12*dt;const steps=Math.max(1,Math.ceil(e.vel.length()*dt/.15)),sd=dt/steps;
    for(let k=0;k<steps;k++){
      e.pos.addScaledVector(e.vel,sd);const p=e.pos,id=world.getBlock(Math.floor(p.x),Math.floor(p.y),Math.floor(p.z));
-     if(id<0||BLOCKS[id]?.solid){e.stuck=true;break;}
-     if(e.owner==='hostile'){
-       const pp=player.pos;if(Math.abs(p.x-pp.x)<PW+.08&&Math.abs(p.z-pp.z)<PW+.08&&p.y>pp.y&&p.y<pp.y+PH){mobDamage(4,'arrow');e.age=31;break;}
+     if(id<0||BLOCKS[id]?.solid){if(e.owner==='fireball'){explode(e.pos.x,e.pos.y,e.pos.z,2);e.age=31;}else e.stuck=true;break;}
+     if(e.owner==='hostile'||e.owner==='fireball'){
+       const pp=player.pos;if(Math.abs(p.x-pp.x)<PW+.08&&Math.abs(p.z-pp.z)<PW+.08&&p.y>pp.y&&p.y<pp.y+PH){mobDamage(e.owner==='fireball'?6:4,e.owner==='fireball'?'fire':'arrow');if(e.owner==='fireball')player.fire=5;e.age=31;break;}
      }else for(const m of entities){const d=MOB_DEFS[m.kind],s=mobScale(m);if(!m.dead&&Math.abs(p.x-m.pos.x)<d.w*s&&Math.abs(p.z-m.pos.z)<d.w*s&&p.y>m.pos.y&&p.y<m.pos.y+d.h*s){hurtMob(m,6);e.age=31;break;}}
      if(e.age>30)break;
    }
@@ -3645,7 +3690,7 @@ function buildShapeCache(){
   fence:[[.375,0,.375,.625,1.5,.625]],gate:[[0,0,.375,.125,1.5,.625],[.875,0,.375,1,1.5,.625],[.125,.4,.4375,.875,1.2,.5625]],
   gate_open:[[0,0,.375,.125,1.5,.625],[.875,0,.375,1,1.5,.625]],door:[[0,0,0,1,1,.1875]],door_open:[[0,0,0,.1875,1,1]],trapdoor:[[0,0,0,1,.1875,1]],trapdoor_open:[[0,0,0,1,1,.1875]],
   ladder:[[0,0,0,1,1,.0625]],pane:[[.4375,0,.4375,.5625,1,.5625]],bed:[[0,.1875,0,1,.5625,1],[.0625,0,.0625,.1875,.1875,.1875],[.8125,0,.8125,.9375,.1875,.9375]],
-  enchant:[[0,0,0,1,.75,1],[.15,.75,.3,.85,.86,.7]],brewing:[[0,0,0,1,.125,1],[.4375,.125,.4375,.5625,.9,.5625],[.125,.125,.125,.375,.45,.375],[.625,.125,.625,.875,.45,.875]],
+  portal:[[0,0,.4375,1,1,.5625]],enchant:[[0,0,0,1,.75,1],[.15,.75,.3,.85,.86,.7]],brewing:[[0,0,0,1,.125,1],[.4375,.125,.4375,.5625,.9,.5625],[.125,.125,.125,.375,.45,.375],[.625,.125,.625,.875,.45,.875]],
   lever:[[.25,0,.25,.75,.2,.75],[.4375,.2,.375,.5625,.7,.5]],button:[[.3125,0,.3125,.6875,.125,.6875]],plate:[[.0625,0,.0625,.9375,.0625,.9375]],repeater:[[0,0,0,1,.125,1],[.25,.125,.2,.375,.4,.325],[.625,.125,.7,.75,.4,.825]],
   sign:[[.4375,0,.4375,.5625,.6,.5625],[0,.5,.4375,1,1,.5625]],wall_torch:[[.4375,.25,0,.5625,.875,.1875]]};
  for(const b of BLOCKS)if(shapes[b.model])SHAPE_CACHE[b.id]=rotateShape(shapes[b.model],b.facing||0);
@@ -3792,8 +3837,9 @@ function updateFluidCell(x,y,z){
  if(next!==id){if(b?.plant&&next)spawnItem(b.drop,1,x+.5,y+.2,z+.5);world.setBlock(x,y,z,next);}
 }
 function tickFluids(dt){
+ const center=(Math.floor(player.pos.x)>>4)+','+(Math.floor(player.pos.z)>>4);if(center!==fluidClock.center){fluidClock.center=center;for(const c of world.chunks.values())if(c.data&&Math.abs(c.cx*16-player.pos.x)<48&&Math.abs(c.cz*16-player.pos.z)<48)seedFluidChunk(c);}
  fluidClock.tick++;if(fluidClock.tick%2)return;const t=performance.now(),n=Math.min(96,fluidClock.count);let done=0;
- while(done<n&&performance.now()-t<.8){const i=fluidClock.head,x=fluidX[i],y=fluidY[i],z=fluidZ[i];fluidClock.head=(i+1)&(FLUID_CAP-1);fluidClock.count--;fluidPending.delete(posKey(x,y,z));updateFluidCell(x,y,z);done++;}
+ while(done<n&&performance.now()-t<.8){const i=fluidClock.head,x=fluidX[i],y=fluidY[i],z=fluidZ[i];fluidClock.head=(i+1)&(FLUID_CAP-1);fluidClock.count--;fluidPending.delete(posKey(x,y,z));if(Math.abs(x-player.pos.x)<48&&Math.abs(z-player.pos.z)<48)updateFluidCell(x,y,z);done++;}
  fluidClock.ms=performance.now()-t;fluidClock.processed+=done;
 }
 function liquidCorners(i,type){
@@ -4083,14 +4129,64 @@ function buildMagicTextures(){
  shaped([' B ','DOD','OOO'],{B:[B.book],D:[B.diamond],O:[B.obsidian]},B.enchanting_table);shaped([' R ','CCC'],{R:[B.blaze_rod],C:[B.cobblestone]},B.brewing_stand);shaped(['GGG','GAG','GGG'],{G:[B.gold_nugget],A:[B.apple]},B.golden_apple);
 }
 /* =========================================================================
+   37. DIMENSIONS — inventories stay global; chunk edits, containers, entities,
+       signs, positions and spawn points are isolated per dimension.
+   ========================================================================= */
+const portalState={time:0,cooldown:0,arrival:false};
+function chunkPrefix(){return world.dimension==='nether'?'bc.n.c.':CHUNK_PREFIX;}
+function captureDimension(meta){const out={};for(const key of ['p','spawn','containers','mobs','mobChunks','items','signs','tnt','time','days','weather'])out[key]=meta[key];return out;}
+function switchDimension(next){
+ if(!['overworld','nether'].includes(next)||next===(world.dimension||'overworld'))return false;
+ saveWorld();const meta=readMeta();if(!meta)return false;
+ const current=world.dimension||'overworld',states=world.dimensionStates||{};states[current]=captureDimension(meta);
+ const saved=states[next],scale=next==='nether'?1/8:8;
+ const state=saved||{p:{...meta.p,x:clamp(player.pos.x*scale,-490000,490000),y:80,z:clamp(player.pos.z*scale,-490000,490000)},spawn:null,containers:[],mobs:[],mobChunks:[],items:[],signs:[],tnt:[],time:meta.time,days:meta.days,weather:{type:'clear',remaining:600}};
+ const merged={...meta,...state,p:{...meta.p,x:state.p.x,y:state.p.y,z:state.p.z,yaw:state.p.yaw,pitch:state.p.pitch},dimension:next,dimensions:states,inv:meta.inv,armor:meta.armor,effects:meta.effects,advancements:meta.advancements};
+ beginGame(meta.seed,merged,meta.mode);portalState.cooldown=5;portalState.time=0;
+ if(!saved){spawnPending=true;portalState.arrival=true;}saveWorld();return true;
+}
+function settleNetherSpawn(){
+ const x=Math.floor(player.pos.x),z=Math.floor(player.pos.z);let found=false;
+ for(let y=35;y<110;y++)if(world.getBlock(x,y,z)===0&&world.getBlock(x,y+1,z)===0&&isSolidAt(x,y-1,z)&&world.getBlock(x,y-1,z)!==B.lava){player.pos.y=y;found=true;break;}
+ if(!found){const y=50;for(let dx=-2;dx<=4;dx++)for(let dz=-2;dz<=2;dz++){world.setBlock(x+dx,y-1,z+dz,B.obsidian);for(let dy=0;dy<5;dy++)world.setBlock(x+dx,y+dy,z+dz,0);}player.pos.y=y;}
+ player.vel.set(0,0,0);spawnPending=false;if(portalState.arrival){createPortal(x+2,Math.floor(player.pos.y),z);portalState.arrival=false;}
+}
+function createPortal(x,y,z,axis=0){
+ for(let h=0;h<5;h++)for(let w=0;w<4;w++){const xx=x+(axis===0?w:0),zz=z+(axis===1?w:0);world.setBlock(xx,y+h,zz,h===0||h===4||w===0||w===3?B.obsidian:B.portal);}
+}
+function lightPortal(x,y,z){
+ for(let axis=0;axis<2;axis++)for(let dy=0;dy<5;dy++)for(let dw=0;dw<4;dw++){
+  const ox=x-(axis===0?dw:0),oy=y-dy,oz=z-(axis===1?dw:0);if(oy<1||oy+4>=CH)continue;let valid=true;
+  for(let h=0;h<5&&valid;h++)for(let w=0;w<4;w++){const id=world.getBlock(ox+(axis===0?w:0),oy+h,oz+(axis===1?w:0)),edge=h===0||h===4||w===0||w===3;if(edge?id!==B.obsidian:id!==0&&id!==B.portal){valid=false;break;}}
+  if(valid){createPortal(ox,oy,oz,axis);sfx.fuse();return true;}
+ }
+ return false;
+}
+function portalInteract(){if(inv.heldId()!==B.flint_and_steel||!target||target.id!==B.obsidian)return false;const t=target,ok=lightPortal(t.x,t.y,t.z);if(ok)wearHeld();return ok;}
+function tickPortals(dt){
+ portalState.cooldown=Math.max(0,portalState.cooldown-dt);
+ const p=player.pos,id=world.getBlock(Math.floor(p.x),Math.floor(p.y+.6),Math.floor(p.z));
+ if(id===B.portal&&portalState.cooldown<=0&&gameState==='playing'){portalState.time+=dt;if(portalState.time>2)switchDimension(world.dimension==='nether'?'overworld':'nether');}else portalState.time=0;
+}
+let fireballGeometry=new THREE.BoxGeometry(.3,.3,.3),fireballMaterial;
+function spawnFireball(x,y,z,vx,vy,vz){const e=spawnArrow(x,y,z,vx,vy,vz,'fireball');if(!e)return null;if(!fireballMaterial){const t=new THREE.CanvasTexture(TILE_CANVAS.lava_still);t.magFilter=t.minFilter=THREE.NearestFilter;t.generateMipmaps=false;fireballMaterial=new THREE.MeshBasicMaterial({map:t});}e.mesh.geometry=fireballGeometry;e.mesh.material=fireballMaterial;return e;}
+function buildNetherTextures(){
+ makeTile('netherrack',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++)P(x,y,vary((x*7+y*3)%11<3?[91,43,37]:[128,64,49],R,28));});
+ makeTile('soul_sand',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++)P(x,y,vary((x*5+y*7)%19<3?[68,57,45]:[115,91,68],R,24));});
+ makeTile('nether_quartz_ore',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++)P(x,y,vary((x*5+y*3)%17<4?[229,217,191]:[122,60,47],R,28));});
+ makeTile('portal',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++){const v=Math.sin(x*.7+Math.sin(y*.7)*2)*30;P(x,y,vary([108+v,48+v*.3,163+v],R,16));}});
+ makeTile('item_nether_quartz',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++)P(x,y,vary([224,214,192],R,32),Math.abs(x-8)*.8+Math.abs(y-8)<6?255:0);});
+ CREATIVE_TABS[1].items.push(B.netherrack,B.soul_sand,B.nether_quartz_ore);CREATIVE_TABS[3].items.push(B.nether_quartz);
+}
+/* =========================================================================
    20. BOOT
    ========================================================================= */
-buildTextures(); buildEntityTextures(); buildEquipmentTextures(); buildFarmTextures(); buildShapeTextures(); buildFluidTextures();buildBiomeTextures();buildRedstoneTextures();buildMagicTextures();
+buildTextures(); buildEntityTextures(); buildEquipmentTextures(); buildFarmTextures(); buildShapeTextures(); buildFluidTextures();buildBiomeTextures();buildRedstoneTextures();buildMagicTextures();buildNetherTextures();
 for(const n in TEX) TEX_NAME[TEX[n]]=n;
 buildShapeCache(); buildBlockTables(); makeMaterials(); initFluidMaterial(); makeCrackMats(); makeParticles();
 buildGuiImages(); buildHud(); applyGuiScale(); buildSky();buildWeather();buildPlayerModel(); if(CONFIG.soundPack===false) sfx.usePack=false; soundLabel();
 scene.background = new THREE.Color(0x9cc8ff);
-window.__bc = { enchantHeld, tickMagic, BREW, drinkPotion, command, pickBlock, advancements, awardAdvancement, get cameraMode(){return cameraMode;}, setCameraMode:(m)=>cameraMode=((m%3)+3)%3, updateThirdPerson, redstoneClock, powerAt, tickRedstone, wakeRedstone, primeTNT, primedTNT, redstoneInteract, weather, setWeather, updateWeather, tickWeatherRoof, lightning, makeGenMain, WORLDGEN_SRC, tickSpawners, tickFluids, tickFire, fluidClock, wakeFluids, bucketInteract, sourceFluid, shapeBoxes, shapeRayHit, shapePlayerIntersects, toggleShape, sleepBed, signTexts, setSignText, SHAPE_CACHE, collectBoxes, hydrateFarmland, growCrop, growTree, randomBlockTick, farmInteract, tickRandomBlocks, farmClock, farmDrops, wearHeld, absorbDamage, spawnXP, xpOrbs, tickXP, makeStack, packStack, unpackStack, quickMove, canAccept, armorPreview, attackMob, mobDamage, combat, projectiles, spawnArrow, tickProjectiles, explode, skyVisible, blockLightAt, tickHostile, releaseBow, entities, MOB_DEFS, spawnMob, hurtMob, feedMob, updateEntities, raycastMob, resetMobs, saveMobs, migrateMeta, getContainer, updateFurnaces, ITEMS, armorSlots, moveAxis, itemEntities, spawnItem, throwItem, updateItems, setSwing:(v)=>{held.forceP=v; held.equip=1;}, step:(dt,n)=>{ for(let i=0;i<n;i++){ updatePlayer(dt); updateCamera(dt); updateInteraction(dt); updateSurvival(dt); updateChunks(player.pos.x,player.pos.z,50); } }, prof, get locked(){return locked;}, get noLock(){return noLock;}, sfx, setDay:(t)=>{dayTime=t;}, get gen(){return gen;}, inv, mouse, mining, get target(){return target;}, breakBlock, tryPlace, world, player, B, BLOCKS, CONFIG, keys, meshStats, stats, camera, renderer, scene, setState, startWorld, beginGame, openGui, closeGui, saveWorld, readMeta, matchRecipe, craftGrid2, craftGrid3, craftOut, getFps:()=>fps, get state(){return gameState;}, get cursor(){return cursor;}, clickSlot };
+window.__bc = { switchDimension, lightPortal, createPortal, tickPortals, spawnFireball, chunkPrefix, enchantHeld, tickMagic, BREW, drinkPotion, command, pickBlock, advancements, awardAdvancement, get cameraMode(){return cameraMode;}, setCameraMode:(m)=>cameraMode=((m%3)+3)%3, updateThirdPerson, redstoneClock, powerAt, tickRedstone, wakeRedstone, primeTNT, primedTNT, redstoneInteract, weather, setWeather, updateWeather, tickWeatherRoof, lightning, makeGenMain, WORLDGEN_SRC, tickSpawners, tickFluids, tickFire, fluidClock, wakeFluids, bucketInteract, sourceFluid, shapeBoxes, shapeRayHit, shapePlayerIntersects, toggleShape, sleepBed, signTexts, setSignText, SHAPE_CACHE, collectBoxes, hydrateFarmland, growCrop, growTree, randomBlockTick, farmInteract, tickRandomBlocks, farmClock, farmDrops, wearHeld, absorbDamage, spawnXP, xpOrbs, tickXP, makeStack, packStack, unpackStack, quickMove, canAccept, armorPreview, attackMob, mobDamage, combat, projectiles, spawnArrow, tickProjectiles, explode, skyVisible, blockLightAt, tickHostile, releaseBow, entities, MOB_DEFS, spawnMob, hurtMob, feedMob, updateEntities, raycastMob, resetMobs, saveMobs, migrateMeta, getContainer, updateFurnaces, ITEMS, armorSlots, moveAxis, itemEntities, spawnItem, throwItem, updateItems, setSwing:(v)=>{held.forceP=v; held.equip=1;}, step:(dt,n)=>{ for(let i=0;i<n;i++){ updatePlayer(dt); updateCamera(dt); updateInteraction(dt); updateSurvival(dt); updateChunks(player.pos.x,player.pos.z,50); } }, prof, get locked(){return locked;}, get noLock(){return noLock;}, sfx, setDay:(t)=>{dayTime=t;}, get gen(){return gen;}, inv, mouse, mining, get target(){return target;}, breakBlock, tryPlace, world, player, B, BLOCKS, CONFIG, keys, meshStats, stats, camera, renderer, scene, setState, startWorld, beginGame, openGui, closeGui, saveWorld, readMeta, matchRecipe, craftGrid2, craftGrid3, craftOut, getFps:()=>fps, get state(){return gameState;}, get cursor(){return cursor;}, clickSlot };
 const QS = new URLSearchParams(location.search);
 if(QS.has('autostart')){ world.persist=false; startWorld(12345); player.mode=QS.get('mode')||'creative'; if(player.mode==='creative') [B.grass,B.dirt,B.stone,B.cobblestone,B.planks,B.log,B.glass,B.torch,B.bricks].forEach((id,i)=>inv.slots[i]={id,count:64}); onInventoryChange(); setState('playing'); }
 else { toTitle(); }
