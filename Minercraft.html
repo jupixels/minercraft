@@ -540,6 +540,33 @@ if(typeof importScripts === 'function'){
 <script>
 "use strict";
 /* CHANGELOG & ROADMAP
+ * QUALITY REPAIR PLAN (2026-10-18; baseline b77639a)
+ * Audit evidence: real title/New World Survival, WASD, inventory, pause,
+ * Save and Quit/Continue exercised in Chromium. Initial R6 loading took
+ * over a minute while fluid edits invalidated thousands of mesh revisions.
+ * Source audit findings below are hypotheses until their regression checks.
+ * Q1 COMPLETE — loading no longer simulates fluids/entities before meshes
+ * are ready (fresh Survival seed 12345: 2.28 s in Chromium/SwiftShader).
+ * Escape releases mouse capture; holding use no longer rapidly casts/reels
+ * fishing, milks cows or toggles doors/levers. Repeated block placement stays.
+ * Save v13 stores cursor/crafting ingredients; recovery retains durability
+ * and enchants. Shift crafting checks space before consuming/inserting;
+ * recipe autofill/closing preserve overflow. Stack merges compare metadata.
+ * Terrain-worker errors requeue unfinished chunks for the local fallback;
+ * generation callbacks reject results from obsolete worlds/dimensions.
+ * Player evidence: title/New Survival + Creative, WASD/E/F3, held fishing,
+ * Escape/buttons, Save and Quit/Continue, held-left tree mining and edit
+ * persistence. Cursor/grid recovery and full-inventory craft regression pass.
+ * CPU after reload ~3.05 ms; GPU/frame-rate target not established.
+ * Q1 original scope: stabilize loading; prevent repeated use actions, crafting duplication
+ * and inventory loss during saves. Verify menus, gathering and crafting.
+ * Q2: repair dimension edit isolation, portal frames/orientations, safe
+ * linked arrivals and return trips; retain equipment and dimension state.
+ * Q3: celestial depth tests against real walls/roofs in all camera modes.
+ * Q4: generator 3: coherent shores/rivers and branching dry cave networks;
+ * keep generator 1/2 output unchanged for existing edit-only saves.
+ * Q5: repeat player walkthrough, persistence, worker/fallback and timings.
+ * End/boss expansion remains deferred. No new block IDs or atlas slots.
  * M1 COMPLETE — shared AABB, water/step physics; four animated procedural mobs;
  * wander/panic/lure/breeding/babies; loot and cooked meats; bounded spawning;
  * persistence + v1→v2 migration. Browser: all 7 functional checks pass,
@@ -820,6 +847,7 @@ const itemDef = (id)=> id<256 ? BLOCKS[id] : ITEMS[id];
 const itemLabel = (id)=> { const d=itemDef(id); return d ? d.label : '?'; };
 const maxStack = (id)=> id<256 ? 64 : (ITEMS[id].stack||64);
 function makeStack(id,count=1,source=null){const st={id,count},max=ITEMS[id]?.durability;if(max)st.d=source?.d??max;if(source?.en)st.en={...source.en};return st;}
+function stacksMatch(a,b){return !!a&&!!b&&a.id===b.id&&(a.d??null)===(b.d??null)&&JSON.stringify(a.en||{})===JSON.stringify(b.en||{});}
 function packStack(st){return st?[st.id,st.count,st.d??null,st.en||null]:0;}
 function unpackStack(st){return st?makeStack(st[0],st[1],{d:st[2]??undefined,en:st[3]||undefined}):null;}
 
@@ -1051,6 +1079,7 @@ let gen = null;          // main-thread generator (height/biome queries + fallba
 let workers = [];
 let workerBusy = [];
 function startWorkers(seed){
+  const epoch=world.meshEpoch||0;
   workers.forEach(w=>w.terminate()); workers=[]; workerBusy=[];
   gen = makeGenMain(seed, B,world.genVersion||2,world.dimension||'overworld');
   const n = clamp((navigator.hardwareConcurrency||4)-1, 1, 3);
@@ -1058,11 +1087,12 @@ function startWorkers(seed){
     const url = URL.createObjectURL(new Blob([WORLDGEN_SRC],{type:'text/javascript'}));
     for(let i=0;i<n;i++){
       const w = new Worker(url);
-      w.onmessage = (e)=>{ workerBusy[i]--; onChunkData(e.data.cx, e.data.cz, e.data.data); };
-      w.onerror = ()=>{ workers=[]; };
+      w.onmessage = (e)=>{if(epoch!==(world.meshEpoch||0))return;workerBusy[i]--;onChunkData(e.data.cx,e.data.cz,e.data.data);};
+      w.onerror = ()=>{if(epoch!==(world.meshEpoch||0))return;workers.forEach(worker=>worker.terminate());workers=[];workerBusy=[];for(const c of world.chunks.values())if(!c.data)c.requested=false;toast('Terrain worker unavailable; using local generation');};
       w.postMessage({type:'init', seed, B,version:world.genVersion||2,dimension:world.dimension||'overworld'});
       workers.push(w); workerBusy.push(0);
     }
+    URL.revokeObjectURL(url);
   }catch(err){ workers=[]; }
 }
 
@@ -1661,7 +1691,7 @@ const inv = {
     // merge into existing stacks (hotbar first), then empty slots
     for(let pass=0;pass<2 && count>0;pass++) for(let i=0;i<36 && count>0;i++){
       const s=this.slots[i];
-      if(pass===0 && s && s.id===id && s.count<maxStack(id)){ const n=Math.min(count, maxStack(id)-s.count); s.count+=n; count-=n; }
+      if(pass===0 && s && stacksMatch(s,makeStack(id,1,source)) && s.count<maxStack(id)){ const n=Math.min(count, maxStack(id)-s.count); s.count+=n; count-=n; }
       if(pass===1 && !s){ const n=Math.min(count,maxStack(id)); this.slots[i]=makeStack(id,n,source); count-=n; }
     }
     if(typeof onInventoryChange==='function') onInventoryChange();
@@ -1765,7 +1795,8 @@ function playerIntersects(x,y,z){
   const p=player.pos;
   return p.x+PW>x && p.x-PW<x+1 && p.y+PH>y && p.y<y+1 && p.z+PW>z && p.z-PW<z+1;
 }
-function tryPlace(){
+function tryPlace(repeat=false){
+  if(repeat){const id=inv.heldId(),d=BLOCKS[target?.id];if(!isBlockId(id)&&id!==B.redstone)return false;if(!player.sneaking&&(d?.container||['door','door_open','gate','gate_open','trapdoor','trapdoor_open','bed','sign','lever','button'].includes(d?.model)||target?.id===B.crafting_table))return false;}
   if(engineeringInteract())return true;
   if(livingInteract())return true;
   if(magicInteract())return true;
@@ -1855,7 +1886,7 @@ function updateInteraction(dt){
     crackMesh.material = crackMats[clamp(Math.floor(mining.progress*10),0,9)];
   } else crackMesh.visible=false;
 
-  if(mouse.right){ mouse.rightTimer-=dt; if(mouse.rightTimer<=0){ mouse.rightTimer=0.22; if(tryPlace()) swing(); } }
+  if(mouse.right){ mouse.rightTimer-=dt; if(mouse.rightTimer<=0){ mouse.rightTimer=0.22; if(tryPlace(true)) swing(); } }
   if(mouse.left && target && gameState==='playing' && swingT>=1) swingT=0;   // keep swinging while the button is held
   swingT = Math.min(1, swingT + dt/0.3);
 }
@@ -1942,7 +1973,7 @@ function readMeta(){ try{ const r=store.get(SAVE_KEY); return r?migrateMeta(JSON
 function wipeSave(){ for(const k of store.keys()) if(k===SAVE_KEY || k.indexOf(CHUNK_PREFIX)===0||k.startsWith('bc.n.')) store.del(k); }
 let saveFailed=false;
 function saveWorld(){
-  if(!world.persist) return;
+  if(!world.persist) return false;
   let ok=true;
   for(const k of world.dirtyEdits){
     const m=world.edits.get(k); if(!m) continue;
@@ -1952,13 +1983,14 @@ function saveWorld(){
   }
   if(ok) world.dirtyEdits.clear();
   const containers=[]; for(const [k,c] of world.containers) containers.push([k,{t:c.type,s:c.slots.map(st=>packStack(st)),b:c.burn||0,bm:c.burnMax||0,c:c.cook||0}]);
-  const meta = { v:12, offhand:packStack(offhand[0]),pistons:[...pistonSticky],plantAges:[...world.plantAges], stats:worldStats, dimension:world.dimension||'overworld',dimensions:world.dimensionStates||{}, effects:player.effects||{}, advancements:[...advancements], tnt:primedTNT.map(e=>[e.pos.x,e.pos.y,e.pos.z,e.fuse]), days:dayCount,weather:{type:weather.type,remaining:weather.remaining}, generator:world.genVersion||2, signs:[...signTexts], armor:armorSlots.map(packStack), xpOrbs:xpOrbs.map(e=>[e.value,e.pos.x,e.pos.y,e.pos.z]), mobs:saveMobs(), mobChunks:[...mobChunks], name:world.name, seed:world.seed, mode:player.mode, time:dayTime, spawn:world.spawn,
+  const meta = { v:13, pendingItems:[...craftGrid2,...craftGrid3,cursor].filter(Boolean).map(packStack), offhand:packStack(offhand[0]),pistons:[...pistonSticky],plantAges:[...world.plantAges], stats:worldStats, dimension:world.dimension||'overworld',dimensions:world.dimensionStates||{}, effects:player.effects||{}, advancements:[...advancements], tnt:primedTNT.map(e=>[e.pos.x,e.pos.y,e.pos.z,e.fuse]), days:dayCount,weather:{type:weather.type,remaining:weather.remaining}, generator:world.genVersion||2, signs:[...signTexts], armor:armorSlots.map(packStack), xpOrbs:xpOrbs.map(e=>[e.value,e.pos.x,e.pos.y,e.pos.z]), mobs:saveMobs(), mobChunks:[...mobChunks], name:world.name, seed:world.seed, mode:player.mode, time:dayTime, spawn:world.spawn,
     p:{ x:+player.pos.x.toFixed(2), y:+player.pos.y.toFixed(2), z:+player.pos.z.toFixed(2), yaw:+player.yaw.toFixed(3), pitch:+player.pitch.toFixed(3),
         fire:player.fire||0, hp:player.health, food:player.food, sat:player.sat, xp:player.xp, fly:player.flying },
     inv: inv.slots.map(st=>packStack(st)), sel:inv.sel, containers,
     items: itemEntities.slice(-200).map(e=>[e.id,e.count,+e.pos.x.toFixed(2),+e.pos.y.toFixed(2),+e.pos.z.toFixed(2),Math.round(e.age),e.d??null,e.en||null]) };
   if(!store.set(SAVE_KEY, JSON.stringify(meta))) ok=false;
   if(!ok && !saveFailed){ saveFailed=true; toast('Could not save: browser storage is full or blocked'); }
+  if(ok)saveFailed=false;return ok;
 }
 function loadSettings(){ try{ const s=JSON.parse(store.get(SETTINGS_KEY)||'{}'); Object.assign(CONFIG,s); }catch(e){} }
 function saveSettings(){ store.set(SETTINGS_KEY, JSON.stringify(CONFIG)); }
@@ -2486,7 +2518,7 @@ function canAccept(ref, id){
 function mergeInto(stack, refs){ // merge then fill empties; returns leftover count
   for(let pass=0;pass<2 && stack.count>0;pass++) for(const r of refs){
     const cur=r.arr[r.i];
-    if(pass===0 && cur && cur.id===stack.id && cur.count<maxStack(stack.id)){ const n=Math.min(stack.count, maxStack(stack.id)-cur.count); cur.count+=n; stack.count-=n; }
+    if(pass===0 && cur && stacksMatch(cur,stack) && cur.count<maxStack(stack.id)){ const n=Math.min(stack.count, maxStack(stack.id)-cur.count); cur.count+=n; stack.count-=n; }
     if(pass===1 && !cur && canAccept(r,stack.id)){ r.arr[r.i]=makeStack(stack.id,stack.count,stack); stack.count=0; }
     if(stack.count<=0) break;
   }
@@ -2511,6 +2543,7 @@ function takeResult(ref, shift){
   const consume=()=>{ for(let i=0;i<ref.grid.length;i++){ const s=ref.grid[i]; if(s){ s.count--; if(s.count<=0) ref.grid[i]=null; } } };
   if(shift){
     for(let k=0;k<64;k++){ const o=craftOut[0]; if(!o) break;
+      if(inventoryCapacity(o.id)<o.count)break;
       const left=mergeInto({id:o.id,count:o.count},[...invRefs(9,36),...invRefs(0,9)].reverse());
       if(left>0) break; consume(); updateCraft(); }
   } else {
@@ -2540,13 +2573,13 @@ function clickSlot(ref, btn, shift){
   if(btn===0){
     if(!cursor){ if(st){ cursor=st; ref.arr[ref.i]=null; } }
     else if(!st){ if(canAccept(ref,cursor.id)){ ref.arr[ref.i]=cursor; cursor=null; } }
-    else if(st.id===cursor.id){ const n=Math.min(cursor.count, maxStack(st.id)-st.count); st.count+=n; cursor.count-=n; if(cursor.count<=0) cursor=null; }
+    else if(stacksMatch(st,cursor)){ const n=Math.min(cursor.count, maxStack(st.id)-st.count); st.count+=n; cursor.count-=n; if(cursor.count<=0) cursor=null; }
     else if(canAccept(ref,cursor.id)){ ref.arr[ref.i]=cursor; cursor=st; }
   } else if(btn===2){
     if(!cursor){ if(st){ const h=Math.ceil(st.count/2); cursor=makeStack(st.id,h,st); st.count-=h; if(st.count<=0) ref.arr[ref.i]=null; } }
     else {
       if(!st && canAccept(ref,cursor.id)){ ref.arr[ref.i]=makeStack(cursor.id,1,cursor); cursor.count--; }
-      else if(st && st.id===cursor.id && st.count<maxStack(st.id)){ st.count++; cursor.count--; }
+      else if(st && stacksMatch(st,cursor) && st.count<maxStack(st.id)){ st.count++; cursor.count--; }
       if(cursor.count<=0) cursor=null;
     }
   }
@@ -2650,7 +2683,7 @@ function toTitle(){
   setupTitleWorld(m);
   setState('title');
 }
-function closeGuiSilently(){ if(guiOpen){ const grid=guiOpen==='table'?craftGrid3:craftGrid2; for(let i=0;i<grid.length;i++) if(grid[i]){ inv.add(grid[i].id,grid[i].count,grid[i]); grid[i]=null; } if(cursor){ inv.add(cursor.id,cursor.count,cursor); cursor=null; } guiOpen=null; $('gui').classList.add('hidden'); } }
+function closeGuiSilently(){ if(guiOpen){ const grid=guiOpen==='table'?craftGrid3:craftGrid2; for(let i=0;i<grid.length;i++) if(grid[i]){ const left=inv.add(grid[i].id,grid[i].count,grid[i]);if(left)throwItem(grid[i].id,left,grid[i]); grid[i]=null; } if(cursor){const left=inv.add(cursor.id,cursor.count,cursor);if(left)throwItem(cursor.id,left,cursor);cursor=null;} guiOpen=null; $('gui').classList.add('hidden'); } }
 
 /* ---- title panorama: the saved world (or a showcase seed) slowly turning ---- */
 let titleCam = { x:0, y:90, z:0, yaw:0 };
@@ -2676,6 +2709,7 @@ function titleUpdate(dt){
 function beginGame(seed, meta, mode){
   world.dimension=meta?.dimension||'overworld';world.dimensionStates=meta?.dimensions||{};
   resetMobs();clearSigns();resetRedstone();
+  if(world.builtDimension!==world.dimension){world.edits.clear();world.dirtyEdits.clear();}
   world.genVersion=meta?.generator||2;
   world.persist = true;
   if(!meta){ world.edits.clear(); world.containers.clear(); }
@@ -2690,6 +2724,7 @@ function beginGame(seed, meta, mode){
     for(const o of meta.xpOrbs||[])spawnXP(o[0],o[1],o[2],o[3]); inv.sel=meta.sel||0;
     world.containers.clear();
     clearItems(); for(const it of (meta.items||[])){ const e=spawnItem(it[0],it[1],it[2],it[3],it[4],false,{d:it[6]??undefined,en:it[7]||undefined}); if(e){ e.vel.set(0,0,0); e.age=it[5]||0; e.delay=0; } }
+    for(const packed of meta.pendingItems||[]){const st=unpackStack(packed);if(st){const left=inv.add(st.id,st.count,st);if(left)spawnItem(st.id,left,player.pos.x,player.pos.y+1,player.pos.z,false,st);}}
     for(const [k,c] of (meta.containers||[])){ const [x,y,z]=k.split(',').map(Number); const o={type:c.t, slots:c.s.map(unpackStack), burn:c.b, burnMax:c.bm, cook:c.c, x,y,z}; world.containers.set(k,o); }
   } else {
     dayTime=0.27; Object.assign(player,{health:20,food:20,sat:5,xp:0,flying:false,air:300,fire:0});
@@ -2717,7 +2752,7 @@ function checkLoading(){
   $('loadingText').textContent = done<need ? 'Loading terrain' : 'Building terrain';
   if(done>=need && !spawnPending){
     if(!world.spawn) world.spawn=[player.pos.x, player.pos.y, player.pos.z];
-    setState('playing'); requestLock(); saveWorld();
+    setState('playing'); requestLock(); saveWorld();if(!advancements.has('Opened Field Guide'))toast('WASD move · E inventory & recipes · J field guide · Esc pause');
   }
 }
 
@@ -2733,7 +2768,7 @@ document.addEventListener('keydown',(e)=>{
   }
   if(gameState==='playing'){
     if(e.code==='KeyE'){ e.preventDefault(); openInventory(false); return; }
-    if(e.code==='Escape' && (noLock || !locked)){ setState('paused'); saveWorld(); return; }
+    if(e.code==='Escape'){ setState('paused'); saveWorld(); return; }
     if(/^Digit[1-9]$/.test(e.code)){ inv.sel=+e.code.slice(5)-1; onInventoryChange(); }
     if(e.code==='KeyQ' && inv.held()){ const h=inv.held(), n=e.ctrlKey?h.count:1; throwItem(h.id, n,h); inv.consumeHeld(n); swing(); }
     return;
@@ -2749,7 +2784,7 @@ document.addEventListener('visibilitychange', ()=>{ if(document.hidden && gameSt
    ========================================================================= */
 let spawnPending = false;
 let dayTime = 0.27, dayCount = 0;
-function setState(s){ gameState=s; if(s!=='playing') { keys.clear(); mouse.left=false; mouse.right=false; } if(typeof onStateChange==='function') onStateChange(s); }
+function setState(s){ gameState=s;if(s!=='playing'&&document.pointerLockElement)document.exitPointerLock(); if(s!=='playing') { keys.clear(); mouse.left=false; mouse.right=false; } if(typeof onStateChange==='function') onStateChange(s); }
 function findSpawn(){
   for(let r=0;r<600;r+=8) for(let a=0;a<12;a++){
     const x=Math.round(Math.cos(a/12*Math.PI*2)*r), z=Math.round(Math.sin(a/12*Math.PI*2)*r);
@@ -2785,7 +2820,7 @@ function frame(){
   U.uTime.value += dt;
   if(gameState==='title'){ titleUpdate(dt); if(typeof updateSky==='function') updateSky(dt*0.15, camera.position); }
   else {
-    const active = gameState!=='paused';
+    const active = ['playing','inventory','chat'].includes(gameState);
     const tc=performance.now();
     updateChunks(player.pos.x, player.pos.z, gameState==='loading'?14:4);
     prof.chunks = prof.chunks*0.9 + (performance.now()-tc)*0.1;
@@ -3262,7 +3297,7 @@ function updateItems(dt){
     // merge with identical stacks nearby
     e.mergeT-=dt;
     if(e.mergeT<=0){ e.mergeT=0.5;
-      for(let j=i-1;j>=0;j--){ const o=itemEntities[j]; if(o.id!==e.id || o.count+e.count>maxStack(e.id)) continue;
+      for(let j=i-1;j>=0;j--){ const o=itemEntities[j]; if(!stacksMatch(o,e) || o.count+e.count>maxStack(e.id)) continue;
         if(o.pos.distanceToSquared(p)<0.6*0.6){ o.count+=e.count; o.delay=Math.max(o.delay,e.delay); o.age=Math.min(o.age,e.age);
           itemGroup.remove(o.mesh); o.mesh.userData.mat.dispose(); o.mesh=makeItemVisual(o.id,o.count); itemGroup.add(o.mesh); o.mesh.userData.mat.color.setScalar(o.light);
           removeItem(e); break; } }
@@ -3274,6 +3309,7 @@ function updateItems(dt){
     e.mesh.rotation.y = e.spin + t*1.6;
   }
 }
+function inventoryCapacity(id){let n=0;for(const st of inv.slots)if(!st)n+=maxStack(id);else if(stacksMatch(st,makeStack(id)))n+=maxStack(id)-st.count;return n;}
 function inventoryRoomFor(id){ for(let i=0;i<36;i++){ const s=inv.slots[i]; if(!s || (s.id===id && s.count<maxStack(id))) return true; } return false; }
 
 /* =========================================================================
@@ -3290,7 +3326,7 @@ function recipeFits(r,n){ if(r.shapeless) return r.shapeless.length<=n*n; return
 function canCraft(r, counts){ const c=new Map(counts); for(const [, , cands] of recipeCells(r)){ const id=cands.find(i=>(c.get(i)||0)>0); if(id===undefined) return false; c.set(id,c.get(id)-1); } return true; }
 function fillRecipe(r){
   const n = guiOpen==='table'?3:2, grid = guiOpen==='table'?craftGrid3:craftGrid2;
-  for(let i=0;i<grid.length;i++) if(grid[i]){ inv.add(grid[i].id,grid[i].count,grid[i]); grid[i]=null; }
+  for(let i=0;i<grid.length;i++) if(grid[i]){ const left=inv.add(grid[i].id,grid[i].count,grid[i]);if(left)throwItem(grid[i].id,left,grid[i]); grid[i]=null; }
   if(!canCraft(r, invCounts())) return;
   for(const [x,y,cands] of recipeCells(r)){
     const id=cands.find(i=>inv.slots.some(s=>s&&s.id===i));
@@ -3428,6 +3464,7 @@ function migrateMeta(m){
   if(m.v<10){m.effects={};m.v=10;}
   if(m.v<11){m.dimension='overworld';m.dimensions={};m.v=11;}
   if(m.v<12){m.stats={};m.pistons=[];m.plantAges=[];m.offhand=null;m.v=12;}
+  if(m.v<13){m.pendingItems=[];m.portalLinks=[];m.v=13;}
   return m;
 }
 function mobRecord(e){return {kind:e.kind,x:e.pos.x,y:e.pos.y,z:e.pos.z,hp:e.hp,yaw:e.yaw,baby:e.baby,breedCD:e.breedCD,persistent:e.persistent,tamed:!!e.tamed,sitting:!!e.sitting,saddled:!!e.saddled,shorn:e.shorn||0,size:e.size||1,stock:e.stock||null,name:e.name||''};}
@@ -4334,7 +4371,7 @@ function exportWorld(){
 }
 function validateWorldFile(data){
  if(!data||data.format!=='Minercraft'||data.version!==1||!data.meta||!data.chunks||Array.isArray(data.chunks))throw Error('Not a Minercraft world export');
- const m=data.meta;if(!Number.isInteger(m.v)||m.v<1||m.v>12||!Number.isFinite(m.seed)||!m.p||!['x','y','z'].every(k=>Number.isFinite(m.p[k])))throw Error('Invalid world metadata');
+ const m=data.meta;if(!Number.isInteger(m.v)||m.v<1||m.v>13||!Number.isFinite(m.seed)||!m.p||!['x','y','z'].every(k=>Number.isFinite(m.p[k])))throw Error('Invalid world metadata');
  if(Math.abs(m.p.x)>500000||Math.abs(m.p.z)>500000||m.p.y<-32||m.p.y>160)throw Error('Player coordinates are outside the supported world');
  if(!Array.isArray(m.inv)||m.inv.length>36)throw Error('Invalid inventory');
  const stack=s=>{if(!s)return;if(!Array.isArray(s)||!itemDef(s[0])||s[0]===0||!Number.isInteger(s[1])||s[1]<1||s[1]>maxStack(s[0])||s[2]!==null&&s[2]!==undefined&&(!Number.isFinite(s[2])||s[2]<1))throw Error('Invalid saved item stack');};
@@ -4344,7 +4381,7 @@ function validateWorldFile(data){
  if(m.plantAges!==undefined&&(!Array.isArray(m.plantAges)||m.plantAges.some(e=>!Array.isArray(e)||!/^[-0-9]+,[-0-9]+,[-0-9]+$/.test(e[0])||!Number.isInteger(e[1])||e[1]<0||e[1]>3)))throw Error('Invalid growth data');
  if(m.effects&&Object.keys(m.effects).some(k=>!['speed','strength','night_vision','fire_resistance'].includes(k)||!Number.isFinite(m.effects[k])||m.effects[k]<0||m.effects[k]>100000))throw Error('Invalid status effects');
  for(const state of Object.values(m.dimensions||{})){if(state.p&&!['x','y','z'].every(k=>Number.isFinite(state.p[k])))throw Error('Invalid dimension coordinates');for(const entry of state.containers||[]){if(!Array.isArray(entry?.[1]?.s)||entry[1].s.length>27)throw Error('Invalid dimension container');entry[1].s.forEach(stack);}}
- m.inv.forEach(stack);(m.armor||[]).forEach(stack);for(const entry of m.containers||[]){if(!Array.isArray(entry)||!entry[1]||!Array.isArray(entry[1].s))throw Error('Invalid container');entry[1].s.forEach(stack);}
+ (m.pendingItems||[]).forEach(stack);m.inv.forEach(stack);(m.armor||[]).forEach(stack);for(const entry of m.containers||[]){if(!Array.isArray(entry)||!entry[1]||!Array.isArray(entry[1].s))throw Error('Invalid container');entry[1].s.forEach(stack);}
  const entries=Object.entries(data.chunks);if(entries.length>4096)throw Error('Too many chunks in the import');
  for(const [key,value] of entries){if(!/^bc\.(?:n\.|e\.)?c\.-?\d+,-?\d+$/.test(key)||typeof value!=='string'||value.length>500000)throw Error('Invalid chunk entry');for(const part of value.split(',')){if(!part)continue;if(!/^[0-9a-z]+\.[0-9a-z]+$/.test(part))throw Error('Invalid block edit');const [a,b]=part.split('.').map(v=>parseInt(v,36));if(a<0||a>=32768||b<0||b>255||!BLOCKS[b])throw Error('Invalid block edit index or ID');}}
  return data;
@@ -4480,7 +4517,7 @@ function breakPistonLink(x,y,z,id){
  if(id>=240&&id<244){const d=SHAPE_DIR[BLOCKS[id].facing],head=world.getBlock(x+d[0],y,z+d[1]);if(head>=248&&head<=251)world.setBlock(x+d[0],y,z+d[1],0);}
  if(id>=248&&id<=251){const f=BLOCKS[id].facing,d=SHAPE_DIR[f],xx=x-d[0],zz=z-d[1],base=world.getBlock(xx,y,zz);if(base>=240&&base<244){world.setBlock(xx,y,zz,0);spawnItem(pistonSticky.has(posKey(xx,y,zz))?B.sticky_piston:B.piston,1,xx+.5,y+.5,zz+.5);}}
 }
-function slotTransfer(source,target){for(let i=0;i<source.length;i++){const st=source[i];if(!st)continue;for(let j=0;j<target.length;j++){const to=target[j];if(!to){target[j]=makeStack(st.id,1,st);if(--st.count<=0)source[i]=null;return true;}if(to.id===st.id&&to.count<maxStack(st.id)){to.count++;if(--st.count<=0)source[i]=null;return true;}}}return false;}
+function slotTransfer(source,target){for(let i=0;i<source.length;i++){const st=source[i];if(!st)continue;for(let j=0;j<target.length;j++){const to=target[j];if(!to){target[j]=makeStack(st.id,1,st);if(--st.count<=0)source[i]=null;return true;}if(stacksMatch(to,st)&&to.count<maxStack(st.id)){to.count++;if(--st.count<=0)source[i]=null;return true;}}}return false;}
 function tickAutomation(dt){
  automationT+=dt;if(automationT<.4)return;automationT=0;compassHud.style.display=inv.heldId()===B.compass&&gameState==='playing'?'block':'none';if(inv.heldId()===B.compass&&world.spawn){const dx=world.spawn[0]-player.pos.x,dz=world.spawn[2]-player.pos.z,index=(Math.round(Math.atan2(dx,-dz)/(Math.PI/4))+8)%8;compassHud.textContent='Spawn: '+['N','NE','E','SE','S','SW','W','NW'][index]+' · '+Math.round(Math.hypot(dx,dz))+' blocks';}let processed=0;
  for(const c of world.containers.values()){if(c.type!=='hopper'||Math.abs(c.x-player.pos.x)>40||Math.abs(c.z-player.pos.z)>40)continue;if(++processed>24)break;if(adjacentPower(c.x,c.y,c.z)>0)continue;
@@ -4523,7 +4560,7 @@ function buildEngineeringTextures(){
  shaped(['I I','ICI',' I '],{I:[B.iron_ingot],C:[B.chest]},B.hopper);shaped(['CCC','CBC','CRC'],{C:[B.cobblestone],B:[B.bow],R:[B.redstone]},B.dispenser_mechanism);
  shaped(['III',' L '],{I:[B.iron_ingot],L:[B.leather]},B.repair_kit);shaped([' I ','IRI',' I '],{I:[B.iron_ingot],R:[B.redstone]},B.compass);shaped(['PPP','PCP','PPP'],{P:[B.paper],C:[B.compass]},B.map);
 }
-document.addEventListener('keydown',e=>{if(gameState!=='playing'||e.target?.tagName==='INPUT')return;if(e.code==='KeyF'){e.preventDefault();const s=inv.slots[inv.sel];inv.slots[inv.sel]=offhand[0];offhand[0]=s;onInventoryChange();}if(e.code==='KeyJ'){e.preventDefault();openGui('journal');}if(e.code==='KeyM'&&(player.mode==='creative'||inventoryCount(B.map))){e.preventDefault();openGui('map');}});
+document.addEventListener('keydown',e=>{if(gameState!=='playing'||e.target?.tagName==='INPUT')return;if(e.code==='KeyF'){e.preventDefault();const s=inv.slots[inv.sel];inv.slots[inv.sel]=offhand[0];offhand[0]=s;onInventoryChange();}if(e.code==='KeyJ'){e.preventDefault();advancements.add('Opened Field Guide');openGui('journal');}if(e.code==='KeyM'&&(player.mode==='creative'||inventoryCount(B.map))){e.preventDefault();openGui('map');}});
 /* =========================================================================
    20. BOOT
    ========================================================================= */
