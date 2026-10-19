@@ -472,7 +472,13 @@ if(typeof importScripts === 'function'){
  * random growth; bread/hay/paper/bone meal; baked potatoes and zombie crop
  * drops. Bounded random ticks (.8 ms). 12 browser checks pass, zero errors;
  * F3 CPU .67 ms, render .38 ms, chunks .01 ms (SwiftShader R2).
- * Next: M5 shapes;
+ * M5 COMPLETE — component collision/raycast/selection/held models; lower
+ * and upper slabs, stairs, connecting fences/panes, gates, linked doors,
+ * trapdoors, ladders, beds/night skip/spawn, editable original pixel signs,
+ * wall torches and recipes. v1–v3→v4 signs migration. 10 browser checks pass;
+ * zero errors; F3 CPU 1.34 ms, render .91 ms, chunks .02 ms (SwiftShader R2).
+ * Partial shapes use face lighting; fine-grained partial-shape AO is limited.
+ * Next: M6 fluids;
  * M5 shapes; M6 fluids; M7 worldgen; M8 weather; M9 redstone;
  * M10 player/QoL; M11 enchanting; M12 Nether; M13 performance.
  * Each milestone receives browser functional tests, F3 timing checks and a commit.
@@ -559,6 +565,22 @@ for(const [crop,base] of [['wheat_crop',59],['carrot_crop',67],['potato_crop',75
 for(const [i,name] of ['oak_sapling','spruce_sapling','birch_sapling','cherry_sapling'].entries())defBlock(83+i,name,{label:name.replace('_',' '),tex:{all:name},solid:false,opaque:false,plant:true,ao:false,hardness:0,sound:'grass',sapling:true});
 defBlock(87,'sugar_cane',{label:'Sugar Cane',tex:{all:'sugar_cane'},solid:false,opaque:false,plant:true,ao:false,hardness:0,sound:'grass'});
 defBlock(88,'hay_bale',{label:'Hay Bale',tex:{all:'hay_bale'},hardness:.5,sound:'grass',tool:'hoe'});
+// Shape families remain below 256; directional and open states have stable IDs.
+const woodShape={tex:{all:'planks'},hardness:2,sound:'wood',tool:'axe',opaque:false,ao:false};
+const stoneShape={tex:{all:'stone_bricks'},hardness:1.5,tool:'pickaxe',needsTool:true,opaque:false,ao:false};
+defBlock(89,'oak_slab',{...woodShape,label:'Oak Slab',model:'slab'});defBlock(90,'stone_slab',{...stoneShape,label:'Stone Slab',model:'slab'});
+defFacing(91,'oak_stairs',{...woodShape,label:'Oak Stairs',model:'stairs'});defFacing(95,'stone_stairs',{...stoneShape,label:'Stone Stairs',model:'stairs'});
+defBlock(99,'fence',{...woodShape,label:'Oak Fence',model:'fence'});
+defFacing(100,'fence_gate',{...woodShape,label:'Fence Gate',model:'gate'});defFacing(104,'fence_gate_open',{...woodShape,label:'Open Fence Gate',model:'gate_open',drop:100});
+defFacing(108,'door',{...woodShape,label:'Oak Door',model:'door',tex:{all:'door_bottom'}});defFacing(112,'door_open',{...woodShape,label:'Open Door',model:'door_open',tex:{all:'door_bottom'},drop:108});
+defFacing(116,'door_top',{...woodShape,label:'Oak Door',model:'door',tex:{all:'door_top'},drop:108});defFacing(120,'door_top_open',{...woodShape,label:'Open Door',model:'door_open',tex:{all:'door_top'},drop:108});
+defFacing(124,'trapdoor',{...woodShape,label:'Trapdoor',model:'trapdoor',tex:{all:'trapdoor'}});defFacing(128,'trapdoor_open',{...woodShape,label:'Open Trapdoor',model:'trapdoor_open',tex:{all:'trapdoor'},drop:124});
+defFacing(132,'ladder',{...woodShape,label:'Ladder',model:'ladder',tex:{all:'ladder'},solid:false});
+defBlock(136,'glass_pane',{label:'Glass Pane',model:'pane',tex:{all:'glass'},opaque:false,cutout:true,ao:false,hardness:.3,sound:'glass',drop:0});
+defFacing(137,'bed',{...woodShape,label:'Bed',model:'bed',tex:{top:'bed_top',bottom:'planks',side:'bed_side'}});defFacing(141,'bed_head',{...woodShape,label:'Bed',model:'bed',tex:{top:'bed_head',bottom:'planks',side:'bed_side'},drop:137});
+defFacing(145,'sign',{...woodShape,label:'Sign',model:'sign',solid:false});
+defFacing(149,'wall_torch',{label:'Wall Torch',model:'wall_torch',tex:{all:'torch'},solid:false,opaque:false,ao:false,hardness:0,sound:'wood',light:14,drop:B.torch});
+defBlock(153,'oak_slab_top',{...woodShape,label:'Oak Slab',model:'slab_top',drop:89});defBlock(154,'stone_slab_top',{...stoneShape,label:'Stone Slab',model:'slab_top',drop:90});
 const BLOCK_COUNT = BLOCKS.length;
 const LEAVES = new Set([8,30,39,41]);
 
@@ -1079,6 +1101,7 @@ function meshChunk(ch){
       for(let x=0;x<CS;x++,i++){
         const id=vol[i]; if(!id) continue;
         if(y<minY) minY=y; if(y>maxY) maxY=y;
+        if(SHAPE_CACHE[id]){pushShape(bufSolid,x,y,z,id,i,ch.cx*16+x,ch.cz*16+z);continue;}
         if(T_PLANT[id]){ pushPlant(bufSolid,x,y,z,FACE_TILE[id*6],i,BLOCKS[id].plantHeight||1); continue; }
         if(T_TORCH[id]){ pushTorch(bufSolid,x,y,z,FACE_TILE[id*6],i); continue; }
         if(T_FLAT[id]){ const l=[1, skyL[i]/15, blkL[i]/15], uv=tileUV(FACE_TILE[id*6],0,0,16,16), h=y+0.03;
@@ -1239,8 +1262,11 @@ const PW=0.3, PH=1.8;
 function isSolidAt(x,y,z){ const id=world.getBlock(x,y,z); return id<0 ? true : BLOCKS[id].solid; }
 function collectBoxes(minX,minY,minZ,maxX,maxY,maxZ, out){
   out.length=0;
-  for(let y=Math.floor(minY);y<=Math.floor(maxY);y++) for(let z=Math.floor(minZ);z<=Math.floor(maxZ);z++) for(let x=Math.floor(minX);x<=Math.floor(maxX);x++)
-    if(isSolidAt(x,y,z)) out.push(x,y,z);
+  for(let y=Math.floor(minY)-1;y<=Math.floor(maxY);y++)for(let z=Math.floor(minZ);z<=Math.floor(maxZ);z++)for(let x=Math.floor(minX);x<=Math.floor(maxX);x++){
+    const id=world.getBlock(x,y,z);if(id>=0&&!BLOCKS[id].solid)continue;
+    const boxes=id<0?FULL_SHAPE:shapeBoxes(id,x,y,z);
+    for(const b of boxes){const x0=x+b[0],y0=y+b[1],z0=z+b[2],x1=x+b[3],y1=y+b[4],z1=z+b[5];if(x1>minX&&x0<maxX&&y1>minY&&y0<maxY&&z1>minZ&&z0<maxZ)out.push(x0,y0,z0,x1,y1,z1);}
+  }
   return out;
 }
 const _boxes=[];
@@ -1250,14 +1276,14 @@ function moveAxis(p, axis, d, halfWidth=PW, height=PH){
   if(axis===0){ if(d>0) maxX+=d; else minX+=d; } else if(axis===1){ if(d>0) maxY+=d; else minY+=d; } else { if(d>0) maxZ+=d; else minZ+=d; }
   collectBoxes(minX,minY,minZ,maxX,maxY,maxZ,_boxes);
   const e=1e-4;
-  for(let k=0;k<_boxes.length;k+=3){
-    const bx=_boxes[k], by=_boxes[k+1], bz=_boxes[k+2];
-    if(axis===0){ if(p.y+height<=by+e || p.y>=by+1-e || p.z+halfWidth<=bz+e || p.z-halfWidth>=bz+1-e) continue;
-      if(d>0 && p.x+halfWidth<=bx+e) d=Math.min(d, bx-(p.x+halfWidth)-e); else if(d<0 && p.x-halfWidth>=bx+1-e) d=Math.max(d, bx+1-(p.x-halfWidth)+e); }
-    else if(axis===1){ if(p.x+halfWidth<=bx+e || p.x-halfWidth>=bx+1-e || p.z+halfWidth<=bz+e || p.z-halfWidth>=bz+1-e) continue;
-      if(d>0 && p.y+height<=by+e) d=Math.min(d, by-(p.y+height)-e); else if(d<0 && p.y>=by+1-e) d=Math.max(d, by+1-p.y+e); }
-    else { if(p.y+height<=by+e || p.y>=by+1-e || p.x+halfWidth<=bx+e || p.x-halfWidth>=bx+1-e) continue;
-      if(d>0 && p.z+halfWidth<=bz+e) d=Math.min(d, bz-(p.z+halfWidth)-e); else if(d<0 && p.z-halfWidth>=bz+1-e) d=Math.max(d, bz+1-(p.z-halfWidth)+e); }
+  for(let k=0;k<_boxes.length;k+=6){
+    const bx=_boxes[k], by=_boxes[k+1], bz=_boxes[k+2],bx1=_boxes[k+3],by1=_boxes[k+4],bz1=_boxes[k+5];
+    if(axis===0){ if(p.y+height<=by+e || p.y>=by1-e || p.z+halfWidth<=bz+e || p.z-halfWidth>=bz1-e) continue;
+      if(d>0 && p.x+halfWidth<=bx+e) d=Math.min(d, bx-(p.x+halfWidth)-e); else if(d<0 && p.x-halfWidth>=bx1-e) d=Math.max(d, bx1-(p.x-halfWidth)+e); }
+    else if(axis===1){ if(p.x+halfWidth<=bx+e || p.x-halfWidth>=bx1-e || p.z+halfWidth<=bz+e || p.z-halfWidth>=bz1-e) continue;
+      if(d>0 && p.y+height<=by+e) d=Math.min(d, by-(p.y+height)-e); else if(d<0 && p.y>=by1-e) d=Math.max(d, by1-p.y+e); }
+    else { if(p.y+height<=by+e || p.y>=by1-e || p.x+halfWidth<=bx+e || p.x-halfWidth>=bx1-e) continue;
+      if(d>0 && p.z+halfWidth<=bz+e) d=Math.min(d, bz-(p.z+halfWidth)-e); else if(d<0 && p.z-halfWidth>=bz1-e) d=Math.max(d, bz1-(p.z-halfWidth)+e); }
   }
   if(axis===0) p.x+=d; else if(axis===1) p.y+=d; else p.z+=d;
   return d;
@@ -1325,6 +1351,7 @@ function updatePlayer(dt){
       if(events.onJump) events.onJump(); }
   }
 
+  const ladder=BLOCKS[feet]?.model==='ladder'||BLOCKS[body]?.model==='ladder';if(ladder&&!p.flying){p.vel.y=keys.has('KeyW')||jump?3:p.sneaking?0:Math.max(-2,p.vel.y);p.fallStart=null;}
   // ---- move with collision (sub-stepped)
   const steps = Math.max(1, Math.ceil(Math.max(Math.abs(p.vel.x),Math.abs(p.vel.y),Math.abs(p.vel.z))*dt/0.45));
   const sdt = dt/steps; let landed=false; const startY=pos.y;
@@ -1337,8 +1364,12 @@ function updatePlayer(dt){
       while(dz!==0 && !hasGroundBelow(pos.x,pos.z+dz)){ dz = Math.abs(dz)<0.02?0:dz*0.5; }
       while(dx!==0 && dz!==0 && !hasGroundBelow(pos.x+dx,pos.z+dz)){ dx*=0.5; dz*=0.5; if(Math.abs(dx)<0.02){dx=0;} }
     }
-    const mx=moveAxis(pos,0,dx); if(mx!==dx){ p.vel.x=0; if(p.sprinting && Math.abs(dx)>0.001) p.sprinting=false; }
-    const mz=moveAxis(pos,2,dz); if(mz!==dz){ p.vel.z=0; }
+    let mx=moveAxis(pos,0,dx);
+    if(mx!==dx&&p.onGround&&!p.sneaking){const sx=pos.x,sy=pos.y,sz=pos.z,up=moveAxis(pos,1,.6);if(up>.59){const extra=moveAxis(pos,0,dx-mx);mx+=extra;}moveAxis(pos,1,-up);if(mx!==dx){pos.x=sx;pos.y=sy;pos.z=sz;}}
+    if(mx!==dx){ p.vel.x=0; if(p.sprinting && Math.abs(dx)>0.001) p.sprinting=false; }
+    let mz=moveAxis(pos,2,dz);
+    if(mz!==dz&&p.onGround&&!p.sneaking){const sx=pos.x,sy=pos.y,sz=pos.z,up=moveAxis(pos,1,.6);if(up>.59){const extra=moveAxis(pos,2,dz-mz);mz+=extra;}moveAxis(pos,1,-up);if(mz!==dz){pos.x=sx;pos.y=sy;pos.z=sz;}}
+    if(mz!==dz){ p.vel.z=0; }
   }
   const wasGround=p.onGround;
   p.onGround = landed || (p.vel.y===0 && collectBoxes(pos.x-PW+0.001,pos.y-0.05,pos.z-PW+0.001,pos.x+PW-0.001,pos.y-0.01,pos.z+PW-0.001,_boxes).length>0);
@@ -1440,7 +1471,7 @@ function raycastBlock(maxDist){
   let nx=0,ny=0,nz=0, t=0;
   while(t<=maxDist){
     const id=world.getBlock(x,y,z);
-    if(id>0 && !BLOCKS[id].liquid) return {x,y,z,nx,ny,nz,id,t};
+    if(id>0 && !BLOCKS[id].liquid){const hit=shapeRayHit(id,x,y,z,ox,oy,oz,dx,dy,dz,maxDist);if(hit)return {x,y,z,id,...hit};}
     if(tmx<tmy && tmx<tmz){ x+=sx; t=tmx; tmx+=tdx; nx=-sx; ny=0; nz=0; }
     else if(tmy<tmz){ y+=sy; t=tmy; tmy+=tdy; nx=0; ny=-sy; nz=0; }
     else { z+=sz; t=tmz; tmz+=tdz; nx=0; ny=0; nz=-sz; }
@@ -1449,6 +1480,7 @@ function raycastBlock(maxDist){
 }
 function blockBox(id){ // selection box [x0,y0,z0,x1,y1,z1]
   const b=BLOCKS[id];
+  if(SHAPE_CACHE[id]){const boxes=SHAPE_CACHE[id];let x0=1,y0=2,z0=1,x1=0,y1=0,z1=0;for(const r of boxes){x0=Math.min(x0,r[0]);y0=Math.min(y0,r[1]);z0=Math.min(z0,r[2]);x1=Math.max(x1,r[3]);y1=Math.max(y1,r[4]);z1=Math.max(z1,r[5]);}return [x0,y0,z0,x1,y1,z1];}
   if(b.model==='farmland')return [0,0,0,1,.9375,1];
   if(b.plant) return [0.15,0,0.15,0.85,b.plantHeight||.8,0.85];
   if(b.model==='torch') return [0.4,0,0.4,0.6,0.62,0.6];
@@ -1499,6 +1531,7 @@ function breakBlock(x,y,z, silent){
   const id=world.getBlock(x,y,z); if(id<=0) return;
   const harvest = canHarvest(id), b=BLOCKS[id];
   world.setBlock(x,y,z,0);
+  unlinkShape(x,y,z,id);
   if(b.container) dropContainer(x,y,z);
   if(player.mode==='survival'){
     player.exh+=0.005;
@@ -1511,6 +1544,7 @@ function breakBlock(x,y,z, silent){
   if(!silent && player.mode==='survival')wearHeld(ITEMS[inv.heldId()]?.tool==='sword'?2:1);
   if(!silent && typeof sfx==='object') sfx.blockBreak(id);
   settleColumn(x,y,z);
+  validateAttachments(x,y,z);
   flowWater(x,y,z);
 }
 function playerIntersects(x,y,z){
@@ -1518,6 +1552,7 @@ function playerIntersects(x,y,z){
   return p.x+PW>x && p.x-PW<x+1 && p.y+PH>y && p.y<y+1 && p.z+PW>z && p.z-PW<z+1;
 }
 function tryPlace(){
+  if(shapeInteract())return true;
   if(farmInteract()) return true;
   if(inv.heldId()===B.sugar_cane)return false;
   if(feedTargetMob()) return true;
@@ -1529,20 +1564,26 @@ function tryPlace(){
   }
   const held=inv.held(); if(!held || !isBlockId(held.id)) return false;
   let id=held.id; const b=BLOCKS[id];
-  if(b.facing!==undefined){ const k=((Math.round(player.yaw/(Math.PI/2))%4)+4)%4; id = b.base + (4-k)%4; }
+  if(b.model==='ladder'&&target.ny===0)id=b.base+SHAPE_DIR.findIndex(d=>d[0]===target.nx&&d[1]===target.nz);
+  else if(b.facing!==undefined){ const k=((Math.round(player.yaw/(Math.PI/2))%4)+4)%4; id = b.base + (4-k)%4; }
   let x=target.x+target.nx, y=target.y+target.ny, z=target.z+target.nz;
   if(tb.plant && tb.name!=='dead_bush' || target.id===B.tall_grass){ x=target.x; y=target.y; z=target.z; }   // replace grass
   const cur=world.getBlock(x,y,z);
   if(!(cur===0 || cur===B.water || cur===B.tall_grass)) return false;
   if(y<0||y>=CH) return false;
-  if(b.solid && playerIntersects(x,y,z)) return false;
+  if((id===B.oak_slab||id===B.stone_slab)&&(target.ny<0||(target.ny===0&&(camera.position.y+_rd.y*target.t)%1>.5)))id=id===B.oak_slab?B.oak_slab_top:B.stone_slab_top;
+  if(b.solid && shapePlayerIntersects(id,x,y,z)) return false;
+  if(b.model==='door'&&id<112){if(world.getBlock(x,y+1,z)!==0||!isSolidAt(x,y-1,z)||shapePlayerIntersects(id+8,x,y+1,z))return false;world.setBlock(x,y+1,z,id+8);}
+  if(b.model==='bed'&&id<141){const dir=SHAPE_DIR[BLOCKS[id].facing],hx=x+dir[0],hz=z+dir[1];if(world.getBlock(hx,y,hz)!==0||!isSolidAt(x,y-1,z)||!isSolidAt(hx,y-1,hz)||shapePlayerIntersects(id+4,hx,y,hz))return false;world.setBlock(hx,y,hz,id+4);}
+  if(b.model==='ladder'){const dir=SHAPE_DIR[BLOCKS[id].facing];if(!isSolidAt(x-dir[0],y,z-dir[1]))return false;}
   const below=world.getBlock(x,y-1,z);
   if(b.plant && !(below===B.grass||below===B.dirt||below===B.grass_snow||below===B.grass_taiga||(id===B.dead_bush&&below===B.sand))) return false;
-  if(b.model==='torch' && !(below>0 && BLOCKS[below].opaque)) return false;
+  if(b.model==='torch'){if(target.ny===0){const f=SHAPE_DIR.findIndex(d=>d[0]===target.nx&&d[1]===target.nz);if(f<0)return false;id=B.wall_torch+f;}else if(!(below>0 && BLOCKS[below].opaque)) return false;}
   if(id===B.cactus && !(below===B.sand||below===B.cactus)) return false;
   world.setBlock(x,y,z,id);
   if(player.mode==='survival') inv.consumeHeld(1);
   if(typeof sfx==='object') sfx.blockPlace(id);
+  if(b.model==='sign')openSignAt(x,y,z);
   if(id===B.sand||id===B.gravel){ let yy=y; while(yy>0 && world.getBlock(x,yy-1,z)===0) yy--; if(yy!==y){ world.setBlock(x,y,z,0); world.setBlock(x,yy,z,id); } }
   return true;
 }
@@ -1568,6 +1609,8 @@ function updateInteraction(dt){
     outline.position.set(target.x+(bb[0]+bb[3])/2, target.y+(bb[1]+bb[4])/2, target.z+(bb[2]+bb[5])/2);
   } else outline.visible=false;
 
+  shapeOutline.visible=false;
+  if(target&&SHAPE_CACHE[target.id]){outline.visible=false;shapeOutline.visible=true;const boxes=shapeBoxes(target.id,target.x,target.y,target.z);for(let i=0;i<shapeOutline.children.length;i++){const m=shapeOutline.children[i],b=boxes[i];m.visible=!!b;if(b){m.scale.set(b[3]-b[0]+.004,b[4]-b[1]+.004,b[5]-b[2]+.004);m.position.set(target.x+(b[0]+b[3])/2,target.y+(b[1]+b[4])/2,target.z+(b[2]+b[5])/2);}}}
   mining.cooldown -= dt;
   if(mouse.left && target && !raycastMob()){
     if(!mining.active || mining.x!==target.x || mining.y!==target.y || mining.z!==target.z || mining.id!==target.id){
@@ -1687,7 +1730,7 @@ function saveWorld(){
   }
   if(ok) world.dirtyEdits.clear();
   const containers=[]; for(const [k,c] of world.containers) containers.push([k,{t:c.type,s:c.slots.map(st=>packStack(st)),b:c.burn||0,bm:c.burnMax||0,c:c.cook||0}]);
-  const meta = { v:3, armor:armorSlots.map(packStack), xpOrbs:xpOrbs.map(e=>[e.value,e.pos.x,e.pos.y,e.pos.z]), mobs:saveMobs(), mobChunks:[...mobChunks], name:world.name, seed:world.seed, mode:player.mode, time:dayTime, spawn:world.spawn,
+  const meta = { v:4, signs:[...signTexts], armor:armorSlots.map(packStack), xpOrbs:xpOrbs.map(e=>[e.value,e.pos.x,e.pos.y,e.pos.z]), mobs:saveMobs(), mobChunks:[...mobChunks], name:world.name, seed:world.seed, mode:player.mode, time:dayTime, spawn:world.spawn,
     p:{ x:+player.pos.x.toFixed(2), y:+player.pos.y.toFixed(2), z:+player.pos.z.toFixed(2), yaw:+player.yaw.toFixed(3), pitch:+player.pitch.toFixed(3),
         hp:player.health, food:player.food, sat:player.sat, xp:player.xp, fly:player.flying },
     inv: inv.slots.map(st=>packStack(st)), sel:inv.sel, containers,
@@ -2067,7 +2110,11 @@ function buildGui(){
   const host=$('gui'); host.innerHTML=''; guiSlots=[];
   const wrap=el('div',null,{position:'relative', left: (recipeBookOpen && (guiOpen==='inventory'||guiOpen==='table')) ? g(76) : 0},host);
   let panel;
-  if(guiOpen==='inventory'){
+  if(guiOpen==='sign'){
+    panel=el('div','panel',{width:g(176),height:g(90)},wrap);label(panel,12,10,'Edit Sign (16 characters)');
+    const input=el('input','field',{position:'absolute',left:g(10),top:g(30),width:g(154)},panel);input.maxLength=16;input.value=signTexts.get(posKey(guiData.x,guiData.y,guiData.z))||'';input.setAttribute('aria-label','Sign text');
+    const done=el('button','btn',{position:'absolute',left:g(38),top:g(59),width:g(100)},panel,'Done');done.onclick=()=>{setSignText(guiData.x,guiData.y,guiData.z,input.value);closeGui();};setTimeout(()=>input.focus(),0);
+  }else if(guiOpen==='inventory'){
     panel=el('div','panel',{width:g(176),height:g(166)},wrap);
     const names=['helmet','chest','legs','boots'];
     for(let i=0;i<4;i++) addSlot(panel,8,8+i*18,{arr:armorSlots,i,kind:'armor'},false,GUI.ghost[names[i]]);
@@ -2369,7 +2416,7 @@ function titleUpdate(dt){
 
 /* ---- starting / continuing a world ---- */
 function beginGame(seed, meta, mode){
-  resetMobs();
+  resetMobs();clearSigns();
   world.persist = true;
   if(!meta){ world.edits.clear(); world.containers.clear(); }
   startWorld(seed, meta ? meta.p : null, world.seed===seed && !!meta);
@@ -2389,6 +2436,7 @@ function beginGame(seed, meta, mode){
     world.spawn=null;
     if(player.mode==='creative'){ [B.grass,B.dirt,B.stone,B.cobblestone,B.planks,B.log,B.glass,B.torch,B.bricks].forEach((id,i)=>inv.slots[i]={id,count:64}); }
   }
+  for(const [key,text] of meta?.signs||[])signTexts.set(key,text);
   restoreMobs(meta);
   onInventoryChange();
   loadingStart=performance.now();
@@ -2766,10 +2814,11 @@ function buildHeldBlock(id){
   const P=[],UV=[],C=[],I=[];
   const shades=[0.6,0.6,1.0,0.5,0.8,0.8];
   const b=BLOCKS[id];
-  FACES.forEach((f,fi)=>{
+  const boxes=SHAPE_CACHE[id]||FULL_SHAPE;
+  for(const box of boxes)FACES.forEach((f,fi)=>{
     const tile=FACE_TILE[id*6+(fi===4 && b.facing!==undefined ? FACING_FACE[b.facing] : fi)];
     const [tu,tv]=tileRectUV(tile), base=P.length/3, s=shades[fi];
-    f.c.forEach((c,k)=>{ P.push(c[0]-0.5,c[1]-0.5,c[2]-0.5); const uv=UVS[k]; UV.push(tu+uv[0]/16, tv+(1-uv[1])/16); C.push(s,s,s); });
+    f.c.forEach((c,k)=>{ P.push(lerp(box[0],box[3],c[0])-.5,lerp(box[1],box[4],c[1])-.5,lerp(box[2],box[5],c[2])-.5); const uv=UVS[k]; UV.push(tu+uv[0]/16, tv+(1-uv[1])/16); C.push(s,s,s); });
     I.push(base,base+1,base+2,base,base+2,base+3);
   });
   const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.Float32BufferAttribute(P,3)); g.setAttribute('uv',new THREE.Float32BufferAttribute(UV,2)); g.setAttribute('color',new THREE.Float32BufferAttribute(C,3)); g.setIndex(I);
@@ -3096,6 +3145,7 @@ function resetMobs(){ while(entities.length) removeMob(entities[entities.length-
 function migrateMeta(m){
   if((m.v||1)<2){ m.mobs=[]; m.mobChunks=[]; m.v=2; }
   if(m.v<3){m.armor=[];m.xpOrbs=[];m.v=3;}
+  if(m.v<4){m.signs=[];m.v=4;}
   return m;
 }
 function saveMobs(){ return entities.filter(e=>!e.dead).map(e=>({kind:e.kind,x:e.pos.x,y:e.pos.y,z:e.pos.z,hp:e.hp,yaw:e.yaw,baby:e.baby,breedCD:e.breedCD,persistent:e.persistent})); }
@@ -3171,7 +3221,7 @@ function spawnPassiveChunks(){
   }
 }
 function tickEntities(dt){
-  const start=performance.now(); entityClock.tick++; combat.cooldown=Math.max(0,combat.cooldown-dt);combat.hurt=Math.max(0,combat.hurt-dt);tickProjectiles(dt);tickXP(dt);tickRandomBlocks(dt);tickHostileSpawns(dt);
+  const start=performance.now(); entityClock.tick++; combat.cooldown=Math.max(0,combat.cooldown-dt);combat.hurt=Math.max(0,combat.hurt-dt);tickProjectiles(dt);tickXP(dt);tickRandomBlocks(dt);updateSigns(dt);tickHostileSpawns(dt);
   entityClock.spawnT-=dt;if(entityClock.spawnT<=0){entityClock.spawnT=.5;spawnPassiveChunks();}
   for(let i=entities.length-1;i>=0;i--){
     const e=entities[i],p=e.pos,d=MOB_DEFS[e.kind]; e.prev.copy(p);
@@ -3425,14 +3475,130 @@ function tickRandomBlocks(dt){
  farmClock.ms=performance.now()-t;
 }
 /* =========================================================================
+   30. BLOCK SHAPES — component AABBs shared by mesher, ray selection,
+       held models, placement tests and player/entity swept collision.
+   ========================================================================= */
+const shapeOutline=new THREE.Group();for(let n=0;n<12;n++)shapeOutline.add(new THREE.LineSegments(outline.geometry,outline.material));scene.add(shapeOutline);
+const FULL_SHAPE=[[0,0,0,1,1,1]],SHAPE_CACHE=[],SHAPE_DIR=[[0,1],[-1,0],[0,-1],[1,0]],CONNECT_CACHE={fence:[],pane:[]};
+function rotateShape(boxes,f){return boxes.map(b=>{let x0=b[0],z0=b[2],x1=b[3],z1=b[5];for(let n=0;n<f;n++){const a=x0;x0=1-z1;z1=x1;x1=1-z0;z0=a;}return [x0,b[1],z0,x1,b[4],z1];});}
+function buildShapeCache(){
+ const shapes={slab:[[0,0,0,1,.5,1]],slab_top:[[0,.5,0,1,1,1]],stairs:[[0,0,0,1,.5,1],[0,.5,.5,1,1,1]],farmland:[[0,0,0,1,.9375,1]],
+  fence:[[.375,0,.375,.625,1.5,.625]],gate:[[0,0,.375,.125,1.5,.625],[.875,0,.375,1,1.5,.625],[.125,.4,.4375,.875,1.2,.5625]],
+  gate_open:[[0,0,.375,.125,1.5,.625],[.875,0,.375,1,1.5,.625]],door:[[0,0,0,1,1,.1875]],door_open:[[0,0,0,.1875,1,1]],trapdoor:[[0,0,0,1,.1875,1]],trapdoor_open:[[0,0,0,1,1,.1875]],
+  ladder:[[0,0,0,1,1,.0625]],pane:[[.4375,0,.4375,.5625,1,.5625]],bed:[[0,.1875,0,1,.5625,1],[.0625,0,.0625,.1875,.1875,.1875],[.8125,0,.8125,.9375,.1875,.9375]],
+  sign:[[.4375,0,.4375,.5625,.6,.5625],[0,.5,.4375,1,1,.5625]],wall_torch:[[.4375,.25,0,.5625,.875,.1875]]};
+ for(const b of BLOCKS)if(shapes[b.model])SHAPE_CACHE[b.id]=rotateShape(shapes[b.model],b.facing||0);
+ for(const type of ['fence','pane'])for(let mask=0;mask<16;mask++){
+   const a=shapes[type].map(b=>b.slice()),thin=type==='pane';
+   for(let i=0;i<4;i++)if(mask&(1<<i)){const arm=thin?[[.4375,0,.5,.5625,1,1]]:[[.4375,.4,.5,.5625,.6,1],[.4375,.9,.5,.5625,1.1,1]];a.push(...rotateShape(arm,i));}
+   CONNECT_CACHE[type][mask]=a;
+ }
+}
+function shapeBoxes(id,x=0,y=0,z=0){
+ const b=BLOCKS[id];if(b?.model==='fence'||b?.model==='pane'){
+  let mask=0;for(let i=0;i<4;i++){const dir=SHAPE_DIR[i],n=BLOCKS[world.getBlock(x+dir[0],y,z+dir[1])];if(n&&(n.opaque||n.model===b.model||n.model==='gate'||n.model==='gate_open'))mask|=1<<i;}
+  return CONNECT_CACHE[b.model][mask];
+ }
+ return SHAPE_CACHE[id]||FULL_SHAPE;
+}
+function shapeRayHit(id,x,y,z,ox,oy,oz,dx,dy,dz,maxDist){
+ const b=BLOCKS[id],boxes=SHAPE_CACHE[id]?shapeBoxes(id,x,y,z):b.plant?[[.15,0,.15,.85,b.plantHeight||.8,.85]]:b.model==='torch'?[[.4,0,.4,.6,.62,.6]]:FULL_SHAPE;
+ let best=maxDist+1,result=null;
+ for(const r of boxes){let lo=0,hi=maxDist,axis=-1,sign=0;
+  for(let a=0;a<3;a++){const origin=a===0?ox:a===1?oy:oz,dir=a===0?dx:a===1?dy:dz,base=a===0?x:a===1?y:z,min=base+r[a],max=base+r[a+3];if(Math.abs(dir)<1e-10){if(origin<min||origin>max){lo=Infinity;break;}continue;}
+   let t0=(min-origin)/dir,t1=(max-origin)/dir;const n=dir>0?-1:1;if(t0>t1){const t=t0;t0=t1;t1=t;}if(t0>lo){lo=t0;axis=a;sign=n;}hi=Math.min(hi,t1);if(lo>hi)break;
+  }
+  if(lo<=hi&&lo<best&&hi>=0){best=lo;result={t:lo,nx:axis===0?sign:0,ny:axis===1?sign:0,nz:axis===2?sign:0};}
+ }
+ return result;
+}
+function pushShape(buf,x,y,z,id,i,wx,wz){
+ const boxes=shapeBoxes(id,wx,y,wz),b=BLOCKS[id];
+ for(const r of boxes)for(let f=0;f<6;f++){
+   const face=FACES[f],off=i+FACE_N_OFF[f],edge=f===0?r[3]===1:f===1?r[0]===0:f===2?r[4]===1:f===3?r[1]===0:f===4?r[5]===1:r[2]===0;
+   if(edge&&opq[off])continue;
+   const pts=face.c.map(c=>[x+lerp(r[0],r[3],c[0]),y+lerp(r[1],r[4],c[1]),z+lerp(r[2],r[5],c[2])]);
+   const tile=FACE_TILE[id*6+f],uv=tileUV(tile,0,0,16,16),light=[face.shade,Math.max(skyL[i],skyL[off])/15,Math.max(blkL[i],blkL[off])/15];
+   if(b.model==='wall_torch')light[2]=1;
+   pushRawQuad(buf,pts,uv,light);
+ }
+}
+function shapePlayerIntersects(id,x,y,z){const p=player.pos;for(const b of shapeBoxes(id,x,y,z))if(p.x+PW>x+b[0]&&p.x-PW<x+b[3]&&p.y+PH>y+b[1]&&p.y<y+b[4]&&p.z+PW>z+b[2]&&p.z-PW<z+b[5])return true;return false;}
+function toggleShape(x,y,z){
+ let id=world.getBlock(x,y,z);if(id>=116&&id<=123){y--;id-=8;}
+ const b=BLOCKS[id];if(!b)return false;
+ let next=id;
+ if(b.model==='door'||b.model==='door_open')next=id+(b.model==='door'?4:-4);
+ else if(['gate','gate_open','trapdoor','trapdoor_open'].includes(b.model))next=id+(b.model.endsWith('_open')?-4:4);
+ else return false;
+ if(BLOCKS[next].solid&&shapePlayerIntersects(next,x,y,z))return false;
+ world.setBlock(x,y,z,next);if(b.model==='door'||b.model==='door_open')world.setBlock(x,y+1,z,next+8);sfx.blockPlace(B.planks);return true;
+}
+function shapeInteract(){
+ if(!target)return false;const t=target,d=BLOCKS[t.id],id=inv.heldId();
+ if(!player.sneaking){if(toggleShape(t.x,t.y,t.z))return true;if(d.model==='bed'){sleepBed(t.x,t.y,t.z);return true;}if(d.model==='sign'){openSignAt(t.x,t.y,t.z);return true;}}
+ if((id===B.oak_slab&&[B.oak_slab,B.oak_slab_top].includes(t.id))||(id===B.stone_slab&&[B.stone_slab,B.stone_slab_top].includes(t.id))){if(playerIntersects(t.x,t.y,t.z))return false;world.setBlock(t.x,t.y,t.z,id===B.oak_slab?B.planks:B.stone_bricks);if(player.mode==='survival')inv.consumeHeld();return true;}
+ return false;
+}
+function unlinkShape(x,y,z,id){
+ if(id>=108&&id<=123){const top=id>=116;const other=world.getBlock(x,y+(top?-1:1),z);if(other>=108&&other<=123)world.setBlock(x,y+(top?-1:1),z,0);}
+ if(id>=137&&id<=144){const head=id>=141,dir=SHAPE_DIR[BLOCKS[id].facing],xx=x+dir[0]*(head?-1:1),zz=z+dir[1]*(head?-1:1),other=world.getBlock(xx,y,zz);if(other>=137&&other<=144)world.setBlock(xx,y,zz,0);}
+ if(BLOCKS[id]?.model==='sign'){signTexts.delete(posKey(x,y,z));removeSignVisual(posKey(x,y,z));}
+}
+function validateAttachments(x,y,z){
+ for(let i=0;i<4;i++){const dir=SHAPE_DIR[i],xx=x+dir[0],zz=z+dir[1],id=world.getBlock(xx,y,zz),b=BLOCKS[id];if((b?.model==='wall_torch'||b?.model==='ladder')&&b.facing===i)breakBlock(xx,y,zz,true);}
+ const above=world.getBlock(x,y+1,z);if(above>=108&&above<116)breakBlock(x,y+1,z,true);
+}
+function sleepBed(x,y,z){
+ world.spawn=[x+.5,y+1,z+.5];
+ if(dayTime<.5){toast('Spawn point set. You can sleep at night.');return false;}
+ if(entities.some(e=>!e.dead&&MOB_DEFS[e.kind].hostile&&e.pos.distanceToSquared(player.pos)<64)){toast('Monsters are too close to sleep');return false;}
+ const fade=el('div',null,{position:'fixed',inset:0,background:'#000',opacity:'1',zIndex:50,pointerEvents:'none'},document.body);
+ setTimeout(()=>{dayTime=.02;dayCount++;player.health=Math.min(20,player.health+2);fade.style.transition='opacity .6s';fade.style.opacity=0;setTimeout(()=>fade.remove(),650);saveWorld();},500);return true;
+}
+function buildShapeTextures(){
+ for(const [name,color] of [['door_bottom',[150,107,56]],['door_top',[160,119,64]],['trapdoor',[145,103,54]],['ladder',[155,113,59]],['bed_top',[155,67,45]],['bed_head',[220,205,171]],['bed_side',[136,64,40]]])makeTile(name,(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++){
+  let c=vary(color,R,22),alpha=255;
+  if(name.startsWith('door')&&(x===1||x===14||y===1||y===14))c=[80,58,33];
+  if(name==='door_top'&&y>3&&y<10&&x>3&&x<12){c=[192,213,195];alpha=(x===7||x===8)?255:0;}
+  if(name==='ladder')alpha=x===2||x===3||x===12||x===13||y%4===1?255:0;
+  if(name==='trapdoor'&&x%6>2&&y%6>2)alpha=0;
+  P(x,y,c,alpha);
+ }});
+ for(const name of ['door','door_open','door_top','door_top_open','trapdoor','trapdoor_open','ladder'])for(let f=0;f<4;f++)BLOCKS[B[name]+f].cutout=true;
+ CREATIVE_TABS[0].items.push(B.oak_slab,B.stone_slab,B.oak_stairs,B.stone_stairs,B.fence,B.glass_pane);
+ CREATIVE_TABS[2].items.push(B.fence_gate,B.door,B.trapdoor,B.ladder,B.bed,B.sign);
+ shaped(['PPP'],{P:PLANKS},B.oak_slab,6);shaped(['SSS'],{S:[B.stone_bricks]},B.stone_slab,6);
+ shaped(['P  ','PP ','PPP'],{P:PLANKS},B.oak_stairs,4);shaped(['S  ','SS ','SSS'],{S:[B.stone_bricks]},B.stone_stairs,4);
+ shaped(['PSP','PSP'],{P:PLANKS,S:[B.stick]},B.fence,3);shaped(['SPS','SPS'],{P:PLANKS,S:[B.stick]},B.fence_gate);
+ shaped(['PP','PP','PP'],{P:PLANKS},B.door,3);shaped(['PPP','PPP'],{P:PLANKS},B.trapdoor,2);
+ shaped(['S S','SSS','S S'],{S:[B.stick]},B.ladder,3);shaped(['GGG','GGG'],{G:[B.glass]},B.glass_pane,16);
+ shaped(['WWW','PPP'],{W:[B.wool],P:PLANKS},B.bed);shaped(['PPP','PPP',' S '],{P:PLANKS,S:[B.stick]},B.sign,3);
+}
+/* 30b. Original 3x5 sign font on a 16x16 procedural texture (four rows). */
+const signTexts=new Map(),signVisuals=new Map();let signTimer=0;
+const SIGN_FONT='A:010101111101101 B:110101110101110 C:011100100100011 D:110101101101110 E:111100110100111 F:111100110100100 G:011100101101011 H:101101111101101 I:111010010010111 J:001001001101010 K:101101110101101 L:100100100100111 M:101111111101101 N:101111111111101 O:010101101101010 P:110101110100100 Q:010101101111011 R:110101110101101 S:011100010001110 T:111010010010010 U:101101101101111 V:101101101101010 W:101101111111101 X:101101010101101 Y:101101010010010 Z:111001010100111 0:111101101101111 1:010110010010111 2:110001010100111 3:110001010001110 4:101101111001001 5:111100110001110 6:011100110101010 7:111001010010010 8:010101010101010 9:010101011001110'.split(' ').reduce((a,s)=>{const [k,v]=s.split(':');a[k]=v;return a;},{});
+function openSignAt(x,y,z){openGui('sign',{x,y,z});}
+function setSignText(x,y,z,text){const key=posKey(x,y,z);signTexts.set(key,String(text).toUpperCase().replace(/[^A-Z0-9 !?.-]/g,'').slice(0,16));removeSignVisual(key);updateSigns(1);}
+function removeSignVisual(key){const m=signVisuals.get(key);if(m){scene.remove(m);m.geometry.dispose();m.material.map.dispose();m.material.dispose();signVisuals.delete(key);}}
+function clearSigns(){for(const key of signVisuals.keys())removeSignVisual(key);signTexts.clear();}
+function updateSigns(dt){
+ signTimer-=dt;if(signTimer>0)return;signTimer=.5;
+ for(const [key,m] of signVisuals)if(m.position.distanceToSquared(player.pos)>80*80)removeSignVisual(key);
+ for(const [key,text] of signTexts){if(signVisuals.has(key))continue;const [x,y,z]=key.split(',').map(Number),id=world.getBlock(x,y,z);if(BLOCKS[id]?.model!=='sign'||Math.abs(x-player.pos.x)>64||Math.abs(z-player.pos.z)>64)continue;
+  const cv=pxCanvas(16,16,ctx=>{ctx.fillStyle='#2b2019';for(let n=0;n<text.length;n++){const art=SIGN_FONT[text[n]];if(!art)continue;const xx=(n%4)*4,yy=Math.floor(n/4)*4;for(let py=0;py<4;py++)for(let px=0;px<3;px++)if(art[py*3+px]==='1')ctx.fillRect(xx+px,yy+py,1,1);}});
+  const t=new THREE.CanvasTexture(cv);t.magFilter=t.minFilter=THREE.NearestFilter;t.generateMipmaps=false;const m=new THREE.Mesh(new THREE.PlaneGeometry(.9,.42),new THREE.MeshBasicMaterial({map:t,transparent:true,side:THREE.DoubleSide,depthWrite:false}));const f=BLOCKS[id].facing,dir=SHAPE_DIR[f];m.position.set(x+.5+dir[0]*.064,y+.75,z+.5+dir[1]*.064);m.rotation.y=-f*Math.PI/2;scene.add(m);signVisuals.set(key,m);
+ }
+}
+/* =========================================================================
    20. BOOT
    ========================================================================= */
-buildTextures(); buildEntityTextures(); buildEquipmentTextures(); buildFarmTextures();
+buildTextures(); buildEntityTextures(); buildEquipmentTextures(); buildFarmTextures(); buildShapeTextures();
 for(const n in TEX) TEX_NAME[TEX[n]]=n;
-buildBlockTables(); makeMaterials(); makeCrackMats(); makeParticles();
+buildShapeCache(); buildBlockTables(); makeMaterials(); makeCrackMats(); makeParticles();
 buildGuiImages(); buildHud(); applyGuiScale(); buildSky(); if(CONFIG.soundPack===false) sfx.usePack=false; soundLabel();
 scene.background = new THREE.Color(0x9cc8ff);
-window.__bc = { hydrateFarmland, growCrop, growTree, randomBlockTick, farmInteract, tickRandomBlocks, farmClock, farmDrops, wearHeld, absorbDamage, spawnXP, xpOrbs, tickXP, makeStack, packStack, unpackStack, quickMove, canAccept, armorPreview, attackMob, mobDamage, combat, projectiles, spawnArrow, tickProjectiles, explode, skyVisible, blockLightAt, tickHostile, releaseBow, entities, MOB_DEFS, spawnMob, hurtMob, feedMob, updateEntities, raycastMob, resetMobs, saveMobs, migrateMeta, getContainer, updateFurnaces, ITEMS, armorSlots, moveAxis, itemEntities, spawnItem, throwItem, updateItems, setSwing:(v)=>{held.forceP=v; held.equip=1;}, step:(dt,n)=>{ for(let i=0;i<n;i++){ updatePlayer(dt); updateCamera(dt); updateInteraction(dt); updateSurvival(dt); updateChunks(player.pos.x,player.pos.z,50); } }, prof, get locked(){return locked;}, get noLock(){return noLock;}, sfx, setDay:(t)=>{dayTime=t;}, get gen(){return gen;}, inv, mouse, mining, get target(){return target;}, breakBlock, tryPlace, world, player, B, BLOCKS, CONFIG, keys, meshStats, stats, camera, renderer, scene, setState, startWorld, beginGame, openGui, closeGui, saveWorld, readMeta, matchRecipe, craftGrid2, craftGrid3, craftOut, getFps:()=>fps, get state(){return gameState;}, get cursor(){return cursor;}, clickSlot };
+window.__bc = { shapeBoxes, shapeRayHit, shapePlayerIntersects, toggleShape, sleepBed, signTexts, setSignText, SHAPE_CACHE, collectBoxes, hydrateFarmland, growCrop, growTree, randomBlockTick, farmInteract, tickRandomBlocks, farmClock, farmDrops, wearHeld, absorbDamage, spawnXP, xpOrbs, tickXP, makeStack, packStack, unpackStack, quickMove, canAccept, armorPreview, attackMob, mobDamage, combat, projectiles, spawnArrow, tickProjectiles, explode, skyVisible, blockLightAt, tickHostile, releaseBow, entities, MOB_DEFS, spawnMob, hurtMob, feedMob, updateEntities, raycastMob, resetMobs, saveMobs, migrateMeta, getContainer, updateFurnaces, ITEMS, armorSlots, moveAxis, itemEntities, spawnItem, throwItem, updateItems, setSwing:(v)=>{held.forceP=v; held.equip=1;}, step:(dt,n)=>{ for(let i=0;i<n;i++){ updatePlayer(dt); updateCamera(dt); updateInteraction(dt); updateSurvival(dt); updateChunks(player.pos.x,player.pos.z,50); } }, prof, get locked(){return locked;}, get noLock(){return noLock;}, sfx, setDay:(t)=>{dayTime=t;}, get gen(){return gen;}, inv, mouse, mining, get target(){return target;}, breakBlock, tryPlace, world, player, B, BLOCKS, CONFIG, keys, meshStats, stats, camera, renderer, scene, setState, startWorld, beginGame, openGui, closeGui, saveWorld, readMeta, matchRecipe, craftGrid2, craftGrid3, craftOut, getFps:()=>fps, get state(){return gameState;}, get cursor(){return cursor;}, clickSlot };
 const QS = new URLSearchParams(location.search);
 if(QS.has('autostart')){ world.persist=false; startWorld(12345); player.mode=QS.get('mode')||'creative'; if(player.mode==='creative') [B.grass,B.dirt,B.stone,B.cobblestone,B.planks,B.log,B.glass,B.torch,B.bricks].forEach((id,i)=>inv.slots[i]={id,count:64}); onInventoryChange(); setState('playing'); }
 else { toTitle(); }
