@@ -715,7 +715,7 @@ if(typeof importScripts === 'function'){
  * eating, armor equip, melee, bow and shield/fireball blocking exercised.
  * Hoed/watered/seeded/fertilized/harvested crops, bred cows, milked/drank milk;
  * tamed/saddled/rode/dismounted a horse; tamed/sat/followed wolf and cat;
- * traded wheat→emerald→bread; cast/reelled fishing (bite timer accelerated).
+ * traded wheat→emerald→bread; cast/reeled fishing (bite timer accelerated).
  * Tamed/saddled flags, sign, bed and equipment retained on reload/travel.
  * /kill→reload→death screen→Respawn and Death→Title→Continue played;
  * score 49 and enchanted/equipment drops persisted; respawn stayed under
@@ -725,7 +725,17 @@ if(typeof importScripts === 'function'){
  * Repeatable developer checks: node tests/quality-regression.cjs (no build
  * dependency for players): syntax, original soundpack hash, stable 256 IDs,
  * 48 legacy chunk hashes, v3 determinism/resources, migration, portal frames.
- * Q6 FINAL: active CPU/frame interval sampling and final fresh-world walk.
+ * Q6 FINAL: completed active profiling and fresh Survival walkthrough; user
+ * requested immediate push before further expansion. Fresh tree gathering,
+ * Nether quartz/wart mining, save/reload and return retained items and edits.
+ * Fast Creative portal crossings now use swept detection and arrivals face
+ * outward. Storage-full Save & Quit stays in-world; Export includes current
+ * inventory and RAM edits. Actual export/import recovered both; injected import
+ * failure restored existing storage byte-for-byte. Regression suite passes.
+ * SwiftShader active exploration/combat/weather/automation: approximately
+ * 14–34 FPS, average main-thread CPU 1–3.4 ms/frame; occasional long frames.
+ * This does not establish 60 FPS on hardware. Further hardware performance
+ * testing and a broader long-duration survival balance audit remain open.
  * Remaining limits: simplified entity pathfinding/redstone, downward-only
  * hoppers/manual furnace fuel, 128-block height, 32 active mobs, 12-block
  * piston push limit, 4×5 portal frames, no upside-down stair variants or
@@ -2169,6 +2179,7 @@ function saveWorld(){
         fire:player.fire||0, hp:player.health, food:player.food, sat:player.sat, xp:player.xp, fly:player.flying },
     inv: inv.slots.map(st=>packStack(st)), sel:inv.sel, containers,
     items: itemEntities.slice(-200).map(e=>[e.id,e.count,+e.pos.x.toFixed(2),+e.pos.y.toFixed(2),+e.pos.z.toFixed(2),Math.round(e.age),e.d??null,e.en||null]) };
+  world.saveSnapshot=meta;
   if(!store.set(SAVE_KEY, JSON.stringify(meta))) ok=false;
   if(!ok && !saveFailed){ saveFailed=true; toast('Could not save: browser storage is full or blocked'); }
   if(ok)saveFailed=false;return ok;
@@ -2209,7 +2220,7 @@ function respawn(resume=true){
   const s=world.spawn||[0.5,80,0.5];
   player.pos.set(s[0], s[1], s[2]); player.vel.set(0,0,0); player.fallStart=null;
   player.health=20; player.food=20; player.sat=5; player.air=300; player.xp=0;player.fire=0;player.effects={};player.hurtTime=0;player.exh=0;spawnPending=true;respawnPending=true;
-  if(resume){setState('playing');requestLock();}saveWorld();
+  if(resume){setState('playing');requestLock();}return saveWorld();
 }
 events.onJump = ()=>{ player.exh += player.sprinting?0.2:0.05; if(typeof sfx==='object') sfx.jump(); };
 events.onLand = (dist)=>{ if(typeof sfx==='object') sfx.land(dist); if(dist>3.5) damage(Math.floor(dist-3),'fall'); };
@@ -2826,9 +2837,9 @@ $('bOptP').onclick=()=>{ menuReturn='pause'; openOptions(); clickSound(); };
 function soundLabel(){ const t=`Sounds: ${sfx.usePack?'Pack':'Synth'}`; $('bSoundT').textContent=t; $('bSoundP').textContent=t; }
 $('bSoundT').onclick=$('bSoundP').onclick=()=>{ sfx.usePack=!sfx.usePack; CONFIG.soundPack=sfx.usePack; saveSettings(); soundLabel(); clickSound(); };
 $('bResume').onclick=()=>{ clickSound(); setState('playing'); requestLock(); };
-$('bQuit').onclick=()=>{ clickSound(); saveWorld(); toTitle(); };
+$('bQuit').onclick=()=>{clickSound();if(world.persist&&!saveWorld()){toast('Save failed. Export World before quitting to keep your progress.');return;}toTitle();};
 $('bRespawn').onclick=()=>{ clickSound(); respawn(); };
-$('bDeathTitle').onclick=()=>{clickSound();respawn(false);toTitle();};
+$('bDeathTitle').onclick=()=>{clickSound();const saved=respawn(false);if(world.persist&&!saved){setState('paused');toast('Save failed. Export World before quitting to keep your progress.');return;}toTitle();};
 $('bOptDone').onclick=()=>{ clickSound(); saveSettings(); showScreen(menuReturn); if(menuReturn==='title') refreshTitle(); };
 function clickSound(){ if(typeof sfx==='object') sfx.click(); }
 
@@ -2895,7 +2906,7 @@ function titleUpdate(dt){
 /* ---- starting / continuing a world ---- */
 function beginGame(seed, meta, mode){
   world.dimension=meta?.dimension||'overworld';world.dimensionStates=meta?.dimensions||{};
-  world.deathCause=meta?.deathCause||'';world.showIntro=!meta;world.portalLinks=meta?.portalLinks||[];portalState.arrival=null;portalState.time=0;portalState.mustLeave=true;
+  world.saveSnapshot=null;world.deathCause=meta?.deathCause||'';world.showIntro=!meta;world.portalLinks=meta?.portalLinks||[];portalState.arrival=null;portalState.time=0;portalState.mustLeave=true;portalState.lastPos=null;
   respawnPending=false;resetMobs();clearSigns();resetRedstone();
   if(world.builtDimension!==world.dimension){world.edits.clear();world.dirtyEdits.clear();}
   world.genVersion=meta?.generator||3;
@@ -4479,7 +4490,7 @@ function buildMagicTextures(){
    37. DIMENSIONS — inventories stay global; chunk edits, containers, entities,
        signs, positions and spawn points are isolated per dimension.
    ========================================================================= */
-const portalState={time:0,cooldown:0,arrival:null,mustLeave:false,editing:false};
+const portalState={time:0,cooldown:0,arrival:null,mustLeave:false,editing:false,lastPos:null};
 function chunkPrefix(){return world.dimension==='nether'?'bc.n.c.':CHUNK_PREFIX;}
 function captureDimension(meta){const out={};for(const key of ['p','spawn','containers','mobs','mobChunks','items','xpOrbs','signs','tnt','time','days','weather','pistons','plantAges'])out[key]=meta[key];return out;}
 function portalKey(f){return f.x+','+f.y+','+f.z+','+f.axis;}
@@ -4530,7 +4541,7 @@ function portalExit(f){
   for(let zz=Math.floor(z-PW);zz<=Math.floor(z+PW);zz++)for(let xx=Math.floor(x-PW);xx<=Math.floor(x+PW);xx++){
    const floor=BLOCKS[world.getBlock(xx,y-1,zz)];if(!floor?.solid||floor.liquid)safe=false;
    for(let yy=y;yy<y+2;yy++)if(world.getBlock(xx,yy,zz)!==0)safe=false;
-  }if(safe)return {x,y:y+.001,z};
+  }if(safe)return {x,y:y+.001,z,side};
  }
  const x=f.x+(f.axis===0?1.5:.5),z=f.z+(f.axis===1?1.5:.5);
  if(portalFrame(f.x,f.y,f.z,f.axis))return {x,y:f.y+1.001,z};
@@ -4575,6 +4586,7 @@ function settlePortalArrival(){
   beginGame(previous.seed,previous,previous.mode);portalState.mustLeave=true;return;
  }
  player.pos.set(exit.x,exit.y,exit.z);player.vel.set(0,0,0);player.fallStart=null;
+ if(exit.side){player.yaw=f.axis===0?(exit.side>0?Math.PI:0):(exit.side>0?-Math.PI/2:Math.PI/2);player.pitch=0;}
  if(a.source){const pair={};pair[a.from]=a.source;pair[world.dimension]=f;world.portalLinks=(world.portalLinks||[]).filter(p=>portalKey(p[a.from]||{})!==portalKey(a.source));world.portalLinks.push(pair);if(world.portalLinks.length>1024)world.portalLinks.shift();}
  if(!world.spawn)world.spawn=[exit.x,exit.y,exit.z];
  portalState.arrival=null;portalState.time=0;portalState.cooldown=2;portalState.mustLeave=true;spawnPending=false;saveWorld();
@@ -4597,12 +4609,15 @@ function settleNetherSpawn(){
 }
 function tickPortals(dt){
  portalState.cooldown=Math.max(0,portalState.cooldown-dt);
- const p=player.pos;let f=null;
- for(const dy of [.1,1]){const x=Math.floor(p.x),y=Math.floor(p.y+dy),z=Math.floor(p.z);if(world.getBlock(x,y,z)===B.portal){f=findPortal(x,y,z);if(!f)invalidatePortal(x,y,z);break;}}
+ const p=player.pos,last=portalState.lastPos;portalState.lastPos={x:p.x,y:p.y,z:p.z};let f=null;
+ const at=(x,y,z)=>{if(world.getBlock(x,y,z)!==B.portal)return null;const frame=findPortal(x,y,z);if(!frame)invalidatePortal(x,y,z);return frame;};
+ for(const dy of [.1,1]){f=at(Math.floor(p.x),Math.floor(p.y+dy),Math.floor(p.z));if(f)break;}
+ // Creative flight may cross an entire portal voxel between rendered frames.
+ if(!f&&player.mode==='creative'&&last){const distance=Math.hypot(p.x-last.x,p.y-last.y,p.z-last.z);if(distance>.05&&distance<8){const steps=Math.ceil(distance/.25);for(let i=1;i<=steps&&!f;i++){const t=i/steps;for(const dy of [.1,1]){f=at(Math.floor(last.x+(p.x-last.x)*t),Math.floor(last.y+(p.y-last.y)*t+dy),Math.floor(last.z+(p.z-last.z)*t));if(f)break;}}}}
  if(!f){portalState.time=0;portalState.mustLeave=false;return;}
  if(portalState.mustLeave||portalState.cooldown>0||gameState!=='playing')return;
  portalState.time+=dt;if(portalState.time>=.1&&portalState.time-dt<.1)toast('Entering '+(world.dimension==='nether'?'Overworld':'Nether')+'…');
- if(portalState.time>=(player.mode==='creative'?.25:2))switchDimension(world.dimension==='nether'?'overworld':'nether',f);
+ if(portalState.time>=(player.mode==='creative'?.05:2))if(!switchDimension(world.dimension==='nether'?'overworld':'nether',f)){portalState.time=0;portalState.cooldown=2;portalState.mustLeave=true;}
 }
 let fireballGeometry=new THREE.BoxGeometry(.3,.3,.3),fireballMaterial;
 function spawnFireball(x,y,z,vx,vy,vz){const e=spawnArrow(x,y,z,vx,vy,vz,'fireball');if(!e)return null;if(!fireballMaterial){const t=new THREE.CanvasTexture(TILE_CANVAS.lava_still);t.magFilter=t.minFilter=THREE.NearestFilter;t.generateMipmaps=false;fireballMaterial=new THREE.MeshBasicMaterial({map:t});}e.mesh.geometry=fireballGeometry;e.mesh.material=fireballMaterial;return e;}
@@ -4679,7 +4694,8 @@ function applyGraphicsSettings(){
 const worldStats={broken:0,placed:0,kills:0,crafted:0,trades:0,fished:0,distance:0,seconds:0};let riding=null;
 function exportWorld(){
  saveWorld();const chunks={};for(const key of store.keys())if(/^bc\.(?:n\.|e\.)?c\.-?\d+,-?\d+$/.test(key))chunks[key]=store.get(key);
- return {format:'Minercraft',version:1,meta:readMeta(),chunks};
+ for(const [key,edits] of world.edits){const cx=Math.floor(key/65536)-32768,cz=key%65536-32768;let raw='';for(const [index,id] of edits)raw+=index.toString(36)+'.'+id.toString(36)+',';chunks[chunkPrefix()+cx+','+cz]=raw;}
+ return {format:'Minercraft',version:1,meta:world.saveSnapshot||readMeta(),chunks};
 }
 function validateWorldFile(data){
  if(!data||data.format!=='Minercraft'||data.version!==1||!data.meta||!data.chunks||Array.isArray(data.chunks))throw Error('Not a Minercraft world export');
@@ -4704,12 +4720,19 @@ function validateWorldFile(data){
  return data;
 }
 function importWorld(data){
- validateWorldFile(data);const before=exportWorld(),keys=Object.keys(before.chunks);
+ validateWorldFile(data);const before=exportWorld(),keys=Object.keys(before.chunks),rawBefore=new Map(),written=new Set();
+ for(const key of store.keys())if(key===SAVE_KEY||/^bc\.(?:n\.|e\.)?c\./.test(key))rawBefore.set(key,store.get(key));
  try{
-  for(const [key,value] of Object.entries(data.chunks))if(!store.set(key,value))throw Error('Browser storage is full');
-  if(!store.set(SAVE_KEY,JSON.stringify(data.meta)))throw Error('Could not write world metadata');
+  for(const [key,value] of Object.entries(data.chunks)){if(!store.set(key,value))throw Error('Browser storage is full');written.add(key);}
+  if(!store.set(SAVE_KEY,JSON.stringify(data.meta)))throw Error('Could not write world metadata');written.add(SAVE_KEY);
   for(const key of keys)if(!(key in data.chunks))store.del(key);
- }catch(error){for(const key of store.keys())if(/^bc\.(?:n\.|e\.)?c\./.test(key))store.del(key);for(const [key,value] of Object.entries(before.chunks))store.set(key,value);if(before.meta)store.set(SAVE_KEY,JSON.stringify(before.meta));throw error;}
+ }catch(error){
+  // Restore only successfully overwritten keys. Never delete untouched saves
+  // when the first write is rejected (e.g. blocked storage or exhausted quota).
+  for(const key of written)store.del(key);
+  for(const key of written)if(rawBefore.has(key))store.set(key,rawBefore.get(key));
+  throw error;
+ }
  const meta=migrateMeta(data.meta);world.edits.clear();world.dirtyEdits.clear();world.seed=NaN;beginGame(meta.seed,meta,meta.mode);return true;
 }
 function downloadWorld(){const data=exportWorld();if(!data.meta){toast('Create a world first');return;}const url=URL.createObjectURL(new Blob([JSON.stringify(data)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download='Minercraft-'+world.seed+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
