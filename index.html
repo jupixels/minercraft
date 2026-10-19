@@ -4621,6 +4621,16 @@ function buildShapeTextures(){
 /* 30b. Original 3x5 sign font on a 16x16 procedural texture (four rows). */
 const signTexts=new Map(),signVisuals=new Map();let signTimer=0;
 const SIGN_FONT='A:010101111101101 B:110101110101110 C:011100100100011 D:110101101101110 E:111100110100111 F:111100110100100 G:011100101101011 H:101101111101101 I:111010010010111 J:001001001101010 K:101101110101101 L:100100100100111 M:101111111101101 N:101111111111101 O:010101101101010 P:110101110100100 Q:010101101111011 R:110101110101101 S:011100010001110 T:111010010010010 U:101101101101111 V:101101101101010 W:101101111111101 X:101101010101101 Y:101101010010010 Z:111001010100111 0:111101101101111 1:010110010010111 2:110001010100111 3:110001010001110 4:101101111001001 5:111100110001110 6:011100110101010 7:111001010010010 8:010101010101010 9:010101011001110'.split(' ').reduce((a,s)=>{const [k,v]=s.split(':');a[k]=v;return a;},{});
+Object.assign(SIGN_FONT,{'!':'010010010000010','?':'110001010000010','.':'000000000000010','-':'000000111000000',' ':'000000000000000'});
+// Signs: wrap to two centred lines, full 3x5 glyphs at 2x scale on a canvas shaped like the board.
+function signCanvas(text){
+  const words=String(text).split(' '),lines=[''];
+  for(const w of words){const cur=lines[lines.length-1];if(!cur)lines[lines.length-1]=w;else if((cur+' '+w).length<=10)lines[lines.length-1]=cur+' '+w;else if(lines.length<2)lines.push(w);else lines[1]=(lines[1]+' '+w);}
+  const fit=lines.map(l=>l.length>10?l.slice(0,10):l),W=96,H=44,S=2,lh=7*S;
+  return pxCanvas(W,H,ctx=>{ctx.fillStyle='#2b2019';const top=Math.round((H-fit.length*lh+S*2)/2);
+    fit.forEach((line,li)=>{const w=line.length*4*S-S,ox=Math.round((W-w)/2),oy=top+li*lh;
+      for(let n=0;n<line.length;n++){const art=SIGN_FONT[line[n]];if(!art)continue;for(let py=0;py<5;py++)for(let px=0;px<3;px++)if(art[py*3+px]==='1')ctx.fillRect(ox+n*4*S+px*S,oy+py*S,S,S);}});});
+}
 function openSignAt(x,y,z){openGui('sign',{x,y,z});}
 function setSignText(x,y,z,text){const key=posKey(x,y,z);signTexts.set(key,String(text).toUpperCase().replace(/[^A-Z0-9 !?.-]/g,'').slice(0,16));removeSignVisual(key);updateSigns(1);}
 function removeSignVisual(key){const m=signVisuals.get(key);if(m){scene.remove(m);m.geometry.dispose();m.material.map.dispose();m.material.dispose();signVisuals.delete(key);}}
@@ -4629,7 +4639,7 @@ function updateSigns(dt){
  signTimer-=dt;if(signTimer>0)return;signTimer=.5;
  for(const [key,m] of signVisuals)if(m.position.distanceToSquared(player.pos)>80*80)removeSignVisual(key);
  for(const [key,text] of signTexts){if(signVisuals.has(key))continue;const [x,y,z]=key.split(',').map(Number),id=world.getBlock(x,y,z);if(BLOCKS[id]?.model!=='sign'||Math.abs(x-player.pos.x)>64||Math.abs(z-player.pos.z)>64)continue;
-  const cv=pxCanvas(16,16,ctx=>{ctx.fillStyle='#2b2019';for(let n=0;n<text.length;n++){const art=SIGN_FONT[text[n]];if(!art)continue;const xx=(n%4)*4,yy=Math.floor(n/4)*4;for(let py=0;py<4;py++)for(let px=0;px<3;px++)if(art[py*3+px]==='1')ctx.fillRect(xx+px,yy+py,1,1);}});
+  const cv=signCanvas(text);
   const t=new THREE.CanvasTexture(cv);t.magFilter=t.minFilter=THREE.NearestFilter;t.generateMipmaps=false;const m=new THREE.Mesh(new THREE.PlaneGeometry(.9,.42),new THREE.MeshBasicMaterial({map:t,transparent:true,side:THREE.DoubleSide,depthWrite:false}));const f=BLOCKS[id].facing,dir=SHAPE_DIR[f];m.position.set(x+.5+dir[0]*.064,y+.75,z+.5+dir[1]*.064);m.rotation.y=-f*Math.PI/2;scene.add(m);signVisuals.set(key,m);
  }
 }
