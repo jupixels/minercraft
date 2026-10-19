@@ -427,6 +427,11 @@ function makeGen(seed, B){
         else if(b===4 && r<0.2) d[I(x,h+1,z)] = B.pink_petals;
       } else if(top===B.sand && bio[x+z*16]===1 && R()<0.006) d[I(x,h+1,z)] = B.dead_bush;
     }
+    if(B.sugar_cane)for(let z=1;z<15;z++)for(let x=1;x<15;x++){
+      const y=hm[x+z*16];if(y<SEA-1||y>SEA+1||R()>.06||d[I(x,y+1,z)]!==0)continue;
+      const below=d[I(x,y,z)];if(below!==B.sand&&below!==B.grass&&below!==B.dirt)continue;
+      if([[1,0],[-1,0],[0,1],[0,-1]].some(([dx,dz])=>d[I(x+dx,y,z+dz)]===B.water))for(let h=1;h<=2&&y+h<CH;h++)d[I(x,y+h,z)]=B.sugar_cane;
+    }
     return d;
   }
   return {genChunk, heightAt, biomeAt, mountainAt, BIOME_NAMES};
@@ -462,7 +467,12 @@ if(typeof importScripts === 'function'){
  * v1/v2→v3 migration and stack metadata through chests, transfers, splits,
  * dropped items and save/reload. 11 browser checks pass; zero errors.
  * F3 CPU .91 ms, render .67 ms, chunks .01 ms (SwiftShader R2).
- * Next: M4 farming;
+ * M4 COMPLETE — hydrated farmland/hoes; eight-stage wheat, carrots and
+ * potatoes; harvest/seeds; four saplings/tree growth; cane on shores and
+ * random growth; bread/hay/paper/bone meal; baked potatoes and zombie crop
+ * drops. Bounded random ticks (.8 ms). 12 browser checks pass, zero errors;
+ * F3 CPU .67 ms, render .38 ms, chunks .01 ms (SwiftShader R2).
+ * Next: M5 shapes;
  * M5 shapes; M6 fluids; M7 worldgen; M8 weather; M9 redstone;
  * M10 player/QoL; M11 enchanting; M12 Nether; M13 performance.
  * Each milestone receives browser functional tests, F3 timing checks and a commit.
@@ -543,6 +553,12 @@ defFacing(50,'chest',{label:'Chest',tex:{top:'chest_top',bottom:'chest_top',side
 defBlock(54,'pink_petals',{label:'Pink Petals',tex:{all:'pink_petals'},solid:false,opaque:false,model:'flat',ao:false,hardness:0,sound:'grass'});
 defBlock(55,'cherry_planks',{label:'Cherry Planks',tex:{all:'cherry_planks'},hardness:2,sound:'wood',tool:'axe'});
 defBlock(56,'birch_planks',{label:'Birch Planks',tex:{all:'birch_planks'},hardness:2,sound:'wood',tool:'axe'});
+defBlock(57,'farmland',{label:'Farmland',tex:{top:'farmland_dry',bottom:'dirt',side:'dirt'},hardness:.6,sound:'gravel',tool:'shovel',model:'farmland',opaque:false,drop:B.dirt});
+defBlock(58,'farmland_wet',{label:'Hydrated Farmland',tex:{top:'farmland_wet',bottom:'dirt',side:'dirt'},hardness:.6,sound:'gravel',tool:'shovel',model:'farmland',opaque:false,drop:B.dirt});
+for(const [crop,base] of [['wheat_crop',59],['carrot_crop',67],['potato_crop',75]])for(let stage=0;stage<8;stage++)defBlock(base+stage,crop+'_'+stage,{label:crop.replace('_crop','')+' ('+stage+'/7)',tex:{all:crop+'_'+stage},solid:false,opaque:false,plant:true,ao:false,hardness:0,sound:'grass',crop,stage,plantHeight:.22+stage*.1,drop:0});
+for(const [i,name] of ['oak_sapling','spruce_sapling','birch_sapling','cherry_sapling'].entries())defBlock(83+i,name,{label:name.replace('_',' '),tex:{all:name},solid:false,opaque:false,plant:true,ao:false,hardness:0,sound:'grass',sapling:true});
+defBlock(87,'sugar_cane',{label:'Sugar Cane',tex:{all:'sugar_cane'},solid:false,opaque:false,plant:true,ao:false,hardness:0,sound:'grass'});
+defBlock(88,'hay_bale',{label:'Hay Bale',tex:{all:'hay_bale'},hardness:.5,sound:'grass',tool:'hoe'});
 const BLOCK_COUNT = BLOCKS.length;
 const LEAVES = new Set([8,30,39,41]);
 
@@ -571,6 +587,7 @@ ITEMS[B.bow].durability=384;
 defItem(293,'iron_nugget',{label:'Iron Nugget'});defItem(294,'gold_nugget',{label:'Gold Nugget'});
 const ARMOR_MATS=[['leather',B.leather,[1,3,2,1],55],['iron',B.iron_ingot,[2,6,5,2],165],['golden',B.gold_ingot,[2,5,3,1],77],['diamond',B.diamond,[3,8,6,3],363]];
 ARMOR_MATS.forEach(([m,ingredient,points,dur],mi)=>['helmet','chestplate','leggings','boots'].forEach((kind,slot)=>defItem(330+mi*4+slot,m+'_'+kind,{label:m[0].toUpperCase()+m.slice(1)+' '+kind,armor:slot,defense:points[slot],durability:Math.round(dur*[1,1.45,1.36,1.18][slot]),stack:1})));
+defItem(295,'carrot',{label:'Carrot',food:3});defItem(296,'potato',{label:'Potato',food:1});defItem(297,'baked_potato',{label:'Baked Potato',food:5});defItem(298,'bone_meal',{label:'Bone Meal'});defItem(299,'paper',{label:'Paper'});
 const isBlockId = (id)=> id>0 && id<256;
 const itemDef = (id)=> id<256 ? BLOCKS[id] : ITEMS[id];
 const itemLabel = (id)=> { const d=itemDef(id); return d ? d.label : '?'; };
@@ -1031,10 +1048,10 @@ function tileUV(tile, u0,v0,u1,v1){ // pixel rect inside a tile -> 4 uv corners 
   const tu=(tile&15)/16, tv=(tile>>4)/16, s=1/256;
   return [[tu+u0*s, tv+v1*s],[tu+u1*s, tv+v1*s],[tu+u1*s, tv+v0*s],[tu+u0*s, tv+v0*s]];
 }
-function pushPlant(buf, x,y,z, tile, i){
+function pushPlant(buf, x,y,z, tile, i,height=1){
   const l=[0.9, skyL[i]/15, blkL[i]/15], a=0.15, b=0.85;
   const uv = tileUV(tile,0,0,16,16);
-  const q1=[[x+a,y,z+a],[x+b,y,z+b],[x+b,y+1,z+b],[x+a,y+1,z+a]], q2=[[x+a,y,z+b],[x+b,y,z+a],[x+b,y+1,z+a],[x+a,y+1,z+b]];
+  const q1=[[x+a,y,z+a],[x+b,y,z+b],[x+b,y+height,z+b],[x+a,y+height,z+a]], q2=[[x+a,y,z+b],[x+b,y,z+a],[x+b,y+height,z+a],[x+a,y+height,z+b]];
   pushRawQuad(buf,q1,uv,l); pushRawQuad(buf,[q1[1],q1[0],q1[3],q1[2]],uv,l);
   pushRawQuad(buf,q2,uv,l); pushRawQuad(buf,[q2[1],q2[0],q2[3],q2[2]],uv,l);
 }
@@ -1062,7 +1079,7 @@ function meshChunk(ch){
       for(let x=0;x<CS;x++,i++){
         const id=vol[i]; if(!id) continue;
         if(y<minY) minY=y; if(y>maxY) maxY=y;
-        if(T_PLANT[id]){ pushPlant(bufSolid,x,y,z,FACE_TILE[id*6],i); continue; }
+        if(T_PLANT[id]){ pushPlant(bufSolid,x,y,z,FACE_TILE[id*6],i,BLOCKS[id].plantHeight||1); continue; }
         if(T_TORCH[id]){ pushTorch(bufSolid,x,y,z,FACE_TILE[id*6],i); continue; }
         if(T_FLAT[id]){ const l=[1, skyL[i]/15, blkL[i]/15], uv=tileUV(FACE_TILE[id*6],0,0,16,16), h=y+0.03;
           pushRawQuad(bufSolid,[[x,h,z+1],[x+1,h,z+1],[x+1,h,z],[x,h,z]],uv,l); continue; }
@@ -1080,7 +1097,7 @@ function meshChunk(ch){
           const nid=vol[i+FACE_N_OFF[f]];
           if(T_OPAQUE[nid]) continue;
           if(nid===id && cs) continue;
-          pushQuad(bufSolid,f,x,y,z,FACE_TILE[id*6+f],i,false,1);
+          pushQuad(bufSolid,f,x,y,z,FACE_TILE[id*6+f],i,false,BLOCKS[id].model==='farmland'?.9375:1);
         }
       }
     }
@@ -1432,7 +1449,8 @@ function raycastBlock(maxDist){
 }
 function blockBox(id){ // selection box [x0,y0,z0,x1,y1,z1]
   const b=BLOCKS[id];
-  if(b.plant) return [0.15,0,0.15,0.85,0.8,0.85];
+  if(b.model==='farmland')return [0,0,0,1,.9375,1];
+  if(b.plant) return [0.15,0,0.15,0.85,b.plantHeight||.8,0.85];
   if(b.model==='torch') return [0.4,0,0.4,0.6,0.62,0.6];
   if(b.model==='flat') return [0,0,0,1,0.1,1];
   return [0,0,0,1,1,1];
@@ -1484,7 +1502,7 @@ function breakBlock(x,y,z, silent){
   if(b.container) dropContainer(x,y,z);
   if(player.mode==='survival'){
     player.exh+=0.005;
-    if(harvest){ const d=b.drop; if(d) spawnItem(d,1,x+0.5,y+0.4,z+0.5); }
+    if(harvest){ if(!farmDrops(id,x,y,z)){const d=b.drop; if(d) spawnItem(d,1,x+0.5,y+0.4,z+0.5);} }
     if(id===B.gravel && Math.random()<.1)spawnItem(B.flint,1,x+.5,y+.4,z+.5);
     if(id===B.leaves && Math.random()<0.05) spawnItem(B.apple,1,x+0.5,y+0.4,z+0.5);
     const XP={11:1,14:5,35:2}; if(harvest && XP[id]) spawnXP(XP[id] + ((Math.random()*2)|0),x+.5,y+.5,z+.5);
@@ -1500,6 +1518,8 @@ function playerIntersects(x,y,z){
   return p.x+PW>x && p.x-PW<x+1 && p.y+PH>y && p.y<y+1 && p.z+PW>z && p.z-PW<z+1;
 }
 function tryPlace(){
+  if(farmInteract()) return true;
+  if(inv.heldId()===B.sugar_cane)return false;
   if(feedTargetMob()) return true;
   if(!target) return false;
   const tb=BLOCKS[target.id];
@@ -1517,7 +1537,7 @@ function tryPlace(){
   if(y<0||y>=CH) return false;
   if(b.solid && playerIntersects(x,y,z)) return false;
   const below=world.getBlock(x,y-1,z);
-  if(b.plant && !(below===B.grass||below===B.dirt||below===B.grass_snow||(id===B.dead_bush&&below===B.sand))) return false;
+  if(b.plant && !(below===B.grass||below===B.dirt||below===B.grass_snow||below===B.grass_taiga||(id===B.dead_bush&&below===B.sand))) return false;
   if(b.model==='torch' && !(below>0 && BLOCKS[below].opaque)) return false;
   if(id===B.cactus && !(below===B.sand||below===B.cactus)) return false;
   world.setBlock(x,y,z,id);
@@ -1766,7 +1786,9 @@ for(const [mi,[m,ingredient]] of ARMOR_MATS.entries()){
 }
 shapeless([B.iron_ingot],B.iron_nugget,9);shapeless([B.gold_ingot],B.gold_nugget,9);
 shaped(['NNN','NNN','NNN'],{N:[B.iron_nugget]},B.iron_ingot);shaped(['NNN','NNN','NNN'],{N:[B.gold_nugget]},B.gold_ingot);
-const SMELT = {}; SMELT[B.raw_pork]=B.cooked_pork; SMELT[B.raw_beef]=B.cooked_beef; SMELT[B.raw_chicken]=B.cooked_chicken; SMELT[B.sand]=B.glass; SMELT[B.cobblestone]=B.stone; SMELT[B.iron_ore]=B.iron_ingot; SMELT[B.gold_ore]=B.gold_ingot;
+shaped(['WWW'],{W:[B.wheat]},B.bread);shaped(['WWW','WWW','WWW'],{W:[B.wheat]},B.hay_bale);
+shapeless([B.hay_bale],B.wheat,9);shapeless([B.bone],B.bone_meal,3);shaped(['SSS'],{S:[B.sugar_cane]},B.paper,3);
+const SMELT = {}; SMELT[B.potato]=B.baked_potato; SMELT[B.raw_pork]=B.cooked_pork; SMELT[B.raw_beef]=B.cooked_beef; SMELT[B.raw_chicken]=B.cooked_chicken; SMELT[B.sand]=B.glass; SMELT[B.cobblestone]=B.stone; SMELT[B.iron_ore]=B.iron_ingot; SMELT[B.gold_ore]=B.gold_ingot;
 for(const l of [B.log,B.spruce_log,B.birch_log,B.cherry_log]) SMELT[l]=B.coal;
 const FUEL = {}; FUEL[B.coal]=80; FUEL[B.stick]=5; FUEL[B.crafting_table]=15; FUEL[B.chest]=15; FUEL[B.bookshelf]=15;
 for(const p of PLANKS) FUEL[p]=15; for(const l of [B.log,B.spruce_log,B.birch_log,B.cherry_log]) FUEL[l]=15;
@@ -3117,7 +3139,7 @@ function hurtMob(e,amount){
   if(!e||e.dead||e.hurt>0) return false;
   e.hp-=amount;e.hurt=.45;e.knockX=(e.pos.x-player.pos.x);e.knockZ=(e.pos.z-player.pos.z);const kl=Math.hypot(e.knockX,e.knockZ)||1;e.knockX=e.knockX/kl*5;e.knockZ=e.knockZ/kl*5;e.panic=4;e.yaw=Math.atan2(e.pos.x-player.pos.x,e.pos.z-player.pos.z);e.vel.y=4;
   sfx.mob(e.kind,true);
-  if(e.hp<=0){e.dead=.001;e.love=0; if(!e.baby)spawnXP(MOB_DEFS[e.kind].hostile?5:2,e.pos.x,e.pos.y+.5,e.pos.z); if(!e.baby) for(const [name,n] of MOB_DEFS[e.kind].loot)spawnItem(B[name],n,e.pos.x,e.pos.y+.4,e.pos.z,true);}
+  if(e.hp<=0){if(e.kind==='zombie'&&Math.random()<.3)spawnItem(Math.random()<.5?B.carrot:B.potato,1,e.pos.x,e.pos.y+.5,e.pos.z);e.dead=.001;e.love=0; if(!e.baby)spawnXP(MOB_DEFS[e.kind].hostile?5:2,e.pos.x,e.pos.y+.5,e.pos.z); if(!e.baby) for(const [name,n] of MOB_DEFS[e.kind].loot)spawnItem(B[name],n,e.pos.x,e.pos.y+.4,e.pos.z,true);}
   return true;
 }
 function attackMob(){
@@ -3149,7 +3171,7 @@ function spawnPassiveChunks(){
   }
 }
 function tickEntities(dt){
-  const start=performance.now(); entityClock.tick++; combat.cooldown=Math.max(0,combat.cooldown-dt);combat.hurt=Math.max(0,combat.hurt-dt);tickProjectiles(dt);tickXP(dt);tickHostileSpawns(dt);
+  const start=performance.now(); entityClock.tick++; combat.cooldown=Math.max(0,combat.cooldown-dt);combat.hurt=Math.max(0,combat.hurt-dt);tickProjectiles(dt);tickXP(dt);tickRandomBlocks(dt);tickHostileSpawns(dt);
   entityClock.spawnT-=dt;if(entityClock.spawnT<=0){entityClock.spawnT=.5;spawnPassiveChunks();}
   for(let i=entities.length-1;i>=0;i--){
     const e=entities[i],p=e.pos,d=MOB_DEFS[e.kind]; e.prev.copy(p);
@@ -3327,14 +3349,90 @@ function tickXP(dt){
  }
 }
 /* =========================================================================
+   29. FARMING — random ticks sample three blocks per 16³ section at 20 Hz.
+       The .8 ms budget carries a rotating cursor; no farm scans per frame.
+   ========================================================================= */
+const farmClock={list:[],cursor:0,refresh:0,ms:0,samples:0};
+function buildFarmTextures(){
+ for(const wet of [false,true])makeTile(wet?'farmland_wet':'farmland_dry',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++){const ridge=y%4===0;P(x,y,vary(wet?(ridge?[69,45,30]:[94,62,38]):(ridge?[109,75,44]:[145,105,65]),R,20));}});
+ for(const crop of ['wheat_crop','carrot_crop','potato_crop'])for(let stage=0;stage<8;stage++)makeTile(crop+'_'+stage,(P,R)=>{
+  for(let i=0;i<256;i++)P(i&15,i>>4,[0,0,0],0);
+  for(let n=0;n<5;n++){const x=2+n*3,h=3+stage;for(let k=0;k<h;k++){const leaf=(k+n)%3===0;const c=crop==='wheat_crop'&&stage>5?[204,178,64]:[74+stage*3,132+stage*3,43];P(x,15-k,vary(c,R,24));if(leaf)P(x+(n%2?1:-1),15-k,c);}if(stage===7&&crop!=='wheat_crop')for(let dx=-1;dx<=1;dx++)P(x+dx,14,crop==='carrot_crop'?[220,126,29]:[188,156,82]);}
+ });
+ for(const [i,name] of ['oak_sapling','spruce_sapling','birch_sapling','cherry_sapling'].entries())makeTile(name,(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++){const leaf=Math.abs(x-8)+Math.abs(y-6)<6;P(x,y,leaf?vary(i===3?[214,139,165]:[61,126-i*10,47],R,24):[116,83,45],leaf||(x===8&&y>6)?255:0);}});
+ makeTile('sugar_cane',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++)P(x,y,vary(y%5===0?[107,151,53]:[146,184,77],R,20),x%5===2||x%5===3?255:0);});
+ makeTile('hay_bale',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++)P(x,y,vary(y===3||y===12?[146,80,43]:[199+(x%3)*10,175,60],R,26));});
+ for(const [name,c] of [['carrot',[226,139,38]],['potato',[188,158,94]],['baked_potato',[153,113,57]],['bone_meal',[224,224,196]],['paper',[233,227,206]]])makeTile('item_'+name,(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++){const inside=name==='paper'?x>=3&&x<=12&&y>=3&&y<=12:Math.abs(x-8)+Math.abs(y-8)<7;P(x,y,vary(c,R,26),inside?255:0);}});
+ CREATIVE_TABS[1].items.push(B.farmland,B.farmland_wet,B.oak_sapling,B.spruce_sapling,B.birch_sapling,B.cherry_sapling,B.sugar_cane,B.hay_bale);
+ CREATIVE_TABS[3].items.push(B.carrot,B.potato,B.baked_potato,B.bone_meal,B.paper);
+}
+function farmland(id){return id===B.farmland||id===B.farmland_wet;}
+function waterNear(x,y,z,r=4){for(let dz=-r;dz<=r;dz++)for(let dx=-r;dx<=r;dx++)for(let dy=0;dy<=1;dy++)if(world.getBlock(x+dx,y+dy,z+dz)===B.water)return true;return false;}
+function hydrateFarmland(x,y,z){const wet=waterNear(x,y,z);world.setBlock(x,y,z,wet?B.farmland_wet:B.farmland);return wet;}
+function growCrop(x,y,z,force=false){
+ const id=world.getBlock(x,y,z),d=BLOCKS[id];if(!d?.crop)return false;
+ if(!farmland(world.getBlock(x,y-1,z))){breakBlock(x,y,z,true);return false;}
+ if(d.stage===7)return false;
+ if(!force&&lightAt(x,y,z)<.45)return false;
+ const growth=force?2+((Math.random()*3)|0):1;world.setBlock(x,y,z,id+Math.min(growth,7-d.stage));return true;
+}
+function growTree(x,y,z){
+ const id=world.getBlock(x,y,z),d=BLOCKS[id];if(!d?.sapling||y>CH-9)return false;
+ const below=world.getBlock(x,y-1,z);if(![B.dirt,B.grass,B.grass_taiga,B.grass_snow].includes(below))return false;
+ const variants=[[B.log,B.leaves],[B.spruce_log,B.spruce_leaves],[B.birch_log,B.birch_leaves],[B.cherry_log,B.cherry_leaves]],v=variants[id-83],height=id===84?7:5;
+ for(let dy=0;dy<=height+1;dy++)for(let dz=-2;dz<=2;dz++)for(let dx=-2;dx<=2;dx++){
+   const b=world.getBlock(x+dx,y+dy,z+dz);if(b<0||b!==0&&b!==id&&!BLOCKS[b].plant&&!LEAVES.has(b))return false;
+ }
+ world.setBlock(x,y-1,z,B.dirt);
+ for(let dy=height-2;dy<=height+1;dy++){const radius=dy===height+1?1:2;for(let dz=-radius;dz<=radius;dz++)for(let dx=-radius;dx<=radius;dx++)if(Math.abs(dx)+Math.abs(dz)<=radius*2-1)world.setBlock(x+dx,y+dy,z+dz,v[1]);}
+ for(let dy=0;dy<height;dy++)world.setBlock(x,y+dy,z,v[0]);return true;
+}
+function farmInteract(){
+ if(!target)return false;const t=target,id=inv.heldId(),tool=ITEMS[id];
+ if(tool?.tool==='hoe'&&[B.grass,B.grass_taiga,B.grass_snow,B.dirt].includes(t.id)&&world.getBlock(t.x,t.y+1,t.z)===0){world.setBlock(t.x,t.y,t.z,waterNear(t.x,t.y,t.z)?B.farmland_wet:B.farmland);wearHeld();sfx.blockPlace(B.dirt);return true;}
+ if(id===B.bone_meal){const changed=BLOCKS[t.id].crop?growCrop(t.x,t.y,t.z,true):BLOCKS[t.id].sapling?growTree(t.x,t.y,t.z):false;if(changed){if(player.mode==='survival')inv.consumeHeld();sfx.pop();return true;}return false;}
+ const crops={[B.seeds]:B.wheat_crop_0,[B.carrot]:B.carrot_crop_0,[B.potato]:B.potato_crop_0};
+ if(crops[id]&&farmland(t.id)&&world.getBlock(t.x,t.y+1,t.z)===0){world.setBlock(t.x,t.y+1,t.z,crops[id]);if(player.mode==='survival')inv.consumeHeld();sfx.blockPlace(B.tall_grass);return true;}
+ if(id===B.sugar_cane){const x=t.x+t.nx,y=t.y+t.ny,z=t.z+t.nz,below=world.getBlock(x,y-1,z);if(world.getBlock(x,y,z)!==0)return false;const valid=below===B.sugar_cane||[B.sand,B.dirt,B.grass].includes(below)&&waterNear(x,y-1,z,1);if(!valid)return false;world.setBlock(x,y,z,id);if(player.mode==='survival')inv.consumeHeld();return true;}
+ return false;
+}
+function farmDrops(id,x,y,z){
+ const d=BLOCKS[id];
+ if(id===B.tall_grass){if(Math.random()<.3)spawnItem(B.seeds,1,x+.5,y+.3,z+.5);return true;}
+ if(LEAVES.has(id)){if(Math.random()<.07)spawnItem(83+[B.leaves,B.spruce_leaves,B.birch_leaves,B.cherry_leaves].indexOf(id),1,x+.5,y+.3,z+.5);return false;}
+ if(!d?.crop)return false;
+ const mature=d.stage===7,drop=d.crop==='wheat_crop'?B.seeds:d.crop==='carrot_crop'?B.carrot:B.potato;
+ spawnItem(drop,mature?3:1,x+.5,y+.3,z+.5);if(mature&&d.crop==='wheat_crop')spawnItem(B.wheat,1,x+.5,y+.3,z+.5);return true;
+}
+function randomBlockTick(x,y,z){
+ const id=world.getBlock(x,y,z),d=BLOCKS[id];if(!d)return;
+ if(farmland(id)){const wet=hydrateFarmland(x,y,z);if(!wet&&!BLOCKS[world.getBlock(x,y+1,z)]?.crop&&Math.random()<.15)world.setBlock(x,y,z,B.dirt);}
+ else if(d.crop){if(Math.random()<.7)growCrop(x,y,z);}
+ else if(d.sapling){if(Math.random()<.4&&skyVisible(x,y,z))growTree(x,y,z);}
+ else if(id===B.sugar_cane){
+   let bottom=y;while(bottom>0&&world.getBlock(x,bottom-1,z)===B.sugar_cane)bottom--;
+   if(!waterNear(x,bottom-1,z,1)){breakBlock(x,y,z,true);return;}
+   if(y-bottom<2&&world.getBlock(x,y+1,z)===0)world.setBlock(x,y+1,z,B.sugar_cane);
+ }
+}
+function tickRandomBlocks(dt){
+ const t=performance.now();farmClock.refresh-=dt;
+ if(farmClock.refresh<=0){farmClock.refresh=1;farmClock.list.length=0;const px=player.pos.x,pz=player.pos.z;for(const c of world.chunks.values())if(c.data&&Math.abs(c.cx*16-px)<64&&Math.abs(c.cz*16-pz)<64)farmClock.list.push(c);}
+ const a=farmClock.list;if(!a.length)return;
+ let done=0;while(done<a.length&&performance.now()-t<.8){const c=a[farmClock.cursor++%a.length];done++;if(world.get(c.cx,c.cz)!==c)continue;
+  for(let section=0;section<8;section++)for(let n=0;n<3;n++){const bits=(Math.random()*4096)|0,x=c.cx*16+(bits&15),z=c.cz*16+((bits>>4)&15),y=section*16+(bits>>8);randomBlockTick(x,y,z);farmClock.samples++;}
+ }
+ farmClock.ms=performance.now()-t;
+}
+/* =========================================================================
    20. BOOT
    ========================================================================= */
-buildTextures(); buildEntityTextures(); buildEquipmentTextures();
+buildTextures(); buildEntityTextures(); buildEquipmentTextures(); buildFarmTextures();
 for(const n in TEX) TEX_NAME[TEX[n]]=n;
 buildBlockTables(); makeMaterials(); makeCrackMats(); makeParticles();
 buildGuiImages(); buildHud(); applyGuiScale(); buildSky(); if(CONFIG.soundPack===false) sfx.usePack=false; soundLabel();
 scene.background = new THREE.Color(0x9cc8ff);
-window.__bc = { wearHeld, absorbDamage, spawnXP, xpOrbs, tickXP, makeStack, packStack, unpackStack, quickMove, canAccept, armorPreview, attackMob, mobDamage, combat, projectiles, spawnArrow, tickProjectiles, explode, skyVisible, blockLightAt, tickHostile, releaseBow, entities, MOB_DEFS, spawnMob, hurtMob, feedMob, updateEntities, raycastMob, resetMobs, saveMobs, migrateMeta, getContainer, updateFurnaces, ITEMS, armorSlots, moveAxis, itemEntities, spawnItem, throwItem, updateItems, setSwing:(v)=>{held.forceP=v; held.equip=1;}, step:(dt,n)=>{ for(let i=0;i<n;i++){ updatePlayer(dt); updateCamera(dt); updateInteraction(dt); updateSurvival(dt); updateChunks(player.pos.x,player.pos.z,50); } }, prof, get locked(){return locked;}, get noLock(){return noLock;}, sfx, setDay:(t)=>{dayTime=t;}, get gen(){return gen;}, inv, mouse, mining, get target(){return target;}, breakBlock, tryPlace, world, player, B, BLOCKS, CONFIG, keys, meshStats, stats, camera, renderer, scene, setState, startWorld, beginGame, openGui, closeGui, saveWorld, readMeta, matchRecipe, craftGrid2, craftGrid3, craftOut, getFps:()=>fps, get state(){return gameState;}, get cursor(){return cursor;}, clickSlot };
+window.__bc = { hydrateFarmland, growCrop, growTree, randomBlockTick, farmInteract, tickRandomBlocks, farmClock, farmDrops, wearHeld, absorbDamage, spawnXP, xpOrbs, tickXP, makeStack, packStack, unpackStack, quickMove, canAccept, armorPreview, attackMob, mobDamage, combat, projectiles, spawnArrow, tickProjectiles, explode, skyVisible, blockLightAt, tickHostile, releaseBow, entities, MOB_DEFS, spawnMob, hurtMob, feedMob, updateEntities, raycastMob, resetMobs, saveMobs, migrateMeta, getContainer, updateFurnaces, ITEMS, armorSlots, moveAxis, itemEntities, spawnItem, throwItem, updateItems, setSwing:(v)=>{held.forceP=v; held.equip=1;}, step:(dt,n)=>{ for(let i=0;i<n;i++){ updatePlayer(dt); updateCamera(dt); updateInteraction(dt); updateSurvival(dt); updateChunks(player.pos.x,player.pos.z,50); } }, prof, get locked(){return locked;}, get noLock(){return noLock;}, sfx, setDay:(t)=>{dayTime=t;}, get gen(){return gen;}, inv, mouse, mining, get target(){return target;}, breakBlock, tryPlace, world, player, B, BLOCKS, CONFIG, keys, meshStats, stats, camera, renderer, scene, setState, startWorld, beginGame, openGui, closeGui, saveWorld, readMeta, matchRecipe, craftGrid2, craftGrid3, craftOut, getFps:()=>fps, get state(){return gameState;}, get cursor(){return cursor;}, clickSlot };
 const QS = new URLSearchParams(location.search);
 if(QS.has('autostart')){ world.persist=false; startWorld(12345); player.mode=QS.get('mode')||'creative'; if(player.mode==='creative') [B.grass,B.dirt,B.stone,B.cobblestone,B.planks,B.log,B.glass,B.torch,B.bricks].forEach((id,i)=>inv.slots[i]={id,count:64}); onInventoryChange(); setState('playing'); }
 else { toTitle(); }
