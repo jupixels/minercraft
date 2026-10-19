@@ -156,6 +156,9 @@ img,canvas.px{image-rendering:pixelated;image-rendering:crisp-edges}
     <div class="row"><div class="btn half slider" id="sSens"></div><div class="btn half slider" id="sVol"></div></div>
     <div class="row"><button class="btn half" id="tBob"></button><button class="btn half" id="tClouds"></button></div>
     <div class="row"><button class="btn half" id="tGui"></button><button class="btn half" id="tFps"></button></div>
+    <div class="row"><button class="btn half" id="tLeaves"></button><button class="btn half" id="tSmooth"></button></div>
+    <div class="row"><button class="btn half" id="tMipmaps"></button><button class="btn half" id="tMeshWorkers"></button></div>
+    <div class="btn slider" id="sMaxFps"></div>
     <button class="btn" id="tDifficulty"></button>
     <button class="btn" id="bOptDone" style="margin-top:calc(var(--g)*14)">Done</button>
   </div>
@@ -598,7 +601,12 @@ if(typeof importScripts === 'function'){
  * F3 CPU 4.49 ms, render 1.03 ms, chunks 2.54 ms (SwiftShader R2).
  * Self-directed fixes: loading readiness matched to circular mesh range;
  * enough padded generation neighbours; no urgent meshes outside view;
- * bounded fluid simulation distance. Next: M13 performance/settings.
+ * bounded fluid simulation distance. M13 COMPLETE — two mesh workers receive padded volumes and transfer
+ * geometry; stale revisions/dimension results are rejected; synchronous
+ * fallback retained. Fast/Fancy leaves, smooth light, mipmaps, FPS cap and
+ * render distance controls. Worker/sync positions/UV/light/tints identical;
+ * settings checks pass, zero console errors. F3 CPU 2.42 ms, chunks .79 ms,
+ * render .55 ms (SwiftShader R2). Greedy merging deferred to preserve AO.
  * M5 shapes; M6 fluids; M7 worldgen; M8 weather; M9 redstone;
  * M10 player/QoL; M11 enchanting; M12 Nether; M13 performance.
  * Each milestone receives browser functional tests, F3 timing checks and a commit.
@@ -609,7 +617,7 @@ if(typeof importScripts === 'function'){
    1. CONFIG & SMALL HELPERS
    ========================================================================= */
 const CS = 16, CH = 128, SEA = 62;
-const CONFIG = { renderDistance: 6, sensitivity: 1.0, fov: 70, difficulty:'normal' };
+const CONFIG = { renderDistance: 6, sensitivity: 1.0, fov: 70, difficulty:'normal',meshingWorkers:true,fancyLeaves:true,smoothLighting:true,mipmaps:false,maxFps:0 };
 const clamp = (v,a,b)=> v<a?a:(v>b?b:v);
 const lerp = (a,b,t)=> a+(b-a)*t;
 function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
@@ -1045,7 +1053,7 @@ const world = {
     for(let dz=-1;dz<=1;dz++) for(let dx=-1;dx<=1;dx++){
       if(dx===-1 && lx>=reach) continue; if(dx===1 && lx<16-reach) continue;
       if(dz===-1 && lz>=reach) continue; if(dz===1 && lz<16-reach) continue;
-      const n=this.chunks.get(ckey(cx+dx,cz+dz)); if(n&&n.data){ n.dirty=true; n.urgent=true; }
+      const n=this.chunks.get(ckey(cx+dx,cz+dz)); if(n&&n.data){ n.dirty=true; n.urgent=true;n.rev=(n.rev||0)+1; }
     }
   },
 };
@@ -1057,7 +1065,7 @@ function onChunkData(cx,cz,data){
   for(let i=0;i<data.length;i++){ const id=data[i]; if(id && BLOCKS[id].light) c.emitters.add(i);if(id===B.spawner)c.spawners.add(i); }
   seedFluidChunk(c);seedRedstoneChunk(c);
   c.dirty = true;
-  for(let dz=-1;dz<=1;dz++) for(let dx=-1;dx<=1;dx++){ const n=world.get(cx+dx,cz+dz); if(n&&n.data) n.dirty=true; }
+  for(let dz=-1;dz<=1;dz++) for(let dx=-1;dx<=1;dx++){ const n=world.get(cx+dx,cz+dz); if(n&&n.data){n.dirty=true;n.rev=(n.rev||0)+1;} }
 }
 
 /* =========================================================================
@@ -1190,7 +1198,7 @@ function pushQuad(buf, fi, x,y,z, tile, i, isWater, yTop,corners=null,lava=false
   for(let k=0;k<4;k++){
     const cn=f.c[k]; const s1=FACE_V_OFF[(fi*4+k)*2], s2=FACE_V_OFF[(fi*4+k)*2+1];
     let a, sky=skyL[cOff], bl=blkL[cOff], cnt=1;
-    if(isWater){ a=3; }
+    if(isWater||CONFIG.smoothLighting===false){ a=3; }
     else {
       const o1=aoq[cOff+s1], o2=aoq[cOff+s2], o3=aoq[cOff+s1+s2];
       a = (o1&&o2) ? 0 : 3-(o1+o2+o3);
@@ -1246,7 +1254,7 @@ function pushTorch(buf, x,y,z, tile, i){
 }
 
 let meshStats = { last:0, avg:0 };
-function meshChunk(ch){
+function meshChunkSync(ch){
   const t0=performance.now();
   if(!ch.biomes){ch.biomes=new Uint8Array(256);for(let z=0;z<16;z++)for(let x=0;x<16;x++)ch.biomes[x+z*16]=gen.biomeAt(ch.cx*16+x,ch.cz*16+z);}
   fillVolume(ch); computeLight(ch);
@@ -1394,14 +1402,14 @@ function updateChunks(px, pz, budgetMs){
   // mesh: urgent (player edits) first, then nearest dirty chunks with all neighbours ready
   const R2=(R+0.5)*(R+0.5);
   let meshed=0;
-  for(const c of world.chunks.values()) if((c.cx-pcx)*(c.cx-pcx)+(c.cz-pcz)*(c.cz-pcz)<=R2&&c.urgent && c.data && neighboursReady(c)){ if(meshed>0&&performance.now()-t0+meshStats.avg>budgetMs) break; meshChunk(c);meshed++; }
+  for(const c of world.chunks.values()) if((c.cx-pcx)*(c.cx-pcx)+(c.cz-pcz)*(c.cz-pcz)<=R2&&c.urgent && c.data && !c.meshPending && neighboursReady(c)){ if(meshed>0&&performance.now()-t0+meshStats.avg>budgetMs) break; if(!meshChunk(c))break;meshed++; }
   for(const w of wanted){
     if(w[2]>R2) break;
     const c=world.get(w[0],w[1]);
-    if(!c||!c.data||!c.dirty) continue;
+    if(!c||!c.data||!c.dirty||c.meshPending) continue;
     if(!neighboursReady(c)) continue;
     if((meshed>0 || performance.now()-t0>budgetMs) && performance.now()-t0 + meshStats.avg > budgetMs) break;
-    meshChunk(c); meshed++;
+    if(!meshChunk(c))break; meshed++;
   }
 }
 function neighboursReady(c){
@@ -2551,6 +2559,11 @@ function makeSlider(id, labelFn, min, max, step, get, set){
 function toggleBtn(id, labelFn, toggle){ const e=$(id); const upd=()=>e.textContent=labelFn(); e.onclick=()=>{ toggle(); upd(); clickSound(); }; upd(); }
 function openOptions(){
   showScreen('options');
+  toggleBtn('tLeaves',()=> 'Leaves: '+(CONFIG.fancyLeaves?'Fancy':'Fast'),()=>{CONFIG.fancyLeaves=!CONFIG.fancyLeaves;applyGraphicsSettings();});
+  toggleBtn('tSmooth',()=> 'Smooth light: '+(CONFIG.smoothLighting?'ON':'OFF'),()=>{CONFIG.smoothLighting=!CONFIG.smoothLighting;applyGraphicsSettings();});
+  toggleBtn('tMipmaps',()=> 'Mipmaps: '+(CONFIG.mipmaps?'ON':'OFF'),()=>{CONFIG.mipmaps=!CONFIG.mipmaps;applyGraphicsSettings();});
+  toggleBtn('tMeshWorkers',()=> 'Mesh workers: '+(CONFIG.meshingWorkers?'ON':'OFF'),()=>{CONFIG.meshingWorkers=!CONFIG.meshingWorkers;applyGraphicsSettings();});
+  makeSlider('sMaxFps',v=>'Max FPS: '+(v||'Unlimited'),0,144,12,()=>CONFIG.maxFps,v=>CONFIG.maxFps=v);
   toggleBtn('tDifficulty',()=> 'Difficulty: '+CONFIG.difficulty,()=>{const a=['peaceful','easy','normal','hard'];CONFIG.difficulty=a[(a.indexOf(CONFIG.difficulty)+1)%4];if(CONFIG.difficulty==='peaceful')for(const e of [...entities])if(MOB_DEFS[e.kind].hostile)removeMob(e);});
   makeSlider('sRender', v=>`Render: ${v} chunks`, 2, 16, 1, ()=>CONFIG.renderDistance, v=>{ CONFIG.renderDistance=v; lastCenter=null; });
   makeSlider('sFov', v=>`FOV: ${v===70?'Normal':v}`, 50, 110, 1, ()=>CONFIG.fov, v=>{ CONFIG.fov=v; camera.fov=v; camera.updateProjectionMatrix(); });
@@ -2689,7 +2702,7 @@ function settleSpawn(){
 function startWorld(seed, state, keepChunks){
   if(!keepChunks || world.seed!==seed||world.builtGenVersion!==(world.genVersion||2)||world.builtDimension!==(world.dimension||'overworld')){
     for(const c of world.chunks.values()) disposeChunk(c);
-    world.chunks.clear();clearFluidQueue();resetRedstone(); lastCenter=null; pendingLocal.length=0;
+    world.meshEpoch=(world.meshEpoch||0)+1;world.chunks.clear();clearFluidQueue();resetRedstone(); lastCenter=null; pendingLocal.length=0;
     world.seed=seed;world.builtDimension=world.dimension||'overworld';world.builtGenVersion=world.genVersion||2; startWorkers(seed);
   }
   if(typeof clearItems==='function') clearItems();
@@ -2703,7 +2716,7 @@ let lastT=performance.now(), fps=60, fpsAcc=0, fpsFrames=0, autosaveT=0;
 const stats = { drawCalls:0, tris:0 };
 function frame(){
   requestAnimationFrame(frame);
-  const now=performance.now(); let dt=(now-lastT)/1000; lastT=now; if(dt>0.1) dt=0.1;
+  const now=performance.now();if(CONFIG.maxFps>0&&now-lastT<1000/CONFIG.maxFps-.4)return; let dt=(now-lastT)/1000; lastT=now; if(dt>0.1) dt=0.1;
   fpsAcc+=dt; fpsFrames++; if(fpsAcc>=0.5){ fps=fpsFrames/fpsAcc; fpsAcc=0; fpsFrames=0; }
   U.uTime.value += dt;
   if(gameState==='title'){ titleUpdate(dt); if(typeof updateSky==='function') updateSky(dt*0.15, camera.position); }
@@ -4179,14 +4192,73 @@ function buildNetherTextures(){
  CREATIVE_TABS[1].items.push(B.netherrack,B.soul_sand,B.nether_quartz_ore);CREATIVE_TABS[3].items.push(B.nether_quartz);
 }
 /* =========================================================================
+   38. MESH WORKERS & GRAPHICS — send padded volumes (not live chunks),
+       transfer typed geometry arrays back, reject results after revisions or
+       dimension changes, and retain the tested synchronous fallback.
+   ========================================================================= */
+let meshWorkers=[],meshJobSerial=0,meshWorkerError='';
+function meshChunk(ch){
+ if(!CONFIG.meshingWorkers||!meshWorkers.length){meshChunkSync(ch);return true;}
+ const worker=meshWorkers.find(w=>!w.job);if(!worker||ch.meshPending)return false;
+ if(!ch.biomes){ch.biomes=new Uint8Array(256);for(let z=0;z<16;z++)for(let x=0;x<16;x++)ch.biomes[x+z*16]=gen.biomeAt(ch.cx*16+x,ch.cz*16+z);}
+ fillVolume(ch);const volume=vol.slice(),emitters=[];
+ for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){const c=world.get(ch.cx+dx,ch.cz+dz);if(!c?.data||!c.emitters.size)continue;const a=[];for(const li of c.emitters)a.push(li,c.data[li]);emitters.push([dx,dz,a]);}
+ const job={id:++meshJobSerial,cx:ch.cx,cz:ch.cz,rev:ch.rev||0,epoch:world.meshEpoch||0};worker.job={...job,ch};ch.meshPending=true;ch.dirty=false;
+ worker.worker.postMessage({...job,volume,emitters,biomes:ch.biomes,smoothLighting:CONFIG.smoothLighting},[volume.buffer]);return true;
+}
+function workerGeometry(data){
+ if(!data.pos.length)return null;const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(data.pos,3));g.setAttribute('uv',new THREE.BufferAttribute(data.uv,2));g.setAttribute('aLight',new THREE.BufferAttribute(data.lt,3));g.setAttribute('aTint',new THREE.BufferAttribute(data.tint,3));g.setIndex(new THREE.BufferAttribute(data.pos.length/3>65535?data.idx:Uint16Array.from(data.idx),1));return g;
+}
+function stopMeshingWorkers(){for(const w of meshWorkers){w.worker.terminate();if(w.job){w.job.ch.meshPending=false;w.job.ch.dirty=true;}}meshWorkers=[];}
+function startMeshingWorkers(){
+ stopMeshingWorkers();if(!CONFIG.meshingWorkers)return;
+ try{
+  const source=document.scripts[document.scripts.length-1].textContent;
+  const prefix=source.slice(source.indexOf('const PADW ='),source.indexOf('let meshStats ='));
+  let body=meshChunkSync.toString();body=body.slice(body.indexOf('{')+1,body.indexOf('  ch.solidGeo ='));
+  body=body.replace('fillVolume(ch); computeLight(ch);','vol.set(job.volume);fillWorkerMasks();computeLight(ch);');
+  const declarations=`const CS=16,CH=128,FACING_FACE=[4,1,5,0],B=${JSON.stringify(B)},BLOCKS=${JSON.stringify(BLOCKS)},BLOCK_COUNT=${BLOCK_COUNT},TEX=${JSON.stringify(TEX)},CONFIG={smoothLighting:true},WHITE_TINT=[1,1,1],BIOME_TINT=${JSON.stringify(BIOME_TINT)},FULL_SHAPE=[[0,0,0,1,1,1]],SHAPE_CACHE=[],SHAPE_DIR=[[0,1],[-1,0],[0,-1],[1,0]],CONNECT_CACHE={fence:[],pane:[]};let currentTint=WHITE_TINT,currentTintAll=false;const LEAVES=new Set(${JSON.stringify([...LEAVES])});const clamp=${clamp.toString()},lerp=${lerp.toString()};let job,neighbors;const world={get(cx,cz){return neighbors.get((cx-job.cx)+','+(cz-job.cz));},getBlock(x,y,z){if(y<0)return B.bedrock;if(y>=128)return 0;x-=job.cx*16;z-=job.cz*16;if(x<-4||x>=20||z<-4||z>=20)return -1;return vol[vi(x,y,z)];}};`;
+  const extra=[rotateShape,buildShapeCache,shapeBoxes,pushShape,liquidCorners].map(f=>f.toString()).join('\n');
+  const code=declarations+prefix+extra+`
+   const _liquidCorners=new Float32Array(4);
+   function fillWorkerMasks(){for(let i=0;i<VOL;i++){opq[i]=T_OPAQUE[vol[i]];aoq[i]=T_AO[vol[i]];}for(let y=0;y<VY;y++)for(let k=0;k<VX;k++){opq[k+y*VXZ]=1;opq[k+(VX-1)*VX+y*VXZ]=1;opq[k*VX+y*VXZ]=1;opq[k*VX+VX-1+y*VXZ]=1;}for(let k=0;k<VXZ;k++)opq[k]=1;}
+   function outputBuffer(b){return {pos:b.pos.slice(0,b.v*3),uv:b.uv.slice(0,b.v*2),lt:b.lt.slice(0,b.v*3),tint:b.tint.slice(0,b.v*3),idx:b.idx.slice(0,b.i)};}
+   buildShapeCache();buildBlockTables();
+   onmessage=e=>{job=e.data;CONFIG.smoothLighting=job.smoothLighting;neighbors=new Map();for(const [dx,dz,a] of job.emitters){const c={emitters:new Set(),data:[]};for(let i=0;i<a.length;i+=2){c.emitters.add(a[i]);c.data[a[i]]=a[i+1];}neighbors.set(dx+','+dz,c);}const ch={cx:job.cx,cz:job.cz,biomes:job.biomes};
+   ${body}
+   const solid=outputBuffer(bufSolid),water=outputBuffer(bufWater),out={id:job.id,solid,water,minY,maxY,blockLight:ch.blockLight,ms:performance.now()-t0};const transfers=[ch.blockLight.buffer];for(const a of [solid,water])for(const key in a)transfers.push(a[key].buffer);postMessage(out,transfers);};`;
+  const url=URL.createObjectURL(new Blob([code],{type:'text/javascript'}));
+  for(let i=0;i<Math.min(2,Math.max(1,(navigator.hardwareConcurrency||4)-2));i++){
+   const record={worker:new Worker(url),job:null};record.worker.onmessage=e=>{
+    const task=record.job;record.job=null;if(!task)return;const ch=task.ch;ch.meshPending=false;
+    if(world.get(ch.cx,ch.cz)!==ch||task.epoch!==(world.meshEpoch||0))return;
+    if(task.rev!==(ch.rev||0)){ch.dirty=true;return;}
+    const data=e.data;if(ch.solidGeo)ch.solidGeo.dispose();if(ch.waterGeo)ch.waterGeo.dispose();ch.solidGeo=workerGeometry(data.solid);ch.waterGeo=workerGeometry(data.water);ch.blockLight=data.blockLight;
+    const radius=Math.sqrt(128+((data.maxY-data.minY+1)/2)**2),cy=(data.minY+data.maxY+1)/2;for(const g of [ch.solidGeo,ch.waterGeo])if(g)g.boundingSphere=new THREE.Sphere(new THREE.Vector3(8,cy,8),radius);
+    attachMeshes(ch);ch.meshed=true;ch.urgent=false;ch.dirty=false;meshStats.last=data.ms;meshStats.avg=meshStats.avg*.95+data.ms*.05;
+   };record.worker.onerror=e=>{meshWorkerError=e.message;stopMeshingWorkers();toast('Mesh worker unavailable; using the synchronous mesher');};meshWorkers.push(record);
+  }
+  URL.revokeObjectURL(url);
+ }catch(e){meshWorkerError=String(e);stopMeshingWorkers();}
+}
+function applyGraphicsSettings(){
+ const leaves=[...LEAVES,B.dark_leaves,B.jungle_leaves,B.acacia_leaves];
+ for(const id of leaves){const b=BLOCKS[id];if(!b)continue;b.opaque=!CONFIG.fancyLeaves;const name=b.tex.all,c=TILE_CANVAS[name],tile=TEX[name];atlasCtx.clearRect((tile&15)*16,(tile>>4)*16,16,16);atlasCtx.drawImage(c,(tile&15)*16,(tile>>4)*16);
+  if(!CONFIG.fancyLeaves){const image=atlasCtx.getImageData((tile&15)*16,(tile>>4)*16,16,16);for(let i=0;i<image.data.length;i+=4)if(image.data[i+3]<128){image.data[i]=56;image.data[i+1]=102;image.data[i+2]=43;image.data[i+3]=255;}atlasCtx.putImageData(image,(tile&15)*16,(tile>>4)*16);}
+ }
+ buildBlockTables();atlasTex.generateMipmaps=!!CONFIG.mipmaps;atlasTex.minFilter=CONFIG.mipmaps?THREE.NearestMipmapLinearFilter:THREE.NearestFilter;atlasTex.needsUpdate=true;
+ for(const c of world.chunks.values()){c.dirty=true;c.rev=(c.rev||0)+1;}
+ startMeshingWorkers();saveSettings();
+}
+/* =========================================================================
    20. BOOT
    ========================================================================= */
 buildTextures(); buildEntityTextures(); buildEquipmentTextures(); buildFarmTextures(); buildShapeTextures(); buildFluidTextures();buildBiomeTextures();buildRedstoneTextures();buildMagicTextures();buildNetherTextures();
 for(const n in TEX) TEX_NAME[TEX[n]]=n;
 buildShapeCache(); buildBlockTables(); makeMaterials(); initFluidMaterial(); makeCrackMats(); makeParticles();
-buildGuiImages(); buildHud(); applyGuiScale(); buildSky();buildWeather();buildPlayerModel(); if(CONFIG.soundPack===false) sfx.usePack=false; soundLabel();
+buildGuiImages(); buildHud(); applyGuiScale(); buildSky();buildWeather();buildPlayerModel();applyGraphicsSettings(); if(CONFIG.soundPack===false) sfx.usePack=false; soundLabel();
 scene.background = new THREE.Color(0x9cc8ff);
-window.__bc = { switchDimension, lightPortal, createPortal, tickPortals, spawnFireball, chunkPrefix, enchantHeld, tickMagic, BREW, drinkPotion, command, pickBlock, advancements, awardAdvancement, get cameraMode(){return cameraMode;}, setCameraMode:(m)=>cameraMode=((m%3)+3)%3, updateThirdPerson, redstoneClock, powerAt, tickRedstone, wakeRedstone, primeTNT, primedTNT, redstoneInteract, weather, setWeather, updateWeather, tickWeatherRoof, lightning, makeGenMain, WORLDGEN_SRC, tickSpawners, tickFluids, tickFire, fluidClock, wakeFluids, bucketInteract, sourceFluid, shapeBoxes, shapeRayHit, shapePlayerIntersects, toggleShape, sleepBed, signTexts, setSignText, SHAPE_CACHE, collectBoxes, hydrateFarmland, growCrop, growTree, randomBlockTick, farmInteract, tickRandomBlocks, farmClock, farmDrops, wearHeld, absorbDamage, spawnXP, xpOrbs, tickXP, makeStack, packStack, unpackStack, quickMove, canAccept, armorPreview, attackMob, mobDamage, combat, projectiles, spawnArrow, tickProjectiles, explode, skyVisible, blockLightAt, tickHostile, releaseBow, entities, MOB_DEFS, spawnMob, hurtMob, feedMob, updateEntities, raycastMob, resetMobs, saveMobs, migrateMeta, getContainer, updateFurnaces, ITEMS, armorSlots, moveAxis, itemEntities, spawnItem, throwItem, updateItems, setSwing:(v)=>{held.forceP=v; held.equip=1;}, step:(dt,n)=>{ for(let i=0;i<n;i++){ updatePlayer(dt); updateCamera(dt); updateInteraction(dt); updateSurvival(dt); updateChunks(player.pos.x,player.pos.z,50); } }, prof, get locked(){return locked;}, get noLock(){return noLock;}, sfx, setDay:(t)=>{dayTime=t;}, get gen(){return gen;}, inv, mouse, mining, get target(){return target;}, breakBlock, tryPlace, world, player, B, BLOCKS, CONFIG, keys, meshStats, stats, camera, renderer, scene, setState, startWorld, beginGame, openGui, closeGui, saveWorld, readMeta, matchRecipe, craftGrid2, craftGrid3, craftOut, getFps:()=>fps, get state(){return gameState;}, get cursor(){return cursor;}, clickSlot };
+window.__bc = { meshChunkSync, meshChunk, applyGraphicsSettings, get meshWorkers(){return meshWorkers;},get meshWorkerError(){return meshWorkerError;}, switchDimension, lightPortal, createPortal, tickPortals, spawnFireball, chunkPrefix, enchantHeld, tickMagic, BREW, drinkPotion, command, pickBlock, advancements, awardAdvancement, get cameraMode(){return cameraMode;}, setCameraMode:(m)=>cameraMode=((m%3)+3)%3, updateThirdPerson, redstoneClock, powerAt, tickRedstone, wakeRedstone, primeTNT, primedTNT, redstoneInteract, weather, setWeather, updateWeather, tickWeatherRoof, lightning, makeGenMain, WORLDGEN_SRC, tickSpawners, tickFluids, tickFire, fluidClock, wakeFluids, bucketInteract, sourceFluid, shapeBoxes, shapeRayHit, shapePlayerIntersects, toggleShape, sleepBed, signTexts, setSignText, SHAPE_CACHE, collectBoxes, hydrateFarmland, growCrop, growTree, randomBlockTick, farmInteract, tickRandomBlocks, farmClock, farmDrops, wearHeld, absorbDamage, spawnXP, xpOrbs, tickXP, makeStack, packStack, unpackStack, quickMove, canAccept, armorPreview, attackMob, mobDamage, combat, projectiles, spawnArrow, tickProjectiles, explode, skyVisible, blockLightAt, tickHostile, releaseBow, entities, MOB_DEFS, spawnMob, hurtMob, feedMob, updateEntities, raycastMob, resetMobs, saveMobs, migrateMeta, getContainer, updateFurnaces, ITEMS, armorSlots, moveAxis, itemEntities, spawnItem, throwItem, updateItems, setSwing:(v)=>{held.forceP=v; held.equip=1;}, step:(dt,n)=>{ for(let i=0;i<n;i++){ updatePlayer(dt); updateCamera(dt); updateInteraction(dt); updateSurvival(dt); updateChunks(player.pos.x,player.pos.z,50); } }, prof, get locked(){return locked;}, get noLock(){return noLock;}, sfx, setDay:(t)=>{dayTime=t;}, get gen(){return gen;}, inv, mouse, mining, get target(){return target;}, breakBlock, tryPlace, world, player, B, BLOCKS, CONFIG, keys, meshStats, stats, camera, renderer, scene, setState, startWorld, beginGame, openGui, closeGui, saveWorld, readMeta, matchRecipe, craftGrid2, craftGrid3, craftOut, getFps:()=>fps, get state(){return gameState;}, get cursor(){return cursor;}, clickSlot };
 const QS = new URLSearchParams(location.search);
 if(QS.has('autostart')){ world.persist=false; startWorld(12345); player.mode=QS.get('mode')||'creative'; if(player.mode==='creative') [B.grass,B.dirt,B.stone,B.cobblestone,B.planks,B.log,B.glass,B.torch,B.bricks].forEach((id,i)=>inv.slots[i]={id,count:64}); onInventoryChange(); setState('playing'); }
 else { toTitle(); }
