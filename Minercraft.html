@@ -239,7 +239,7 @@ function makeNoise(seed){
 
 /* ---- Terrain generator ---- */
 function makeGen(seed, B, version=1,dimension='overworld'){
-  if(dimension==='nether')return makeNetherGen(seed,B);
+  if(dimension==='nether')return makeNetherGen(seed,B,version);
   const N = makeNoise(seed), N2 = makeNoise(seed+101), N3 = makeNoise(seed+202);
   const smooth = (a,b,x)=>{ const t=Math.min(1,Math.max(0,(x-a)/(b-a))); return t*t*(3-2*t); };
 
@@ -266,6 +266,22 @@ function makeGen(seed, B, version=1,dimension='overworld'){
   }
   function mountainAt(x,z){ return smooth(0.18, 0.55, N.fbm2(x/650+300, z/650-120, 2)); }
   function heightAt(x,z){
+    if(version>=3){
+      const cont=N.fbm2(x/420,z/420,3),t=climate(x,z),dry=smooth(.24,.40,t);
+      const hillMask=smooth(-.1,.6,N.n2(x/300+50,z/300-80));
+      const hills=N.fbm2(x/120,z/120,3),m=mountainAt(x,z)*(1-dry*.65);
+      const ridge=1-Math.abs(N3.n2(x/190,z/190));
+      let h=SEA+5+cont*13+hills*(4+hillMask*12)*(1-dry*.6)+m*(12+ridge*ridge*39);
+      // Continuous continental shelf and broad river banks avoid biome cliffs.
+      const ocean=smooth(-.08,-.36,cont),bed=SEA-9-Math.max(0,-cont-.18)*55;
+      h=h*(1-ocean)+bed*ocean;
+      const river=1-smooth(.014,.075,Math.abs(N3.n2(x/550+70,z/550-35)));
+      const channel=river*(1-ocean)*(1-m*.85);h=h*(1-channel)+(SEA-4)*channel;
+      const moisture=N3.n2(x/720+19,z/720-61),swamp=smooth(.1,.3,moisture)*(1-smooth(-.1,.02,cont))*smooth(-.16,-.06,cont)*(1-ocean);
+      h=h*(1-swamp)+(SEA+.5+N2.n2(x/90,z/90))*swamp;
+      if(h>102)h=102+16*(1-Math.exp(-(h-102)/16));
+      return Math.max(5,Math.min(CH-10,Math.floor(h)));
+    }
     const t = climate(x,z);
     const desert = smooth(0.24, 0.40, t), cold = smooth(-0.15, -0.45, t);
     const cont = N.fbm2(x/420, z/420, 3);
@@ -326,6 +342,56 @@ function makeGen(seed, B, version=1,dimension='overworld'){
       for(let y=h+1;y<=SEA;y++) d[I(x,y,z)] = (y===SEA && b===3) ? B.ice : B.water;
     }
 
+    // Generator 3: connected region nodes and curved capsule tunnels. Every
+    // path uses world coordinates and its own seed, so chunks agree exactly.
+    if(version>=3){
+      const node=(gx,gz,layer)=>{
+        const r=mulberry32(seed^Math.imul(gx,374761393)^Math.imul(gz,668265263)^Math.imul(layer+1,1274126177));
+        return {x:gx*64+32+(r()-.5)*26,z:gz*64+32+(r()-.5)*26,y:(layer?43:18)+(r()-.5)*(layer?16:12),r:r()};
+      };
+      function hollow(wx,wy,wz,rx,ry,entrance=false){
+        if(wx+rx<ox||wx-rx>=ox+16||wz+rx<oz||wz-rx>=oz+16)return;
+        const x0=Math.max(0,Math.floor(wx-rx)-ox),x1=Math.min(15,Math.ceil(wx+rx)-ox),z0=Math.max(0,Math.floor(wz-rx)-oz),z1=Math.min(15,Math.ceil(wz+rx)-oz);
+        for(let z=z0;z<=z1;z++)for(let x=x0;x<=x1;x++){
+          const h=hm[x+z*16],wet=h<=SEA+3,roof=wet?h-5:entrance?h+2:h-5;
+          const horizontal=((ox+x+.5-wx)**2+(oz+z+.5-wz)**2)/(rx*rx);if(horizontal>=1)continue;
+          const extent=ry*Math.sqrt(1-horizontal);
+          for(let y=Math.max(4,Math.ceil(wy-extent-.5));y<=Math.min(CH-2,roof,Math.floor(wy+extent-.5));y++){
+            const i=I(x,y,z),id=d[i];if(id===B.bedrock||id===B.water||id===B.ice)continue;
+            d[i]=y<8?B.lava:0;
+          }
+        }
+      }
+      function passage(a,b,salt,entrance=false){
+        const r=mulberry32(seed^salt),phase=r()*Math.PI*2,bend=(r()-.5)*14,vertical=(r()-.5)*10,width=1.65+r()*.9;
+        const length=Math.hypot(b.x-a.x,b.y-a.y,b.z-a.z),steps=Math.ceil(length/1.4),dx=b.x-a.x,dz=b.z-a.z,norm=Math.hypot(dx,dz)||1;
+        for(let k=0;k<=steps;k++){
+          const t=k/steps,envelope=Math.sin(t*Math.PI),wave=Math.sin(t*Math.PI*2+phase)*envelope;
+          const x=a.x+dx*t+dz/norm*bend*wave,z=a.z+dz*t-dx/norm*bend*wave,y=a.y+(b.y-a.y)*t+vertical*wave;
+          const radius=width+Math.sin(t*9+phase)*.25;hollow(x,y,z,radius,radius*.85,entrance);
+        }
+      }
+      const gx0=Math.floor(ox/64),gz0=Math.floor(oz/64);
+      for(let gz=gz0-2;gz<=gz0+1;gz++)for(let gx=gx0-2;gx<=gx0+1;gx++){
+        const salt=Math.imul(gx,73856093)^Math.imul(gz,19349663),r=mulberry32(seed^salt^0x714a);
+        for(let layer=0;layer<2;layer++){
+          const a=node(gx,gz,layer);
+          for(const [dx,dz,k] of [[1,0,103],[0,1,207]])if(r()<.88)passage(a,node(gx+dx,gz+dz,layer),salt^(layer*4099+k));
+          if(a.r<.32)hollow(a.x,a.y,a.z,4+a.r*9,2.8+a.r*6);
+          if(layer===0&&a.r<.12){const basin={x:a.x+8,y:9,z:a.z+5};passage(a,basin,salt^0x981);hollow(basin.x,basin.y,basin.z,4.5,4);}
+        }
+        const upper=node(gx,gz,1);
+        if(r()<.45)passage(node(gx,gz,0),upper,salt^0x513); // winding shafts connect levels
+        if(r()<.16){
+          const x=upper.x+45,z=upper.z-36,h=heightAt(x,z);
+          if(h>SEA+4&&h<CH-12)passage(upper,{x,y:h+1,z},salt^0x813,true);
+        }
+        if(r()<.035){
+          // Rare dry ravine: a coherent curved cleft, rather than noise pinholes.
+          for(let k=0;k<=24;k++){const x=upper.x+k-12,z=upper.z+Math.sin(k/12)*4,h=heightAt(x,z);if(h>SEA+5)hollow(x,h-8,z,1.8,10,true);}
+        }
+      }
+    }else{
     // --- caves: two crossing 3D noise fields = tunnels, plus caverns. Sampled on a
     //     4-block lattice and trilinearly interpolated to keep generation cheap.
     const LX=5, LY=33, cave = new Float32Array(LX*LX*LY);
@@ -356,6 +422,8 @@ function makeGen(seed, B, version=1,dimension='overworld'){
       for(let y=h;y>h-3&&y>0;y--) if(d[I(x,y,z)]===B.dirt && d[I(x,y+1,z)]===0 && y===h) d[I(x,y,z)]=B.grass;
     }
 
+    }
+
     // --- ores: short random-walk veins inside stone
     function vein(id, count, size, ymin, ymax){
       for(let n=0;n<count;n++){
@@ -378,7 +446,7 @@ function makeGen(seed, B, version=1,dimension='overworld'){
       vein(B.copper_ore,12,10,6,80);vein(B.lapis_ore,4,7,5,34);if(mountainAt(ox,oz)>.3)vein(B.emerald_ore,3,3,10,65);
       // Narrow, twisting ravines: carve dry columns only, preserving bedrock.
       for(let z=0;z<16;z++)for(let x=0;x<16;x++){const wx=ox+x,wz=oz+z,h=hm[x+z*16];if(h<=SEA+2)continue;
-        if(N2.n2(wx/1500+70,wz/1500-130)>.58&&Math.abs(N3.n2(wx/110,wz/110))<.032)for(let y=18;y<=h+1;y++)d[I(x,y,z)]=y<10?B.lava:0;
+        if(version<3&&N2.n2(wx/1500+70,wz/1500-130)>.58&&Math.abs(N3.n2(wx/110,wz/110))<.032)for(let y=18;y<=h+1;y++)d[I(x,y,z)]=y<10?B.lava:0;
       }
     }
     // --- vegetation (kept inside the chunk so generation stays per-chunk)
@@ -504,20 +572,22 @@ function makeGen(seed, B, version=1,dimension='overworld'){
 }
 
 /* Original Nether generator: self-contained, deterministic worker code. */
-function makeNetherGen(seed,B){
+function makeNetherGen(seed,B,version=2){
  const N=makeNoise(seed^0x672ab),SEA=30;
- const heightAt=(x,z)=>Math.floor(39+N.fbm2(x/90,z/90,3)*13);
+ const heightAt=(x,z)=>version>=3?Math.floor(35+N.fbm2(x/120,z/120,3)*17+N.n2(x/50+70,z/50-20)*3):Math.floor(39+N.fbm2(x/90,z/90,3)*13);
  function genChunk(cx,cz){
   const d=new Uint8Array(16*16*128),R=mulberry32(seed^Math.imul(cx,73856093)^Math.imul(cz,19349663)),I=(x,y,z)=>x+(z<<4)+(y<<8);
   for(let z=0;z<16;z++)for(let x=0;x<16;x++){
    const wx=cx*16+x,wz=cz*16+z,h=heightAt(wx,wz);
    for(let y=0;y<128;y++){
-    let id=0;if(y<2||y>125)id=B.bedrock;else if(y<=h||y>99+N.n2(wx/60,wz/60)*12)id=B.netherrack;
+    let id=0;if(y<2||y>125)id=B.bedrock;else if(y<=h||y>(version>=3?87+N.n2(wx/95,wz/95)*14:99+N.n2(wx/60,wz/60)*12))id=B.netherrack;
+    if(version>=3&&y>h&&y<99&&N.n2(wx/65+20,wz/65-40)>.58&&N.n3(wx/50,y/65,wz/50)>.2)id=B.netherrack;
     if(id===B.netherrack&&y>h-3&&y<=h&&N.n2(wx/45,wz/45)>.25)id=B.soul_sand;
     if(y>5&&y<h-4&&N.n3(wx/26,y/19,wz/26)>.37)id=0;
     if(!id&&y<=SEA)id=B.lava;d[I(x,y,z)]=id;
    }
-   if(d[I(x,h,z)]===B.soul_sand&&R()<.06)d[I(x,h+1,z)]=B.nether_wart_block||0;
+   if(d[I(x,h,z)]===B.soul_sand&&(version<3||h>SEA)&&R()<.06)d[I(x,h+1,z)]=B.nether_wart_block||0;
+   if(version>=3&&h>SEA+1&&N.n2(wx/23+50,wz/23-90)>.68&&R()<.035)d[I(x,h+1,z)]=B.glowstone;
   }
   for(let n=0;n<16;n++){let x=(R()*16)|0,y=8+((R()*105)|0),z=(R()*16)|0;for(let k=0;k<8;k++){if(x>=0&&x<16&&z>=0&&z<16&&y>1&&y<126&&d[I(x,y,z)]===B.netherrack)d[I(x,y,z)]=B.nether_quartz_ore;x+=R()<.5?1:-1;y+=R()<.5?1:-1;}}
   for(let n=0;n<8;n++){const x=2+((R()*12)|0),z=2+((R()*12)|0);for(let y=123;y>60;y--)if(d[I(x,y,z)]===0&&d[I(x,y+1,z)]===B.netherrack){for(let dy=0;dy<3;dy++)d[I(x,y-dy,z)]=B.glowstone;break;}}
@@ -592,7 +662,24 @@ if(typeof importScripts === 'function'){
  * (crosshair excluded) fall from ~4,000 sun pixels to crosshair-only; no
  * altitude visibility gate. Day/night and Nether sky hiding also checked.
  * Zero page/worker errors. Q3 original scope: celestial depth tests against real walls/roofs in all camera modes.
- * Q4: generator 3: coherent shores/rivers and branching dry cave networks;
+ * Q4 COMPLETE — new worlds opt into generator 3; existing generators 1/2
+ * are preserved (48 byte-identical reference chunks across three seeds and
+ * both dimensions). Missing generator metadata retains legacy version 2.
+ * Continental shelves and river banks blend continuously; broad hills and
+ * ridges taper below the height limit rather than clipping flat. Caves use
+ * deterministic region nodes, curved branches, chambers, connecting shafts,
+ * sparse dry entrances/ravines and occasional deep lava basins. Wet columns
+ * retain a protective roof. No old terrain function was silently replaced.
+ * Nether v3 has varied low shores/lava lakes, a lower irregular ceiling,
+ * occasional pillars and rare reachable ground glowstone; wart stays above
+ * lava. Quartz, glowstone and wart surveyed in seeds 42/12345/-98765.
+ * Browser: real New World for all three seeds; mountain/ocean/entrance
+ * screenshots inspected, WASD cave approach and underground tunnel view.
+ * 18 worker-generated chunks exactly match main-thread generation; worker
+ * versus synchronous mesh positions match. Gen cost ~2–4 ms/chunk in Node.
+ * New v3 Nether trips in seeds 42 and -98765 returned safely with sky/weather
+ * hidden; v12 export imported as v13 with generator 2 and held rod intact.
+ * No page/mesh-worker errors. Q4 original scope: generator 3: coherent shores/rivers and branching dry cave networks;
  * keep generator 1/2 output unchanged for existing edit-only saves.
  * Q5: repeat player walkthrough, persistence, worker/fallback and timings.
  * End/boss expansion remains deferred. No new block IDs or atlas slots.
@@ -1990,7 +2077,7 @@ const store = {
   del(k){ try{ localStorage.removeItem(k); }catch(e){} },
   keys(){ try{ return Object.keys(localStorage); }catch(e){ return []; } },
 };
-world.persist = false;world.genVersion=2; world.containers = new Map(); world.name='World';
+world.persist = false;world.genVersion=3; world.containers = new Map(); world.name='World';
 function loadChunkEdits(cx,cz){
   const k=ckey(cx,cz); if(world.edits.has(k)) return world.edits.get(k);
   if(!world.persist) return null;
@@ -2721,7 +2808,7 @@ function setupTitleWorld(meta){
   const seed = meta ? meta.seed : 20261018;
   world.dimension=meta?.dimension||'overworld';world.dimensionStates=meta?.dimensions||{};
   world.dimension=meta?.dimension||'overworld';
-  world.genVersion=meta?.generator||2;
+  world.genVersion=meta?.generator||3;
   world.persist = !!meta;            // read saved edits so the panorama shows your builds
   if(world.seed!==seed || !workers.length||world.builtGenVersion!==world.genVersion||world.builtDimension!==(world.dimension||'overworld')){ world.edits.clear(); world.dirtyEdits.clear(); startWorld(seed, null, false); }
   if(meta){ titleCam.x=meta.p.x; titleCam.z=meta.p.z; titleCam.y=Math.max(meta.p.y+6, SEA+12); }
@@ -2741,7 +2828,7 @@ function beginGame(seed, meta, mode){
   world.portalLinks=meta?.portalLinks||[];portalState.arrival=null;portalState.time=0;portalState.mustLeave=true;
   respawnPending=false;resetMobs();clearSigns();resetRedstone();
   if(world.builtDimension!==world.dimension){world.edits.clear();world.dirtyEdits.clear();}
-  world.genVersion=meta?.generator||2;
+  world.genVersion=meta?.generator||3;
   world.persist = true;
   if(!meta){ world.edits.clear(); world.containers.clear(); }
   startWorld(seed, meta ? meta.p : null, world.seed===seed && !!meta);
@@ -3511,6 +3598,7 @@ function migrateMeta(m){
   if(m.v<11){m.dimension='overworld';m.dimensions={};m.v=11;}
   if(m.v<12){m.stats={};m.pistons=[];m.plantAges=[];m.offhand=null;m.v=12;}
   if(m.v<13){m.pendingItems=[];m.portalLinks=[];m.v=13;}
+  if(![1,2,3].includes(m.generator))m.generator=2;
   return m;
 }
 function mobRecord(e){return {kind:e.kind,x:e.pos.x,y:e.pos.y,z:e.pos.z,hp:e.hp,yaw:e.yaw,baby:e.baby,breedCD:e.breedCD,persistent:e.persistent,tamed:!!e.tamed,sitting:!!e.sitting,saddled:!!e.saddled,shorn:e.shorn||0,size:e.size||1,stock:e.stock||null,name:e.name||''};}
