@@ -558,7 +558,12 @@ if(typeof importScripts === 'function'){
  * trapdoors and saved primed TNT/chain reactions. Pistons deferred.
  * v1–v7→v8. 6 circuit/explosion browser checks pass; zero errors;
  * F3 CPU 5.78 ms, render .99 ms, chunks 3.56 ms (SwiftShader R2).
- * Next: M10 player/QoL;
+ * M10 COMPLETE — F5 back/front camera with wall collision and original
+ * animated avatar; T chat and all requested commands, survival pick-block,
+ * durability tooltips, sprint particles, attack meter, death messages and
+ * saved advancement toasts. v1–v8→v9. 13 browser/UI checks pass, zero errors;
+ * F3 CPU 6.03 ms, render 1.92 ms, chunks 2.68 ms (SwiftShader R2).
+ * Next: M11 enchanting/brewing;
  * M5 shapes; M6 fluids; M7 worldgen; M8 weather; M9 redstone;
  * M10 player/QoL; M11 enchanting; M12 Nether; M13 performance.
  * Each milestone receives browser functional tests, F3 timing checks and a commit.
@@ -1508,6 +1513,7 @@ function updateCamera(dt){
   const bobAmt = p.onGround ? Math.min(hv/5.6,1)*0.045 : 0;
   camera.position.set(p.pos.x + Math.cos(p.yaw)*Math.sin(p.bob)*bobAmt*0.6, p.pos.y + p.eye + Math.abs(Math.cos(p.bob))*bobAmt, p.pos.z - Math.sin(p.yaw)*Math.sin(p.bob)*bobAmt*0.6);
   camera.rotation.set(p.pitch, p.yaw, 0, 'YXZ');
+  updateThirdPerson(dt);
   const targetFov = CONFIG.fov * (p.sprinting? 1.12 : 1) * (p.flying&&p.sprinting?1.05:1);
   if(Math.abs(camera.fov-targetFov)>0.01){ camera.fov += (targetFov-camera.fov)*(1-Math.exp(-dt*10)); camera.updateProjectionMatrix(); }
 }
@@ -1572,7 +1578,8 @@ const REACH = 5;
 const _rd = new THREE.Vector3();
 function raycastBlock(maxDist,includeLiquids=false){
   camera.getWorldDirection(_rd);
-  const ox=camera.position.x, oy=camera.position.y, oz=camera.position.z, dx=_rd.x, dy=_rd.y, dz=_rd.z;
+  if(cameraMode>0)_rd.set(-Math.sin(player.yaw)*Math.cos(player.pitch),Math.sin(player.pitch),-Math.cos(player.yaw)*Math.cos(player.pitch));
+  const ox=cameraMode>0?player.pos.x:camera.position.x, oy=cameraMode>0?player.pos.y+player.eye:camera.position.y, oz=cameraMode>0?player.pos.z:camera.position.z, dx=_rd.x, dy=_rd.y, dz=_rd.z;
   let x=Math.floor(ox), y=Math.floor(oy), z=Math.floor(oz);
   const sx=dx>0?1:-1, sy=dy>0?1:-1, sz=dz>0?1:-1;
   const tdx=Math.abs(1/dx), tdy=Math.abs(1/dy), tdz=Math.abs(1/dz);
@@ -1702,11 +1709,11 @@ canvas.addEventListener('mousedown',(e)=>{
   if(gameState!=='playing') return;
   if(e.button===0){ if(attackMob()) { swing(); return; } mouse.left=true; swing(); }
   if(e.button===2){ mouse.right=true; mouse.rightTimer=0.22; if(tryPlace()) swing(); }
-  if(e.button===1 && target && player.mode==='creative'){ pickBlock(target.id); }
+  if(e.button===1 && target){ pickBlock(target.id); }
 });
 addEventListener('mouseup',(e)=>{ if(e.button===0){ mouse.left=false; mining.active=false; } if(e.button===2){releaseBow();mouse.right=false;} });
 addEventListener('contextmenu',(e)=>e.preventDefault());
-function pickBlock(id){ for(let i=0;i<9;i++) if(inv.slots[i]&&inv.slots[i].id===id){ inv.sel=i; onInventoryChange&&onInventoryChange(); return; } inv.slots[inv.sel]={id,count:1}; onInventoryChange&&onInventoryChange(); }
+function pickBlock(id){ for(let i=0;i<9;i++) if(inv.slots[i]&&inv.slots[i].id===id){ inv.sel=i; onInventoryChange&&onInventoryChange(); return; } if(player.mode==='survival'){const i=inv.slots.findIndex(s=>s?.id===id);if(i<0)return;const a=inv.slots[i];inv.slots[i]=inv.slots[inv.sel];inv.slots[inv.sel]=a;}else inv.slots[inv.sel]={id,count:1}; onInventoryChange&&onInventoryChange(); }
 let swingT=1;   // 0..1 progress of the arm swing (0.3 s), 1 = idle
 function swing(){ if(swingT>=0.5) swingT=0; }
 
@@ -1840,7 +1847,7 @@ function saveWorld(){
   }
   if(ok) world.dirtyEdits.clear();
   const containers=[]; for(const [k,c] of world.containers) containers.push([k,{t:c.type,s:c.slots.map(st=>packStack(st)),b:c.burn||0,bm:c.burnMax||0,c:c.cook||0}]);
-  const meta = { v:8, tnt:primedTNT.map(e=>[e.pos.x,e.pos.y,e.pos.z,e.fuse]), days:dayCount,weather:{type:weather.type,remaining:weather.remaining}, generator:world.genVersion||2, signs:[...signTexts], armor:armorSlots.map(packStack), xpOrbs:xpOrbs.map(e=>[e.value,e.pos.x,e.pos.y,e.pos.z]), mobs:saveMobs(), mobChunks:[...mobChunks], name:world.name, seed:world.seed, mode:player.mode, time:dayTime, spawn:world.spawn,
+  const meta = { v:9, advancements:[...advancements], tnt:primedTNT.map(e=>[e.pos.x,e.pos.y,e.pos.z,e.fuse]), days:dayCount,weather:{type:weather.type,remaining:weather.remaining}, generator:world.genVersion||2, signs:[...signTexts], armor:armorSlots.map(packStack), xpOrbs:xpOrbs.map(e=>[e.value,e.pos.x,e.pos.y,e.pos.z]), mobs:saveMobs(), mobChunks:[...mobChunks], name:world.name, seed:world.seed, mode:player.mode, time:dayTime, spawn:world.spawn,
     p:{ x:+player.pos.x.toFixed(2), y:+player.pos.y.toFixed(2), z:+player.pos.z.toFixed(2), yaw:+player.yaw.toFixed(3), pitch:+player.pitch.toFixed(3),
         fire:player.fire||0, hp:player.health, food:player.food, sat:player.sat, xp:player.xp, fly:player.flying },
     inv: inv.slots.map(st=>packStack(st)), sel:inv.sel, containers,
@@ -1869,6 +1876,7 @@ function damage(n, cause){
 function die(cause){
   if(player.mode==='survival'){ for(let i=0;i<36;i++){ const st=inv.slots[i]; if(st){ spawnItem(st.id, st.count, player.pos.x, player.pos.y+1, player.pos.z, true,st); inv.slots[i]=null; } } onInventoryChange(); }
   for(let i=0;i<4;i++){const st=armorSlots[i];if(st){spawnItem(st.id,1,player.pos.x,player.pos.y+1,player.pos.z,true,st);armorSlots[i]=null;}}
+  deathMessage.textContent=deathText(cause);
   setState('dead');
   $('deathScore').textContent = 'Score: '+player.xp;
   document.exitPointerLock && document.exitPointerLock();
@@ -2120,12 +2128,13 @@ let nameTimer=0, lastSel=-1, lastHeldId=-1;
 function onInventoryChange(){
   for(let i=0;i<9;i++) setSlotEl(hudEls.slots[i], inv.slots[i]);
   $('hotsel').style.left=`calc(var(--g)*${-1+inv.sel*20})`;
-  const hid=inv.heldId();
-  if(inv.sel!==lastSel || hid!==lastHeldId){ lastSel=inv.sel; lastHeldId=hid; if(hid){ $('itemName').textContent=itemLabel(hid); $('itemName').style.opacity=1; nameTimer=2; } else $('itemName').style.opacity=0; }
+  const hid=inv.heldId();const hd=ITEMS[hid];if(hd?.durability)$('itemName').textContent=itemLabel(hid)+' · '+(inv.held().d??hd.durability)+' / '+hd.durability;
+  if(inv.sel!==lastSel || hid!==lastHeldId){ lastSel=inv.sel; lastHeldId=hid; if(hid){ $('itemName').textContent=itemLabel(hid)+(hd?.durability?' · '+(inv.held().d??hd.durability)+' / '+hd.durability:''); $('itemName').style.opacity=1; nameTimer=2; } else $('itemName').style.opacity=0; }
   if(guiOpen) renderGui();
 }
 let hudCache='';
 function updateHud(dt){
+  attackBar.style.width=g(16*(1-combat.cooldown/.6));
   nameTimer-=dt; if(nameTimer<0) $('itemName').style.opacity=0;
   const p=player, surv=p.mode==='survival';
   const [lvl,frac]=xpLevel(p.xp);
@@ -2162,6 +2171,7 @@ function updateDebug(dt){
   const L=[`Minercraft 1.0 (three.js r128)`, `${fps.toFixed(0)} fps  C: ${stats.drawCalls} draws  T: ${(stats.tris/1000).toFixed(0)}k tris`,
     `Chunks: ${meshed} meshed / ${loaded} loaded / ${world.chunks.size} tracked  R: ${CONFIG.renderDistance}`,
     `Mesh: ${meshStats.last.toFixed(1)} ms (avg ${meshStats.avg.toFixed(1)})  CPU frame: ${prof.frame.toFixed(1)} ms (chunks ${prof.chunks.toFixed(1)}, render ${prof.render.toFixed(1)})`, '',
+    `Simulation: ${entityClock.ms.toFixed(2)} ms; fluids ${fluidClock.ms.toFixed(2)}, random ${farmClock.ms.toFixed(2)}, redstone ${redstoneClock.ms.toFixed(2)}`,
     `XYZ: ${p.x.toFixed(3)} / ${p.y.toFixed(3)} / ${p.z.toFixed(3)}`, `Block: ${bx} ${by} ${bz}`,
     `Chunk: ${bx&15} ${by} ${bz&15} in ${bx>>4} ${bz>>4}`, `Facing: ${FACING_NAMES[f]} (${yawDeg.toFixed(1)} / ${(-player.pitch*180/Math.PI).toFixed(1)})`,
     `Biome: ${gen.BIOME_NAMES[gen.biomeAt(bx,bz)]}`, `Day ${Math.floor(dayCount)}, time ${Math.floor(dayTime*24000)}`,
@@ -2445,7 +2455,7 @@ const SPLASHES=['Infinite blocks!','100% procedural!','Now with caves!','Punch a
 let menuReturn='title', newMode='survival';
 function showScreen(id){ for(const s of ['title','newworld','options','pause','death','loading']) $(s).classList.toggle('hidden', s!==id); }
 function onStateChange(s){
-  $('hud').classList.toggle('hidden', !(s==='playing'||s==='inventory'||s==='paused'||s==='dead'));
+  $('hud').classList.toggle('hidden', !(s==='playing'||s==='inventory'||s==='paused'||s==='dead'||s==='chat'));
   if(s==='title'){ showScreen('title'); refreshTitle(); }
   else if(s==='paused') showScreen('pause');
   else if(s==='dead') showScreen('death');
@@ -2555,6 +2565,7 @@ function beginGame(seed, meta, mode){
     if(player.mode==='creative'){ [B.grass,B.dirt,B.stone,B.cobblestone,B.planks,B.log,B.glass,B.torch,B.bricks].forEach((id,i)=>inv.slots[i]={id,count:64}); }
   }
   for(const [key,text] of meta?.signs||[])signTexts.set(key,text);
+  advancements.clear();for(const a of meta?.advancements||[])advancements.add(a);
   dayCount=meta?.days||0;setWeather(meta?.weather?.type||'clear',meta?.weather?.remaining||300);
   for(const e of meta?.tnt||[])primeTNT(e[0],e[1],e[2],e[3],true);
   restoreMobs(meta);
@@ -2806,7 +2817,7 @@ const sfx = (()=>{
 events.onStep = ()=>{ const id=world.getBlock(Math.floor(player.pos.x),Math.floor(player.pos.y-0.2),Math.floor(player.pos.z)); sfx.step(id>0?id:world.getBlock(Math.floor(player.pos.x),Math.floor(player.pos.y),Math.floor(player.pos.z))); };
 events.onSplash = ()=>sfx.splash();
 const _origAdd = inv.add.bind(inv);
-inv.add = function(id,count,source){ const left=_origAdd(id,count,source); if(gameState==='playing' && count>0) sfx.pop(); return left; };
+inv.add = function(id,count,source){ const left=_origAdd(id,count,source); if(gameState==='playing' && count>0){sfx.pop();checkAdvancement(id);} return left; };
 
 /* =========================================================================
    22. SKY — day/night cycle, gradient dome, square sun & moon, stars,
@@ -3001,7 +3012,7 @@ function updateHeld(dt){
 const _hq=new THREE.Quaternion(), _hq2=new THREE.Quaternion(), _he=new THREE.Euler(), _hv=new THREE.Vector3(), DEG=Math.PI/180;
 function hRot(q, x, y, z){ q.multiply(_hq2.setFromEuler(_he.set(x*DEG, y*DEG, z*DEG, 'XYZ'))); return q; }
 function renderHeld(){
-  if(!held.mesh || $('hud').style.opacity==='0') return;
+  if(cameraMode>0||!held.mesh || $('hud').style.opacity==='0') return;
   const sw = held.forceP!==undefined ? held.forceP : swingT;
   const m=held.mesh, p=sw<1 ? sw : 0, sp=Math.sqrt(p);
   const hv=Math.hypot(player.vel.x,player.vel.z), bobA = (CONFIG.bob && player.onGround) ? Math.min(hv/5.6,1) : 0;
@@ -3273,6 +3284,7 @@ function migrateMeta(m){
   if(m.v<6){m.generator=1;m.v=6;}
   if(m.v<7){m.days=0;m.weather={type:'clear',remaining:300};m.v=7;}
   if(m.v<8){m.tnt=[];m.v=8;}
+  if(m.v<9){m.advancements=[];m.v=9;}
   return m;
 }
 function saveMobs(){ return entities.filter(e=>!e.dead).map(e=>({kind:e.kind,x:e.pos.x,y:e.pos.y,z:e.pos.z,hp:e.hp,yaw:e.yaw,baby:e.baby,breedCD:e.breedCD,persistent:e.persistent})); }
@@ -3302,13 +3314,13 @@ function mobPhysics(e,dt){
     }
   }
 }
-const _mobRay=new THREE.Ray(), _mobBox=new THREE.Box3(), _mobHit=new THREE.Vector3();
+const _rayEye=new THREE.Vector3(),_mobRay=new THREE.Ray(), _mobBox=new THREE.Box3(), _mobHit=new THREE.Vector3();
 function raycastMob(){
-  camera.getWorldDirection(_rd); _mobRay.set(camera.position,_rd);
+  camera.getWorldDirection(_rd);if(cameraMode>0){_rd.set(-Math.sin(player.yaw)*Math.cos(player.pitch),Math.sin(player.pitch),-Math.cos(player.yaw)*Math.cos(player.pitch));_rayEye.set(player.pos.x,player.pos.y+player.eye,player.pos.z);}else _rayEye.copy(camera.position); _mobRay.set(_rayEye,_rd);
   const block=raycastBlock(REACH); let nearest=block?block.t:REACH, found=null;
   for(const e of entities){ if(e.dead)continue; const d=MOB_DEFS[e.kind],s=mobScale(e),p=e.pos;
     _mobBox.min.set(p.x-d.w*s,p.y,p.z-d.w*s); _mobBox.max.set(p.x+d.w*s,p.y+d.h*s,p.z+d.w*s);
-    if(_mobRay.intersectBox(_mobBox,_mobHit)){ const dist=_mobHit.distanceTo(camera.position); if(dist<nearest){ nearest=dist;found=e;} }
+    if(_mobRay.intersectBox(_mobBox,_mobHit)){ const dist=_mobHit.distanceTo(_rayEye); if(dist<nearest){ nearest=dist;found=e;} }
   }
   return found;
 }
@@ -3316,7 +3328,7 @@ function hurtMob(e,amount){
   if(!e||e.dead||e.hurt>0) return false;
   e.hp-=amount;e.hurt=.45;e.knockX=(e.pos.x-player.pos.x);e.knockZ=(e.pos.z-player.pos.z);const kl=Math.hypot(e.knockX,e.knockZ)||1;e.knockX=e.knockX/kl*5;e.knockZ=e.knockZ/kl*5;e.panic=4;e.yaw=Math.atan2(e.pos.x-player.pos.x,e.pos.z-player.pos.z);e.vel.y=4;
   sfx.mob(e.kind,true);
-  if(e.hp<=0){if(e.kind==='zombie'&&Math.random()<.3)spawnItem(Math.random()<.5?B.carrot:B.potato,1,e.pos.x,e.pos.y+.5,e.pos.z);e.dead=.001;e.love=0; if(!e.baby)spawnXP(MOB_DEFS[e.kind].hostile?5:2,e.pos.x,e.pos.y+.5,e.pos.z); if(!e.baby) for(const [name,n] of MOB_DEFS[e.kind].loot)spawnItem(B[name],n,e.pos.x,e.pos.y+.4,e.pos.z,true);}
+  if(e.hp<=0){if(MOB_DEFS[e.kind].hostile)awardAdvancement('Monster Hunter',B.iron_sword);if(e.kind==='zombie'&&Math.random()<.3)spawnItem(Math.random()<.5?B.carrot:B.potato,1,e.pos.x,e.pos.y+.5,e.pos.z);e.dead=.001;e.love=0; if(!e.baby)spawnXP(MOB_DEFS[e.kind].hostile?5:2,e.pos.x,e.pos.y+.5,e.pos.z); if(!e.baby) for(const [name,n] of MOB_DEFS[e.kind].loot)spawnItem(B[name],n,e.pos.x,e.pos.y+.4,e.pos.z,true);}
   return true;
 }
 function attackMob(){
@@ -3348,7 +3360,7 @@ function spawnPassiveChunks(){
   }
 }
 function tickEntities(dt){
-  const start=performance.now(); entityClock.tick++; combat.cooldown=Math.max(0,combat.cooldown-dt);combat.hurt=Math.max(0,combat.hurt-dt);tickProjectiles(dt);tickXP(dt);tickFluids(dt);tickFire(dt);tickRandomBlocks(dt);updateSigns(dt);tickHostileSpawns(dt);tickSpawners(dt);tickWeatherRoof();tickRedstone(dt);
+  const start=performance.now(); entityClock.tick++;if(entityClock.tick%4===0&&player.sprinting&&player.onGround)emitParticle(player.pos.x,player.pos.y+.1,player.pos.z,(Math.random()-.5)*2,.6,(Math.random()-.5)*2,TEX.dirt); combat.cooldown=Math.max(0,combat.cooldown-dt);combat.hurt=Math.max(0,combat.hurt-dt);tickProjectiles(dt);tickXP(dt);tickFluids(dt);tickFire(dt);tickRandomBlocks(dt);updateSigns(dt);tickHostileSpawns(dt);tickSpawners(dt);tickWeatherRoof();tickRedstone(dt);
   entityClock.spawnT-=dt;if(entityClock.spawnT<=0){entityClock.spawnT=.5;spawnPassiveChunks();}
   for(let i=entities.length-1;i>=0;i--){
     const e=entities[i],p=e.pos,d=MOB_DEFS[e.kind]; e.prev.copy(p);
@@ -3934,14 +3946,71 @@ function buildRedstoneTextures(){
  shaped(['GSG','SGS','GSG'],{G:[B.gunpowder],S:[B.sand]},B.tnt);shapeless([B.iron_ingot,B.flint],B.flint_and_steel);
 }
 /* =========================================================================
+   35. PLAYER & QUALITY OF LIFE — original character, safe text command UI,
+       advancements, death messages and combat feedback.
+   ========================================================================= */
+let cameraMode=0;const avatar={group:new THREE.Group(),limbs:[]};
+const attackBar=el('div',null,{position:'absolute',left:'calc(50% - var(--g)*8)',top:'calc(50% + var(--g)*12)',height:g(1),background:'#eee',width:g(16)},$('hud'));
+const deathMessage=el('div','sh',{marginBottom:g(8)},$('death'));$('death').insertBefore(deathMessage,$('deathScore'));
+function buildPlayerModel(){
+ const cv=pxCanvas(16,16,ctx=>{const image=ctx.createImageData(16,16),d=image.data,R=mulberry32(144);for(let y=0;y<16;y++)for(let x=0;x<16;x++){let c=y<3?[62,43,36]:[207,158,119];if(y===6&&(x===4||x===11))c=[53,78,86];if(y===11&&x>5&&x<10)c=[130,78,59];const i=(x+y*16)*4,n=(R()-.5)*16;d[i]=c[0]+n;d[i+1]=c[1]+n;d[i+2]=c[2]+n;d[i+3]=255;}ctx.putImageData(image,0,0);});
+ const tex=new THREE.CanvasTexture(cv);tex.magFilter=tex.minFilter=THREE.NearestFilter;tex.generateMipmaps=false;
+ const mats=[new THREE.MeshBasicMaterial({map:tex}),new THREE.MeshBasicMaterial({color:0xa54730}),new THREE.MeshBasicMaterial({color:0x4d5353}),new THREE.MeshBasicMaterial({color:0x34312a})];avatar.materials=mats;
+ const box=(w,h,l,x,y,z,mat,parent=avatar.group)=>{const m=new THREE.Mesh(mobGeometry,mat);m.scale.set(w,h,l);m.position.set(x,y,z);parent.add(m);return m;};
+ avatar.head=box(.46,.46,.44,0,1.56,0,mats[0]);box(.52,.64,.28,0,1.04,0,mats[1]);
+ for(let i=0;i<4;i++){const limb=new THREE.Group();limb.position.set((i&1?1:-1)*(i<2?.14:.36),i<2?.73:1.32,0);avatar.group.add(limb);box(i<2?.22:.19,i<2?.72:.65,.23,0,i<2?-.36:-.325,0,i<2?mats[2]:mats[1],limb);avatar.limbs.push(limb);}
+ avatar.group.visible=false;scene.add(avatar.group);
+}
+function updateThirdPerson(dt){
+ avatar.group.visible=cameraMode>0&&gameState!=='title'&&gameState!=='loading';if(!avatar.group.visible)return;
+ const p=player;avatar.group.position.copy(p.pos);avatar.group.rotation.y=p.yaw;avatar.head.rotation.x=-p.pitch;
+ const moving=Math.min(1,Math.hypot(p.vel.x,p.vel.z)/4);for(let i=0;i<4;i++)avatar.limbs[i].rotation.x=Math.sin(p.bob*2+(i%2)*Math.PI)*moving*.65;
+ const sign=cameraMode===1?1:-1,dx=Math.sin(p.yaw)*sign*Math.cos(p.pitch),dz=Math.cos(p.yaw)*sign*Math.cos(p.pitch),dy=-Math.sin(p.pitch)*sign;
+ let distance=4;for(let d=.2;d<4;d+=.15){const x=p.pos.x+dx*d,y=p.pos.y+p.eye+dy*d,z=p.pos.z+dz*d;if(isSolidAt(Math.floor(x),Math.floor(y),Math.floor(z))){distance=Math.max(.2,d-.2);break;}}
+ camera.position.set(p.pos.x+dx*distance,p.pos.y+p.eye+dy*distance,p.pos.z+dz*distance);if(cameraMode===2)camera.rotation.set(-p.pitch,p.yaw+Math.PI,0,'YXZ');
+}
+function deathText(cause){return {fall:'You hit the ground too hard.',drown:'You ran out of air.',starve:'You ran out of food.',cactus:'You got too close to a cactus.',zombie:'A moss wanderer caught you.',spider:'A dusk crawler caught you.',arrow:'An arrow found its mark.',explosion:'You were caught in an explosion.',fire:'You burned in the heat.',lightning:'Lightning struck you.',command:'You used /kill.'}[cause]||'Your adventure ended.';}
+const advancements=new Set(),advanceQueue=[];let advanceTimer=0;
+const advanceToast=el('div','panel',{position:'fixed',right:g(5),top:g(5),padding:g(7),fontSize:g(10),display:'none',pointerEvents:'none',zIndex:20},document.body);
+function awardAdvancement(name,id=B.log){if(advancements.has(name)||!world.persist)return;advancements.add(name);advanceQueue.push([name,id]);showNextAdvancement();}
+function showNextAdvancement(){if(advanceTimer||!advanceQueue.length)return;const [name,id]=advanceQueue.shift();advanceToast.innerHTML='';const icon=el('img',null,{width:g(16),height:g(16),verticalAlign:'middle',marginRight:g(5)},advanceToast);icon.src=iconURL(id);const text=el('span',null,null,advanceToast);text.textContent='Advancement: '+name;advanceToast.style.display='block';advanceTimer=setTimeout(()=>{advanceTimer=0;advanceToast.style.display='none';showNextAdvancement();},3500);}
+function checkAdvancement(id){if([B.log,B.spruce_log,B.birch_log,B.cherry_log,B.jungle_log,B.acacia_log].includes(id))awardAdvancement('Getting Wood',id);if(id===B.cobblestone)awardAdvancement('Stone Age',id);if(id===B.iron_ingot)awardAdvancement('Acquire Hardware',id);if(id===B.diamond)awardAdvancement('Shining Discovery',id);if(id===B.bread)awardAdvancement('Fresh Bread',id);}
+let chatOpen=false;const chatLog=el('div','sh',{position:'fixed',left:g(4),bottom:g(62),maxWidth:'70vw',fontSize:g(10),pointerEvents:'none',zIndex:20},document.body);
+const chatInput=el('input','field',{position:'fixed',left:g(4),bottom:g(42),width:'calc(100% - var(--g)*8)',display:'none',zIndex:21},document.body);chatInput.maxLength=180;chatInput.setAttribute('aria-label','Chat or command');
+function chatLine(text){const d=el('div',null,{padding:g(2),background:'rgba(0,0,0,.55)',marginTop:g(1)},chatLog);d.textContent=text;while(chatLog.children.length>6)chatLog.firstChild.remove();setTimeout(()=>d.remove(),15000);}
+function openChat(){chatOpen=true;setState('chat');if(document.pointerLockElement)document.exitPointerLock();chatInput.style.display='block';chatInput.value='';chatInput.focus();}
+function closeChat(){chatOpen=false;chatInput.style.display='none';chatInput.blur();setState('playing');requestLock();}
+function command(line){
+ const args=line.trim().split(/\s+/),cmd=args.shift().toLowerCase();if(!cmd.startsWith('/')){chatLine('You: '+line);return true;}
+ let ok=true,message='';const coord=(s,base)=>s?.startsWith('~')?base+(Number(s.slice(1))||0):Number(s);
+ if(cmd==='/help')message='/gamemode /time set /tp /give /weather /seed /kill /spawnpoint /difficulty';
+ else if(cmd==='/gamemode'){const mode=({0:'survival',1:'creative'})[args[0]]||args[0];if(!['survival','creative'].includes(mode))ok=false;else{player.mode=mode;if(mode==='survival')player.flying=false;message='Game mode: '+mode;}}
+ else if(cmd==='/time'&&args[0]==='set'){const names={day:.02,noon:.25,night:.55,midnight:.75},v=names[args[1]]??Number(args[1])/24000;if(!Number.isFinite(v))ok=false;else{dayTime=((v%1)+1)%1;message='Time updated';}}
+ else if(cmd==='/tp'){const p=player.pos,x=coord(args[0],p.x),y=coord(args[1],p.y),z=coord(args[2],p.z);if(![x,y,z].every(Number.isFinite)||Math.abs(x)>500000||Math.abs(z)>500000||y<1||y>CH-2)ok=false;else{p.set(x,y,z);player.vel.set(0,0,0);player.fallStart=null;message='Teleported';}}
+ else if(cmd==='/give'){if(args[0]==='@s')args.shift();const name=args[0],id=B[name]??Number(name),count=Number(args[1]||1);if(!itemDef(id)||id===0||!Number.isInteger(count)||count<1||count>2304)ok=false;else{const left=inv.add(id,count);if(left)spawnItem(id,left,player.pos.x,player.pos.y+1,player.pos.z);message='Given '+count+' '+itemLabel(id);}}
+ else if(cmd==='/weather'){ok=setWeather(args[0],Number(args[1])||300);message='Weather: '+args[0];}
+ else if(cmd==='/seed')message='Seed: '+world.seed;
+ else if(cmd==='/difficulty'){if(!['peaceful','easy','normal','hard'].includes(args[0]))ok=false;else{CONFIG.difficulty=args[0];saveSettings();message='Difficulty: '+args[0];}}
+ else if(cmd==='/kill'){player.health=0;die('command');message='You died';}
+ else if(cmd==='/spawnpoint'){const p=player.pos;world.spawn=[p.x,p.y,p.z];message='Spawn point set';}
+ else ok=false;
+ chatLine(ok?message:'Invalid command or arguments. Try /help.');return ok;
+}
+document.addEventListener('keydown',e=>{
+ if(chatOpen){if(e.code==='Escape'){e.preventDefault();closeChat();}else if(e.code==='Enter'){e.preventDefault();const line=chatInput.value;closeChat();if(line.trim())command(line);}return;}
+ if(gameState!=='playing'||e.target?.tagName==='INPUT')return;
+ if(e.code==='F5'){e.preventDefault();if(!e.repeat)cameraMode=(cameraMode+1)%3;}
+ if(e.code==='KeyT'||e.code==='Slash'){e.preventDefault();openChat();if(e.code==='Slash')chatInput.value='/';}
+});
+/* =========================================================================
    20. BOOT
    ========================================================================= */
 buildTextures(); buildEntityTextures(); buildEquipmentTextures(); buildFarmTextures(); buildShapeTextures(); buildFluidTextures();buildBiomeTextures();buildRedstoneTextures();
 for(const n in TEX) TEX_NAME[TEX[n]]=n;
 buildShapeCache(); buildBlockTables(); makeMaterials(); initFluidMaterial(); makeCrackMats(); makeParticles();
-buildGuiImages(); buildHud(); applyGuiScale(); buildSky();buildWeather(); if(CONFIG.soundPack===false) sfx.usePack=false; soundLabel();
+buildGuiImages(); buildHud(); applyGuiScale(); buildSky();buildWeather();buildPlayerModel(); if(CONFIG.soundPack===false) sfx.usePack=false; soundLabel();
 scene.background = new THREE.Color(0x9cc8ff);
-window.__bc = { redstoneClock, powerAt, tickRedstone, wakeRedstone, primeTNT, primedTNT, redstoneInteract, weather, setWeather, updateWeather, tickWeatherRoof, lightning, makeGenMain, WORLDGEN_SRC, tickSpawners, tickFluids, tickFire, fluidClock, wakeFluids, bucketInteract, sourceFluid, shapeBoxes, shapeRayHit, shapePlayerIntersects, toggleShape, sleepBed, signTexts, setSignText, SHAPE_CACHE, collectBoxes, hydrateFarmland, growCrop, growTree, randomBlockTick, farmInteract, tickRandomBlocks, farmClock, farmDrops, wearHeld, absorbDamage, spawnXP, xpOrbs, tickXP, makeStack, packStack, unpackStack, quickMove, canAccept, armorPreview, attackMob, mobDamage, combat, projectiles, spawnArrow, tickProjectiles, explode, skyVisible, blockLightAt, tickHostile, releaseBow, entities, MOB_DEFS, spawnMob, hurtMob, feedMob, updateEntities, raycastMob, resetMobs, saveMobs, migrateMeta, getContainer, updateFurnaces, ITEMS, armorSlots, moveAxis, itemEntities, spawnItem, throwItem, updateItems, setSwing:(v)=>{held.forceP=v; held.equip=1;}, step:(dt,n)=>{ for(let i=0;i<n;i++){ updatePlayer(dt); updateCamera(dt); updateInteraction(dt); updateSurvival(dt); updateChunks(player.pos.x,player.pos.z,50); } }, prof, get locked(){return locked;}, get noLock(){return noLock;}, sfx, setDay:(t)=>{dayTime=t;}, get gen(){return gen;}, inv, mouse, mining, get target(){return target;}, breakBlock, tryPlace, world, player, B, BLOCKS, CONFIG, keys, meshStats, stats, camera, renderer, scene, setState, startWorld, beginGame, openGui, closeGui, saveWorld, readMeta, matchRecipe, craftGrid2, craftGrid3, craftOut, getFps:()=>fps, get state(){return gameState;}, get cursor(){return cursor;}, clickSlot };
+window.__bc = { command, pickBlock, advancements, awardAdvancement, get cameraMode(){return cameraMode;}, setCameraMode:(m)=>cameraMode=((m%3)+3)%3, updateThirdPerson, redstoneClock, powerAt, tickRedstone, wakeRedstone, primeTNT, primedTNT, redstoneInteract, weather, setWeather, updateWeather, tickWeatherRoof, lightning, makeGenMain, WORLDGEN_SRC, tickSpawners, tickFluids, tickFire, fluidClock, wakeFluids, bucketInteract, sourceFluid, shapeBoxes, shapeRayHit, shapePlayerIntersects, toggleShape, sleepBed, signTexts, setSignText, SHAPE_CACHE, collectBoxes, hydrateFarmland, growCrop, growTree, randomBlockTick, farmInteract, tickRandomBlocks, farmClock, farmDrops, wearHeld, absorbDamage, spawnXP, xpOrbs, tickXP, makeStack, packStack, unpackStack, quickMove, canAccept, armorPreview, attackMob, mobDamage, combat, projectiles, spawnArrow, tickProjectiles, explode, skyVisible, blockLightAt, tickHostile, releaseBow, entities, MOB_DEFS, spawnMob, hurtMob, feedMob, updateEntities, raycastMob, resetMobs, saveMobs, migrateMeta, getContainer, updateFurnaces, ITEMS, armorSlots, moveAxis, itemEntities, spawnItem, throwItem, updateItems, setSwing:(v)=>{held.forceP=v; held.equip=1;}, step:(dt,n)=>{ for(let i=0;i<n;i++){ updatePlayer(dt); updateCamera(dt); updateInteraction(dt); updateSurvival(dt); updateChunks(player.pos.x,player.pos.z,50); } }, prof, get locked(){return locked;}, get noLock(){return noLock;}, sfx, setDay:(t)=>{dayTime=t;}, get gen(){return gen;}, inv, mouse, mining, get target(){return target;}, breakBlock, tryPlace, world, player, B, BLOCKS, CONFIG, keys, meshStats, stats, camera, renderer, scene, setState, startWorld, beginGame, openGui, closeGui, saveWorld, readMeta, matchRecipe, craftGrid2, craftGrid3, craftOut, getFps:()=>fps, get state(){return gameState;}, get cursor(){return cursor;}, clickSlot };
 const QS = new URLSearchParams(location.search);
 if(QS.has('autostart')){ world.persist=false; startWorld(12345); player.mode=QS.get('mode')||'creative'; if(player.mode==='creative') [B.grass,B.dirt,B.stone,B.cobblestone,B.planks,B.log,B.glass,B.torch,B.bricks].forEach((id,i)=>inv.slots[i]={id,count:64}); onInventoryChange(); setState('playing'); }
 else { toTitle(); }
