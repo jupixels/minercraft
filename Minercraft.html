@@ -445,6 +445,19 @@ if(typeof importScripts === 'function'){
 
 <script>
 "use strict";
+/* CHANGELOG & ROADMAP
+ * M1 COMPLETE — shared AABB, water/step physics; four animated procedural mobs;
+ * wander/panic/lure/breeding/babies; loot and cooked meats; bounded spawning;
+ * persistence + v1→v2 migration. Browser: all 7 functional checks pass,
+ * zero console errors. F3 CPU 1.42 ms, chunks .02 ms, render 1.21 ms
+ * (headless SwiftShader, R2; hardware FPS is not inferred).
+ * Next: M2 combat/hostiles; M3 durability/armor/XP; M4 farming;
+ * M5 shapes; M6 fluids; M7 worldgen; M8 weather; M9 redstone;
+ * M10 player/QoL; M11 enchanting; M12 Nether; M13 performance.
+ * Each milestone receives browser functional tests, F3 timing checks and a commit.
+ * Original soundpack bytes and v1 chunk edit encoding are preserved.
+ * Self-directed: enforce the existing urgent chunk meshing time budget.
+ */
 /* =========================================================================
    1. CONFIG & SMALL HELPERS
    ========================================================================= */
@@ -533,6 +546,8 @@ defItem(268,'apple',{label:'Apple',food:4});
 defItem(269,'gold_ingot',{label:'Gold Ingot'});
 defItem(272,'bread',{label:'Bread',food:5});
 defItem(273,'redstone',{label:'Redstone Dust'});
+// Entity loot and breeding ingredients (stable item IDs).
+for(const [id,name,label,food] of [[274,'wheat','Wheat',0],[275,'seeds','Wheat Seeds',0],[276,'leather','Leather',0],[277,'feather','Feather',0],[280,'raw_pork','Raw Pork',3],[281,'cooked_pork','Cooked Pork',8],[282,'raw_beef','Raw Beef',3],[283,'cooked_beef','Cooked Beef',8],[284,'raw_chicken','Raw Chicken',2],[285,'cooked_chicken','Cooked Chicken',6]]) defItem(id,name,{label,food});
 // Tools: 4 materials x 5 kinds, ids 300+
 const TOOL_MATS = [['wooden','Wooden',1,2],['stone','Stone',2,4],['iron','Iron',3,6],['diamond','Diamond',4,8]];
 const TOOL_KINDS = [['pickaxe','Pickaxe'],['axe','Axe'],['shovel','Shovel'],['sword','Sword'],['hoe','Hoe']];
@@ -1155,14 +1170,14 @@ function updateChunks(px, pz, budgetMs){
   while(pendingLocal.length && performance.now()-t0<budgetMs*0.5){ const c=pendingLocal.shift(); if(world.get(c.cx,c.cz)===c) onChunkData(c.cx,c.cz,gen.genChunk(c.cx,c.cz)); }
   // mesh: urgent (player edits) first, then nearest dirty chunks with all neighbours ready
   const R2=(R+0.5)*(R+0.5);
-  for(const c of world.chunks.values()) if(c.urgent && c.data && neighboursReady(c)) meshChunk(c);
+  for(const c of world.chunks.values()) if(c.urgent && c.data && neighboursReady(c)){ if(performance.now()-t0+meshStats.avg>budgetMs) break; meshChunk(c); }
   let meshed=0;
   for(const w of wanted){
     if(w[2]>R2) break;
     const c=world.get(w[0],w[1]);
     if(!c||!c.data||!c.dirty) continue;
     if(!neighboursReady(c)) continue;
-    if(meshed>0 && performance.now()-t0 + meshStats.avg > budgetMs) break;
+    if((meshed>0 || performance.now()-t0>budgetMs) && performance.now()-t0 + meshStats.avg > budgetMs) break;
     meshChunk(c); meshed++;
   }
 }
@@ -1189,20 +1204,20 @@ function collectBoxes(minX,minY,minZ,maxX,maxY,maxZ, out){
   return out;
 }
 const _boxes=[];
-function moveAxis(p, axis, d){
+function moveAxis(p, axis, d, halfWidth=PW, height=PH){
   if(d===0) return 0;
-  let minX=p.x-PW, maxX=p.x+PW, minY=p.y, maxY=p.y+PH, minZ=p.z-PW, maxZ=p.z+PW;
+  let minX=p.x-halfWidth, maxX=p.x+halfWidth, minY=p.y, maxY=p.y+height, minZ=p.z-halfWidth, maxZ=p.z+halfWidth;
   if(axis===0){ if(d>0) maxX+=d; else minX+=d; } else if(axis===1){ if(d>0) maxY+=d; else minY+=d; } else { if(d>0) maxZ+=d; else minZ+=d; }
   collectBoxes(minX,minY,minZ,maxX,maxY,maxZ,_boxes);
   const e=1e-4;
   for(let k=0;k<_boxes.length;k+=3){
     const bx=_boxes[k], by=_boxes[k+1], bz=_boxes[k+2];
-    if(axis===0){ if(p.y+PH<=by+e || p.y>=by+1-e || p.z+PW<=bz+e || p.z-PW>=bz+1-e) continue;
-      if(d>0 && p.x+PW<=bx+e) d=Math.min(d, bx-(p.x+PW)-e); else if(d<0 && p.x-PW>=bx+1-e) d=Math.max(d, bx+1-(p.x-PW)+e); }
-    else if(axis===1){ if(p.x+PW<=bx+e || p.x-PW>=bx+1-e || p.z+PW<=bz+e || p.z-PW>=bz+1-e) continue;
-      if(d>0 && p.y+PH<=by+e) d=Math.min(d, by-(p.y+PH)-e); else if(d<0 && p.y>=by+1-e) d=Math.max(d, by+1-p.y+e); }
-    else { if(p.y+PH<=by+e || p.y>=by+1-e || p.x+PW<=bx+e || p.x-PW>=bx+1-e) continue;
-      if(d>0 && p.z+PW<=bz+e) d=Math.min(d, bz-(p.z+PW)-e); else if(d<0 && p.z-PW>=bz+1-e) d=Math.max(d, bz+1-(p.z-PW)+e); }
+    if(axis===0){ if(p.y+height<=by+e || p.y>=by+1-e || p.z+halfWidth<=bz+e || p.z-halfWidth>=bz+1-e) continue;
+      if(d>0 && p.x+halfWidth<=bx+e) d=Math.min(d, bx-(p.x+halfWidth)-e); else if(d<0 && p.x-halfWidth>=bx+1-e) d=Math.max(d, bx+1-(p.x-halfWidth)+e); }
+    else if(axis===1){ if(p.x+halfWidth<=bx+e || p.x-halfWidth>=bx+1-e || p.z+halfWidth<=bz+e || p.z-halfWidth>=bz+1-e) continue;
+      if(d>0 && p.y+height<=by+e) d=Math.min(d, by-(p.y+height)-e); else if(d<0 && p.y>=by+1-e) d=Math.max(d, by+1-p.y+e); }
+    else { if(p.y+height<=by+e || p.y>=by+1-e || p.x+halfWidth<=bx+e || p.x-halfWidth>=bx+1-e) continue;
+      if(d>0 && p.z+halfWidth<=bz+e) d=Math.min(d, bz-(p.z+halfWidth)-e); else if(d<0 && p.z-halfWidth>=bz+1-e) d=Math.max(d, bz+1-(p.z-halfWidth)+e); }
   }
   if(axis===0) p.x+=d; else if(axis===1) p.y+=d; else p.z+=d;
   return d;
@@ -1460,6 +1475,7 @@ function playerIntersects(x,y,z){
   return p.x+PW>x && p.x-PW<x+1 && p.y+PH>y && p.y<y+1 && p.z+PW>z && p.z-PW<z+1;
 }
 function tryPlace(){
+  if(feedTargetMob()) return true;
   if(!target) return false;
   const tb=BLOCKS[target.id];
   if(!player.sneaking){
@@ -1488,7 +1504,7 @@ function tryPlace(){
 canvas.addEventListener('mousedown',(e)=>{
   if(gameState==='playing' && !locked && !noLock){ lastLockGesture=performance.now(); requestLock(true); return; }
   if(gameState!=='playing') return;
-  if(e.button===0){ mouse.left=true; swing(); }
+  if(e.button===0){ if(attackMob()) { swing(); return; } mouse.left=true; swing(); }
   if(e.button===2){ mouse.right=true; mouse.rightTimer=0.22; if(tryPlace()) swing(); }
   if(e.button===1 && target && player.mode==='creative'){ pickBlock(target.id); }
 });
@@ -1508,7 +1524,7 @@ function updateInteraction(dt){
   } else outline.visible=false;
 
   mining.cooldown -= dt;
-  if(mouse.left && target){
+  if(mouse.left && target && !raycastMob()){
     if(!mining.active || mining.x!==target.x || mining.y!==target.y || mining.z!==target.z || mining.id!==target.id){
       Object.assign(mining,{active:true,x:target.x,y:target.y,z:target.z,id:target.id,progress:0,hitTimer:0});
     }
@@ -1612,7 +1628,7 @@ function loadChunkEdits(cx,cz){
   for(const part of raw.split(',')){ if(!part) continue; const [a,b]=part.split('.'); m.set(parseInt(a,36), parseInt(b,36)); }
   world.edits.set(k,m); return m;
 }
-function readMeta(){ try{ const r=store.get(SAVE_KEY); return r?JSON.parse(r):null; }catch(e){ return null; } }
+function readMeta(){ try{ const r=store.get(SAVE_KEY); return r?migrateMeta(JSON.parse(r)):null; }catch(e){ return null; } }
 function wipeSave(){ for(const k of store.keys()) if(k===SAVE_KEY || k.indexOf(CHUNK_PREFIX)===0) store.del(k); }
 let saveFailed=false;
 function saveWorld(){
@@ -1626,7 +1642,7 @@ function saveWorld(){
   }
   if(ok) world.dirtyEdits.clear();
   const containers=[]; for(const [k,c] of world.containers) containers.push([k,{t:c.type,s:c.slots.map(st=>st?[st.id,st.count]:0),b:c.burn||0,bm:c.burnMax||0,c:c.cook||0}]);
-  const meta = { v:1, name:world.name, seed:world.seed, mode:player.mode, time:dayTime, spawn:world.spawn,
+  const meta = { v:2, mobs:saveMobs(), mobChunks:[...mobChunks], name:world.name, seed:world.seed, mode:player.mode, time:dayTime, spawn:world.spawn,
     p:{ x:+player.pos.x.toFixed(2), y:+player.pos.y.toFixed(2), z:+player.pos.z.toFixed(2), yaw:+player.yaw.toFixed(3), pitch:+player.pitch.toFixed(3),
         hp:player.health, food:player.food, sat:player.sat, xp:player.xp, fly:player.flying },
     inv: inv.slots.map(st=>st?[st.id,st.count]:0), sel:inv.sel, containers,
@@ -1716,7 +1732,7 @@ TOOL_MATS.forEach(([m],mi)=>{
   shaped(['X','X','S'],k,id('sword'));
   shaped(['XX',' S',' S'],k,id('hoe'));
 });
-const SMELT = {}; SMELT[B.sand]=B.glass; SMELT[B.cobblestone]=B.stone; SMELT[B.iron_ore]=B.iron_ingot; SMELT[B.gold_ore]=B.gold_ingot;
+const SMELT = {}; SMELT[B.raw_pork]=B.cooked_pork; SMELT[B.raw_beef]=B.cooked_beef; SMELT[B.raw_chicken]=B.cooked_chicken; SMELT[B.sand]=B.glass; SMELT[B.cobblestone]=B.stone; SMELT[B.iron_ore]=B.iron_ingot; SMELT[B.gold_ore]=B.gold_ingot;
 for(const l of [B.log,B.spruce_log,B.birch_log,B.cherry_log]) SMELT[l]=B.coal;
 const FUEL = {}; FUEL[B.coal]=80; FUEL[B.stick]=5; FUEL[B.crafting_table]=15; FUEL[B.chest]=15; FUEL[B.bookshelf]=15;
 for(const p of PLANKS) FUEL[p]=15; for(const l of [B.log,B.spruce_log,B.birch_log,B.cherry_log]) FUEL[l]=15;
@@ -2289,6 +2305,7 @@ function titleUpdate(dt){
 
 /* ---- starting / continuing a world ---- */
 function beginGame(seed, meta, mode){
+  resetMobs();
   world.persist = true;
   if(!meta){ world.edits.clear(); world.containers.clear(); }
   startWorld(seed, meta ? meta.p : null, world.seed===seed && !!meta);
@@ -2306,6 +2323,7 @@ function beginGame(seed, meta, mode){
     world.spawn=null;
     if(player.mode==='creative'){ [B.grass,B.dirt,B.stone,B.cobblestone,B.planks,B.log,B.glass,B.torch,B.bricks].forEach((id,i)=>inv.slots[i]={id,count:64}); }
   }
+  restoreMobs(meta);
   onInventoryChange();
   loadingStart=performance.now();
   setState('loading');
@@ -2371,6 +2389,7 @@ function startWorld(seed, state, keepChunks){
     world.seed=seed; startWorkers(seed);
   }
   if(typeof clearItems==='function') clearItems();
+  resetMobs();
   if(state){ player.pos.set(state.x,state.y,state.z); player.yaw=state.yaw||0; player.pitch=state.pitch||0; spawnPending=false; }
   else { const [sx,sz]=findSpawn(); player.pos.set(sx, gen.heightAt(Math.floor(sx),Math.floor(sz))+2, sz); spawnPending=true; }
   player.vel.set(0,0,0); player.fallStart=null; player.sprinting=false;
@@ -2394,7 +2413,7 @@ function frame(){
     if(active && (gameState==='playing'||gameState==='inventory')) updatePlayer(dt);
     updateCamera(dt);
     if(active){
-      updateInteraction(dt); updateParticles(dt); updateSurvival(dt); updateFurnaces(dt); updateItems(dt);
+      updateInteraction(dt); updateParticles(dt); updateSurvival(dt); updateFurnaces(dt); updateItems(dt); updateEntities(dt);
       if(typeof updateSky==='function') updateSky(dt, camera.position);
       if(typeof updateHeld==='function') updateHeld(dt);
       autosaveT+=dt; if(autosaveT>15){ autosaveT=0; saveWorld(); }
@@ -2523,6 +2542,10 @@ const sfx = (()=>{
     burp(){ if(!ok()) return; if(playPack('random/burp',0.5,rnd(0.1))) return; const t=ctx.currentTime; tone(t,0.25,'sawtooth',110,80,0.18,0.02); },
     pop(){ if(!ok()) return; if(playPack('random/pop',0.2,rnd(0.3)*1.2)) return; tone(ctx.currentTime,0.08,'sine',520*rnd(0.2),980,0.12); },
     click(){ if(!ok()) return; if(playPack('random/click',0.4,1)) return; const t=ctx.currentTime; tone(t,0.03,'square',1500,900,0.12); },
+    mob(kind, hurt=false){ if(!ok()) return; if(playPack('mob/'+kind+'/'+(hurt?'hurt':'say'),.4,1))return;
+      const t=ctx.currentTime,f={pig:155,cow:95,sheep:210,chicken:530}[kind]||140;
+      tone(t,.18,hurt?'sawtooth':'triangle',hurt?f*1.7:f,f*.7,.13); noise(t,.08,'bandpass',f*4,2,.08);
+    },
     ui(kind){ if(!ok()) return; const t=ctx.currentTime; if(kind==='chest'){ tone(t,0.25,'triangle',150,95,0.25,0.02); noise(t,0.2,'bandpass',300,3,0.2,0.02); } else { noise(t,0.08,'bandpass',500,1.5,0.25); } },
     update(dt){
       if(!ctx || ctx.state!=='running' || gameState!=='playing') return;
@@ -2916,14 +2939,190 @@ function addRecipeButton(panel, x, y){
 }
 
 /* =========================================================================
+   26. ENTITIES — bounded 20 Hz simulation, shared swept AABB physics,
+       original procedural skins, passive AI, breeding and v1 save migration.
+   ========================================================================= */
+const MOB_DEFS = {
+  pig: {hp:10,w:.42,h:.95,speed:1.25,color:[218,142,139],food:'wheat',loot:[['raw_pork',2]]},
+  cow: {hp:16,w:.45,h:1.4,speed:1.1,color:[109,77,57],food:'wheat',loot:[['raw_beef',2],['leather',1]]},
+  sheep: {hp:8,w:.42,h:1.2,speed:1.2,color:[220,218,195],food:'wheat',loot:[['wool',2]]},
+  chicken: {hp:4,w:.23,h:.7,speed:1.4,color:[227,206,153],food:'seeds',loot:[['raw_chicken',1],['feather',2]]},
+};
+const entities=[], mobChunks=new Set(), mobMaterials={}, mobGeometry=new THREE.BoxGeometry(1,1,1);
+const entityGroup=new THREE.Group(); scene.add(entityGroup);
+const entityClock={acc:0,tick:0,ms:0,spawnT:0};
+const ENTITY_LIMIT=32;
+function buildEntityTextures(){
+  const colors={wheat:[211,180,64],seeds:[92,145,49],leather:[155,87,48],feather:[221,224,204],raw_pork:[235,148,147],cooked_pork:[178,104,55],raw_beef:[173,62,48],cooked_beef:[121,71,40],raw_chicken:[226,172,144],cooked_chicken:[195,133,65]};
+  for(const name in colors) makeTile('item_'+name,(P,R)=>{
+    for(let y=0;y<16;y++) for(let x=0;x<16;x++){
+      const thin=name==='wheat'||name==='feather', dx=x-7.5,dy=y-8;
+      const inside=thin ? Math.abs(dx+dy*.4)<(y<10?2.6:1) && y>1 && y<15 : dx*dx/30+dy*dy/19<1;
+      P(x,y,inside?vary(colors[name],R,32):[0,0,0],inside?255:0);
+    }
+  });
+  for(const kind in MOB_DEFS){ const def=MOB_DEFS[kind];
+    makeTile('mob_'+kind,(P,R)=>{ for(let y=0;y<16;y++) for(let x=0;x<16;x++){
+      let c=vary(def.color,R,24);
+      if(kind==='cow' && ((x*3+y*5)%17<5)) c=[228,217,187];
+      if(kind==='sheep' && (x+y)%4===0) c=[181,180,160];
+      if(y>=6&&y<=8&&(x===4||x===11)) c=[24,31,24];
+      if(y===7&&(x===3||x===10)) c=[245,245,211];
+      if(y>10&&y<14&&x>5&&x<10) c=kind==='chicken'?[216,149,40]:[105,67,57];
+      P(x,y,c);
+    }});
+  }
+  CREATIVE_TABS[3].items.push(...Object.keys(colors).map(n=>B[n]));
+}
+function mobMaterial(kind){
+  if(!mobMaterials[kind]){
+    const t=new THREE.CanvasTexture(TILE_CANVAS['mob_'+kind]); t.magFilter=t.minFilter=THREE.NearestFilter; t.generateMipmaps=false;
+    const normal=new THREE.MeshBasicMaterial({map:t}), hurt=normal.clone(); hurt.color.setRGB(1,.28,.25);
+    mobMaterials[kind]={normal,hurt};
+  }
+  return mobMaterials[kind];
+}
+function mobModel(kind){
+  const d=MOB_DEFS[kind], g=new THREE.Group(), parts=[], legs=[];
+  const box=(w,h,l,x,y,z,parent=g)=>{ const m=new THREE.Mesh(mobGeometry,mobMaterial(kind).normal); m.scale.set(w,h,l); m.position.set(x,y,z); parent.add(m); parts.push(m); return m; };
+  const bird=kind==='chicken';
+  box(d.w*1.7,d.h*.5,d.w*2.2,0,d.h*.55,.05);
+  const head=new THREE.Group(); head.position.set(0,d.h*.82,-d.w*.85); g.add(head);
+  box(d.w*1.1,d.h*.43,d.w*1.05,0,0,0,head);
+  if(bird) box(.18,.1,.23,0,-.02,-.19,head);
+  const n=bird?2:4;
+  for(let i=0;i<n;i++){
+    const pivot=new THREE.Group(); pivot.position.set((i&1?1:-1)*d.w*.57,d.h*.35,bird?0:(i<2?-.28:.3)); g.add(pivot);
+    box(d.w*.38,d.h*.4,d.w*.38,0,-d.h*.17,0,pivot); legs.push(pivot);
+  }
+  return {g,parts,head,legs};
+}
+function spawnMob(kind,x,y,z,options={}){
+  if(!MOB_DEFS[kind]||entities.length>=ENTITY_LIMIT) return null;
+  const d=MOB_DEFS[kind], model=mobModel(kind);
+  const e={kind,pos:new THREE.Vector3(x,y,z),prev:new THREE.Vector3(x,y,z),vel:new THREE.Vector3(),yaw:Math.random()*Math.PI*2,hp:d.hp,age:0,aiT:0,panic:0,hurt:0,love:0,breedCD:0,baby:0,persistent:false,onGround:false,walk:0,dead:0,...options,model};
+  model.g.position.copy(e.pos); entityGroup.add(model.g); entities.push(e); return e;
+}
+function removeMob(e){ const i=entities.indexOf(e); if(i>=0) entities.splice(i,1); entityGroup.remove(e.model.g); }
+function resetMobs(){ while(entities.length) removeMob(entities[entities.length-1]); mobChunks.clear(); entityClock.acc=0; entityClock.spawnT=0; }
+function migrateMeta(m){
+  if((m.v||1)<2){ m.mobs=[]; m.mobChunks=[]; m.v=2; }
+  return m;
+}
+function saveMobs(){ return entities.filter(e=>!e.dead).map(e=>({kind:e.kind,x:e.pos.x,y:e.pos.y,z:e.pos.z,hp:e.hp,yaw:e.yaw,baby:e.baby,breedCD:e.breedCD,persistent:e.persistent})); }
+function restoreMobs(meta){
+  if(!meta) return;
+  for(const k of meta.mobChunks||[]) mobChunks.add(k);
+  for(const m of meta.mobs||[]) if(Number.isFinite(m.x)&&Number.isFinite(m.y)&&Number.isFinite(m.z)) spawnMob(m.kind,m.x,m.y,m.z,{hp:m.hp,yaw:m.yaw,baby:m.baby||0,breedCD:m.breedCD||0,persistent:!!m.persistent});
+}
+function mobScale(e){ return e.baby>0?.55:1; }
+function mobPhysics(e,dt){
+  const p=e.pos,v=e.vel,d=MOB_DEFS[e.kind],scale=mobScale(e),w=d.w*scale,h=d.h*scale;
+  if(world.getBlock(Math.floor(p.x),Math.floor(p.y),Math.floor(p.z))<0) return;
+  const inWater=world.getBlock(Math.floor(p.x),Math.floor(p.y+.2),Math.floor(p.z))===B.water;
+  v.y=inWater?Math.min(3,v.y+dt*12):Math.max(-35,v.y-28*dt);
+  if(e.kind==='chicken' && v.y<-3) v.y=-3;
+  const steps=Math.max(1,Math.ceil(Math.max(Math.abs(v.x),Math.abs(v.y),Math.abs(v.z))*dt/.4)),sd=dt/steps;
+  e.onGround=false;
+  for(let n=0;n<steps;n++){
+    const dy=v.y*sd, my=moveAxis(p,1,dy,w,h); if(my!==dy){ if(dy<0)e.onGround=true; v.y=0; }
+    const dx=v.x*sd,dz=v.z*sd, mx=moveAxis(p,0,dx,w,h),mz=moveAxis(p,2,dz,w,h);
+    if((mx!==dx||mz!==dz)&&e.onGround){
+      // A one-block step uses the same swept collision routine, including head clearance.
+      const sy=p.y, up=moveAxis(p,1,1.02,w,h);
+      const sx=p.x,sz=p.z;
+      moveAxis(p,0,dx-mx,w,h); moveAxis(p,2,dz-mz,w,h);
+      if(up<1 || (p.x===sx&&p.z===sz)){p.y=sy;p.x=sx;p.z=sz;e.yaw+=1.3;} else moveAxis(p,1,-1.02,w,h);
+    }
+  }
+}
+const _mobRay=new THREE.Ray(), _mobBox=new THREE.Box3(), _mobHit=new THREE.Vector3();
+function raycastMob(){
+  camera.getWorldDirection(_rd); _mobRay.set(camera.position,_rd);
+  const block=raycastBlock(REACH); let nearest=block?block.t:REACH, found=null;
+  for(const e of entities){ if(e.dead)continue; const d=MOB_DEFS[e.kind],s=mobScale(e),p=e.pos;
+    _mobBox.min.set(p.x-d.w*s,p.y,p.z-d.w*s); _mobBox.max.set(p.x+d.w*s,p.y+d.h*s,p.z+d.w*s);
+    if(_mobRay.intersectBox(_mobBox,_mobHit)){ const dist=_mobHit.distanceTo(camera.position); if(dist<nearest){ nearest=dist;found=e;} }
+  }
+  return found;
+}
+function hurtMob(e,amount){
+  if(!e||e.dead||e.hurt>0) return false;
+  e.hp-=amount;e.hurt=.45;e.panic=4;e.yaw=Math.atan2(e.pos.x-player.pos.x,e.pos.z-player.pos.z);e.vel.y=4;
+  sfx.mob(e.kind,true);
+  if(e.hp<=0){e.dead=.001;e.love=0; if(!e.baby) for(const [name,n] of MOB_DEFS[e.kind].loot)spawnItem(B[name],n,e.pos.x,e.pos.y+.4,e.pos.z,true);}
+  return true;
+}
+function attackMob(){const e=raycastMob();if(!e)return false;hurtMob(e,2);return true;}
+function feedMob(e){
+  if(!e||e.dead||e.baby>0||e.breedCD>0||e.love>0||inv.heldId()!==B[MOB_DEFS[e.kind].food])return false;
+  e.love=30;e.persistent=true;if(player.mode==='survival')inv.consumeHeld();sfx.pop();toast(e.kind+' is ready to breed');return true;
+}
+function feedTargetMob(){return feedMob(raycastMob());}
+function spawnPassiveChunks(){
+  if(entities.length>=24)return;
+  let checked=0;
+  for(const c of world.chunks.values()){
+    if(!c.data||mobChunks.has(ckey(c.cx,c.cz)))continue;
+    mobChunks.add(ckey(c.cx,c.cz)); if(++checked>4)break;
+    const R=mulberry32((world.seed^Math.imul(c.cx,73856093)^Math.imul(c.cz,19349663)^8153)>>>0);
+    if(R()>.2)continue;
+    const kinds=Object.keys(MOB_DEFS),kind=kinds[(R()*kinds.length)|0];
+    for(let i=0;i<2;i++){
+      const x=c.cx*16+3+((R()*10)|0),z=c.cz*16+3+((R()*10)|0);
+      for(let y=CH-3;y>SEA;y--){const id=world.getBlock(x,y,z);if(id===B.grass||id===B.grass_taiga){if(world.getBlock(x,y+1,z)===0&&world.getBlock(x,y+2,z)===0)spawnMob(kind,x+.5,y+1,z+.5);break;}if(id>0&&BLOCKS[id].solid)break;}
+    }
+  }
+}
+function tickEntities(dt){
+  const start=performance.now(); entityClock.tick++;
+  entityClock.spawnT-=dt;if(entityClock.spawnT<=0){entityClock.spawnT=.5;spawnPassiveChunks();}
+  for(let i=entities.length-1;i>=0;i--){
+    const e=entities[i],p=e.pos,d=MOB_DEFS[e.kind]; e.prev.copy(p);
+    if(e.dead){e.dead+=dt;if(e.dead>.65){for(let n=0;n<8;n++)emitParticle(p.x,p.y+.5,p.z,(Math.random()-.5)*2,Math.random()*2,(Math.random()-.5)*2,TEX.wool);removeMob(e);}continue;}
+    const dist=p.distanceToSquared(player.pos);
+    if(dist>128*128&&!e.persistent){removeMob(e);continue;}
+    if(dist>80*80||world.getBlock(Math.floor(p.x),Math.floor(p.y),Math.floor(p.z))<0)continue;
+    e.age+=dt;e.hurt=Math.max(0,e.hurt-dt);e.panic=Math.max(0,e.panic-dt);e.love=Math.max(0,e.love-dt);e.breedCD=Math.max(0,e.breedCD-dt);e.baby=Math.max(0,e.baby-dt);
+    e.aiT-=dt;
+    if(e.aiT<=0){e.aiT=1+Math.random()*3;if(!e.panic)e.yaw+=(Math.random()-.5)*3;e.moving=Math.random()>.3;}
+    let speed=e.panic?d.speed*2.5:(e.moving?d.speed:0);
+    if(!e.panic&&inv.heldId()===B[d.food]&&dist<64&&dist>2){e.yaw=Math.atan2(player.pos.x-p.x,player.pos.z-p.z);speed=d.speed;}
+    if(e.love>0){
+      for(const o of entities){if(o===e||o.kind!==e.kind||o.love<=0||o.dead)continue;
+        const dd=o.pos.distanceToSquared(p);if(dd<100){e.yaw=Math.atan2(o.pos.x-p.x,o.pos.z-p.z);speed=d.speed;}
+        if(dd<2.5&&entities.length<ENTITY_LIMIT){const baby=spawnMob(e.kind,p.x,p.y,p.z,{baby:1200,persistent:true});if(baby){e.love=o.love=0;e.breedCD=o.breedCD=300;sfx.pop();}break;}
+      }
+      if(entityClock.tick%10===0)emitParticle(p.x,p.y+d.h+.2,p.z,0,.8,0,TEX.item_raw_beef);
+    }
+    e.vel.x=Math.sin(e.yaw)*speed;e.vel.z=Math.cos(e.yaw)*speed;
+    mobPhysics(e,dt);e.walk+=speed*dt*5;
+    if(p.y<-10)removeMob(e);
+  }
+  entityClock.ms=performance.now()-start;
+}
+function updateEntities(dt){
+  entityClock.acc=Math.min(entityClock.acc+dt,.2);
+  let steps=0;while(entityClock.acc>=.05&&steps++<4){tickEntities(.05);entityClock.acc-=.05;}
+  const alpha=entityClock.acc/.05;
+  for(const kind in mobMaterials)mobMaterials[kind].normal.color.setScalar(Math.max(.23,U.uSky.value));
+  for(const e of entities){
+    const m=e.model,p=e.pos;m.g.position.set(lerp(e.prev.x,p.x,alpha),lerp(e.prev.y,p.y,alpha),lerp(e.prev.z,p.z,alpha));m.g.rotation.set(0,e.yaw,e.dead?Math.min(Math.PI/2,e.dead*3):0);m.g.scale.setScalar(mobScale(e));
+    const material=mobMaterial(e.kind)[e.hurt>0?'hurt':'normal'];for(const part of m.parts)part.material=material;
+    for(let i=0;i<m.legs.length;i++)m.legs[i].rotation.x=Math.sin(e.walk+(i%2)*Math.PI)*.6;
+    m.head.rotation.y=clamp(Math.atan2(player.pos.x-p.x,player.pos.z-p.z)-e.yaw,-.65,.65);
+  }
+}
+
+/* =========================================================================
    20. BOOT
    ========================================================================= */
-buildTextures();
+buildTextures(); buildEntityTextures();
 for(const n in TEX) TEX_NAME[TEX[n]]=n;
 buildBlockTables(); makeMaterials(); makeCrackMats(); makeParticles();
 buildGuiImages(); buildHud(); applyGuiScale(); buildSky(); if(CONFIG.soundPack===false) sfx.usePack=false; soundLabel();
 scene.background = new THREE.Color(0x9cc8ff);
-window.__bc = { itemEntities, spawnItem, throwItem, updateItems, setSwing:(v)=>{held.forceP=v; held.equip=1;}, step:(dt,n)=>{ for(let i=0;i<n;i++){ updatePlayer(dt); updateCamera(dt); updateInteraction(dt); updateSurvival(dt); updateChunks(player.pos.x,player.pos.z,50); } }, prof, get locked(){return locked;}, get noLock(){return noLock;}, sfx, setDay:(t)=>{dayTime=t;}, get gen(){return gen;}, inv, mouse, mining, get target(){return target;}, breakBlock, tryPlace, world, player, B, BLOCKS, CONFIG, keys, meshStats, stats, camera, renderer, scene, setState, startWorld, beginGame, openGui, closeGui, saveWorld, readMeta, matchRecipe, craftGrid2, craftGrid3, craftOut, getFps:()=>fps, get state(){return gameState;}, get cursor(){return cursor;}, clickSlot };
+window.__bc = { entities, MOB_DEFS, spawnMob, hurtMob, feedMob, updateEntities, raycastMob, resetMobs, saveMobs, migrateMeta, getContainer, updateFurnaces, ITEMS, armorSlots, moveAxis, itemEntities, spawnItem, throwItem, updateItems, setSwing:(v)=>{held.forceP=v; held.equip=1;}, step:(dt,n)=>{ for(let i=0;i<n;i++){ updatePlayer(dt); updateCamera(dt); updateInteraction(dt); updateSurvival(dt); updateChunks(player.pos.x,player.pos.z,50); } }, prof, get locked(){return locked;}, get noLock(){return noLock;}, sfx, setDay:(t)=>{dayTime=t;}, get gen(){return gen;}, inv, mouse, mining, get target(){return target;}, breakBlock, tryPlace, world, player, B, BLOCKS, CONFIG, keys, meshStats, stats, camera, renderer, scene, setState, startWorld, beginGame, openGui, closeGui, saveWorld, readMeta, matchRecipe, craftGrid2, craftGrid3, craftOut, getFps:()=>fps, get state(){return gameState;}, get cursor(){return cursor;}, clickSlot };
 const QS = new URLSearchParams(location.search);
 if(QS.has('autostart')){ world.persist=false; startWorld(12345); player.mode=QS.get('mode')||'creative'; if(player.mode==='creative') [B.grass,B.dirt,B.stone,B.cobblestone,B.planks,B.log,B.glass,B.torch,B.bricks].forEach((id,i)=>inv.slots[i]={id,count:64}); onInventoryChange(); setState('playing'); }
 else { toTitle(); }
