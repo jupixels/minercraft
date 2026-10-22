@@ -32,6 +32,14 @@ Two limits on that freedom:
   `REFLECT`), toggled through `material.defines` in `applyShaderMode()`;
   `renderScene()` replaces the plain `renderer.render(scene, camera)`.
   Solid and cut chunk meshes are on layer 1 so the shadow pass sees them.
+  Ultra adds the `ULTRA` define (chunk materials, sky dome, clouds) and is a
+  linear-HDR pipeline: shaders write pre-exposed linear colour as
+  `pow(c,1/2.2)` into half-float targets (so plain three.js materials still
+  look right), the sky comes from a Rayleigh/Mie/ozone sky-view LUT
+  (`ATMO_GLSL`, mirrored in JS by `atmScatter` for sun colour, the ambient
+  cube and auto exposure), water is drawn in its own pass (layer 2) after a
+  colour+depth copy so it can refract, and the post chain does SSAO,
+  shadow-mapped volumetric light, bloom and ACES.
 - Section 46 is boats (an entity kind with its own float/row physics).
 - Villages (generator 7+) live in `worldgen-src`: `villageAt()` plans a cell,
   `drawVillages()` draws the overlapping pieces into each chunk.
