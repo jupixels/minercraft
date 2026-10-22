@@ -26,14 +26,18 @@ Two limits on that freedom:
   the blocks and items added in the Caves & Cliffs update (from the
   `EXT_TEX` recipes set in section 2) and holds their recipes, creative-tab
   placement, daylight burning, the spyglass and the clock.
-- Section 45 is the optional shader pack (Options → Shaders: Off / Fancy /
-  Ultra). Off must stay the original renderer. The chunk materials compile
+- Section 45 is the optional shader pack (pause-menu slider or Options →
+  Shaders: Off / Fancy / Ultra). Off must stay the original renderer. Fancy
+  and Ultra share one pipeline; `SP_TIER` lists what Fancy leaves out to stay
+  cheap (keep the two looking alike). Ultra's volumetric clouds are ray-marched
+  at half resolution (`spCloudPass`) and composited by the sky dome, which in
+  Ultra is drawn after the stars and moon (alpha = cloud transmittance). The chunk materials compile
   shader-pack code only under `#ifdef SHADERS` (plus `WAVE`, `SHADOWS`,
   `REFLECT`), toggled through `material.defines` in `applyShaderMode()`;
   `renderScene()` replaces the plain `renderer.render(scene, camera)`.
   Solid and cut chunk meshes are on layer 1 so the shadow pass sees them.
-  Ultra adds the `ULTRA` define (chunk materials, sky dome, clouds) and is a
-  linear-HDR pipeline: shaders write pre-exposed linear colour as
+  Both tiers set the `ULTRA` define (chunk materials, sky dome, clouds; Fancy
+  adds `LITE`, Ultra `REFLECT` and `VCLOUDS`) and run a linear-HDR pipeline: shaders write pre-exposed linear colour as
   `pow(c,1/2.2)` into half-float targets (so plain three.js materials still
   look right), the sky comes from a Rayleigh/Mie/ozone sky-view LUT
   (`ATMO_GLSL`, mirrored in JS by `atmScatter` for sun colour, the ambient
@@ -41,6 +45,14 @@ Two limits on that freedom:
   colour+depth copy so it can refract, and the post chain does SSAO,
   shadow-mapped volumetric light, bloom and ACES.
 - Section 46 is boats (an entity kind with its own float/row physics).
+- Section 47 is uranium: ore (generator 9), yellowcake, and the Enrichment
+  Table (container type `enrichment`, ticked by the host from
+  `updateFurnaces`). It is groundwork for a bigger nuclear update.
+- Explosions (section 27): `explode()` casts blast rays against block blast
+  resistance; `explosionEffects()` / `boomFx` draw the flash, fireball, smoke,
+  dust, sparks and shockwave as instanced billboards (drawn late in the shader
+  pipeline, soft against the scene depth on Ultra) and drive camera shake,
+  the `uBoom` terrain light and `sfx.explode(dist,power)` / `sfx.deafen()`.
 - Villages (generator 7+) live in `worldgen-src`: `villageAt()` plans a cell,
   `drawVillages()` draws the overlapping pieces into each chunk.
 - `world.dimension` can be unset for the overworld; compare with
@@ -75,10 +87,9 @@ Two limits on that freedom:
   `BLOCKS` has holes at 256–511, so loops over it must skip empty entries.
 - **World generation is frozen per generator version.** Every shipped
   generator must keep producing byte-identical chunks: the test pins chunk
-  hashes for generators 1–7. Generator 8 (Caves & Cliffs, wide rivers,
-  coal-lined cave mouths, full villages) is the default for new worlds; once
-  it ships, pin it too. Change terrain only by adding a version: guard new
-  code with `version>=9`, keep `R()` call order unchanged for older versions,
+  hashes for generators 1–8. Generator 9 (generator 8 plus uranium veins)
+  is the default for new worlds; once it ships, pin it too. Change terrain
+  only by adding a version: guard new code with `version>=10`, keep `R()` call order unchanged for older versions,
   give new features their own `mulberry32` stream or a position hash, and
   bump the default in the three `genVersion` spots and the guest-meta check.
   Features that span chunks (tunnels, villages) are planned from world
@@ -137,7 +148,7 @@ How syncing works, so new features stay multiplayer-safe:
 - New kinds of shared state that don't go through the functions above need a
   message: add a case to `netHostOnMsg` (guest → host; validate everything,
   guests are untrusted) and to `netClientOnMsg` (host → guest).
-- `NET_V` is the protocol version (currently 2). Bump it whenever messages
+- `NET_V` is the protocol version (currently 3). Bump it whenever messages
   or block ids change in an incompatible way, so mismatched players get a
   "refresh to update" message instead of a broken game.
 - Friendly fire is the host's setting `world.mp.pvp` (pause-menu button or
