@@ -27,6 +27,8 @@ assert(BLOCKS.length<=1024);for(let i=512;i<BLOCKS.length;i++)assert(BLOCKS[i]&&
 assert.equal(digest(JSON.stringify(BLOCKS.slice(512,909).map(b=>[b.id,b.name]))),'f245d780f7538ab90f3f79e6525d6564e5399178ea04a32f79943ea23f672805','extended block IDs/names changed');
 // Uranium update appended 909-912 (ores, raw block, enrichment table).
 assert.equal(digest(JSON.stringify(BLOCKS.slice(512,913).map(b=>[b.id,b.name]))),'0b585e8c976fd2357e46b634a0dcbab7fa928e2c98aedd8fdbdc89c75beb548a','uranium block IDs/names changed');
+// The Nether Update appended 913-950 (nylium, fungi, vines, gold ore, debris, bastion stone, netherite, shapes).
+assert.equal(digest(JSON.stringify(BLOCKS.slice(512,951).map(b=>[b.id,b.name]))),'e0f1d3313282580f03fbbf768c5e21a974da6699e55d38b8abf1dbdd6d5705ca','Nether Update block IDs/names changed');
 for(const id of Object.keys(ITEMS).map(Number))assert(id>=256&&id<512&&!BLOCKS[id],'item ids live in 256-511');
 // Items defined outside section 2 (boats, spawn eggs) must not reuse a section-2 item id.
 {const reg=source.slice(source.indexOf('const B = {};'),source.indexOf('const isBlockId =')),rest=source.replace(reg,''),later=[...rest.matchAll(/defItem\((\d+),/g)].map(m=>+m[1]);
@@ -39,6 +41,8 @@ const SHIPPED=[[3,42,"overworld",0,0,"24e17454845ff84a70d3aa7618f01695c92f1c1fe4
 LEGACY.hashes.push(...SHIPPED);
 // Generator 8 shipped as the default before uranium (generator 9), so it is pinned too.
 LEGACY.hashes.push([8,42,"overworld",0,0,"b6f65147d7f335dd4afd34c1eff8a5272df51c30114046651d445a4a59b341c1"],[8,42,"overworld",-1,2,"a8da151fa88e8ed1bd638c3477ce43b1efe37c7fa6c91718724de59626389642"],[8,42,"overworld",15,-31,"7c0918333efcaf756930d42a505d5e5c6c1bbc53cf9b6bb80f1f38d3b697b7a2"],[8,12345,"overworld",100,100,"0f39de89da91b003e3fdf8a56d1a20bd29be4e9949c10b8f57d1843047922bba"],[8,-98765,"overworld",-7,3,"ab85371f9c4eefcb99c9a28c563e2ba45c52f401a559b68e34752287756f376b"]);
+// Generator 9 shipped as the default before the Nether Update (generator 10), so it is pinned too.
+LEGACY.hashes.push([9,42,"overworld",0,0,"e6929bff97b706532b165fbee6bbcae0d8194dfe25cef5575d2ea563fc8f527a"],[9,42,"overworld",15,-31,"0c91801bcc59fa267a289b7f966785d10bc658e2f346d3b7fbbafba7079186e9"],[9,12345,"overworld",100,100,"eb89145efbb715b55ac174ade69d02189fd1f6b144d40eede0def53fad6dc1c2"],[9,-98765,"overworld",-7,3,"09f252387cbb958f6f31b6f3ce16f3816318fe4f43500e6127683915aa393af0"],[9,42,"nether",0,0,"4dacfd22a4aa0a6a093e477d96c2fc43fdb5a91a3e29b8619acc5e056bc3859d"],[9,12345,"nether",-1,2,"b09a31abde9a5f38c06a2d922c2e7ac0cbe501962990bfa0e551f937870f7241"]);
 for(const [version,seed,dimension,x,z,expected] of LEGACY.hashes)assert.equal(digest(make(seed,B,version,dimension).genChunk(x,z)),expected,`legacy ${version}/${seed}/${dimension}/${x},${z}`);
 for(const seed of [42,12345,-98765]){
  const a=make(seed,B,3),b=make(seed,B,3);let underground=0;
@@ -118,10 +122,26 @@ for(const seed of [42,-98765]){
   if(b[i]===B.iron_ore||b[i]===B.deepslate_iron_ore)iron++;if(b[i]===B.uranium_ore||b[i]===B.deepslate_uranium_ore)ur++;
   else if(a[i]!==b[i])other++;}}
  if(process.env.DEBUG_GEN)console.log({iron,ur,other});assert(other===0,'generator 9 changed more than uranium');assert(ur>iron*.6&&ur<iron,'uranium should be a little rarer than iron');}
+// Generator 10: the overworld is generator 9 plus ruined portals and nothing else; the Nether has
+// five biomes, order-independent fortresses and bastions, and its survival resources.
+{let changed=0,portal=0;const g9=make(42,B,9),g10=make(42,B,10),rp=new Set([B.obsidian,B.crying_obsidian,B.netherrack,B.magma_block,B.gold_block,B.chest,B.chest+1,B.chest+2,B.chest+3,0]);
+ const s=g10.nearestStructure(0,0,'ruined_portal');assert(s,'generator 10 ruined portals missing');
+ for(let cz=(s.z>>4)-1;cz<=(s.z>>4)+1;cz++)for(let cx=(s.x>>4)-1;cx<=(s.x>>4)+1;cx++){const a=g9.genChunk(cx,cz),b=g10.genChunk(cx,cz);for(let i=0;i<a.length;i++)if(a[i]!==b[i]){changed++;if(rp.has(b[i]))portal++;}}
+ for(let cz=-3;cz<3;cz++)for(let cx=-3;cx<3;cx++){const x=cx*16+8,z=cz*16+8;if(Math.abs(x-s.x)<40&&Math.abs(z-s.z)<40)continue;assert.equal(digest(g9.genChunk(cx,cz)),digest(g10.genChunk(cx,cz)),'generator 10 changed overworld terrain away from ruined portals');}
+ assert(portal>10&&portal===changed,'generator 10 overworld should only add ruined portals');}
+{const n=make(42,B,10,'nether'),again=make(42,B,10,'nether'),seen=new Set(),biomes=new Set();
+ for(let z=-2000;z<2000;z+=40)for(let x=-2000;x<2000;x+=40)biomes.add(n.biomeAt(x,z));assert.equal(biomes.size,5,'generator 10 Nether biomes missing');
+ const f=n.nearestStructure(0,0,'fortress'),b=n.nearestStructure(0,0,'bastion');assert(f&&b,'fortress or bastion missing');
+ for(const s of [f,b]){const cs=[[s.x>>4,s.z>>4],[(s.x>>4)+1,s.z>>4],[s.x>>4,(s.z>>4)-1]];for(const [x,z] of cs.slice().reverse())again.genChunk(x+3,z+3);
+  for(const [x,z] of cs){const d=n.genChunk(x,z);assert(d instanceof Uint16Array&&d.length===32768);assert.equal(digest(d),digest(again.genChunk(x,z)),'generator 10 Nether depends on request order');for(const id of d)seen.add(id);}}
+ for(let z=-4;z<4;z++)for(let x=-4;x<4;x++)for(const id of n.genChunk(x,z))seen.add(id);
+ for(let z=-5;z<=5;z++)for(let x=-5;x<=5;x++)for(const id of n.genChunk((f.x>>4)+x,(f.z>>4)+z))if(id===B.spawner)seen.add(id);
+ for(const name of ['nether_bricks','spawner','polished_blackstone_bricks','gold_block','nether_quartz_ore','nether_gold_ore','glowstone','lava','crimson_nylium','warped_nylium','soul_soil','crimson_stem','shroomlight','ancient_debris'])assert(seen.has(B[name]),name+' missing from generator 10 Nether');
+ assert.equal(n.structureAt(f.x,f.y+1,f.z),'fortress');assert.equal(n.structureAt(b.x,b.y+1,b.z),'bastion');}
 // Legacy metadata must retain generator and equipment, including offhand enchants.
 vm.runInContext(source.slice(source.indexOf('function migrateMeta('),source.indexOf('function mobRecord('))+';globalThis.migrate=migrateMeta;',context);
 const equipment=[315,1,123,{fortune:2}],old={v:12,generator:2,inv:[equipment],offhand:[384,1,200,null],p:{x:1,y:70,z:2}};
-const migrated=context.migrate(old);assert.equal(migrated.v,16);assert.equal(migrated.dayLock,false);assert.equal(migrated.generator,2);assert.deepEqual(migrated.inv[0],equipment);assert.equal(migrated.offhand[2],200);
+const migrated=context.migrate(old);assert.equal(migrated.v,17);assert.equal(migrated.netherGen,10);assert.equal(context.migrate({v:16,generator:4,dimensions:{nether:{}},p:{}}).netherGen,4);assert.equal(migrated.dayLock,false);assert.equal(migrated.generator,2);assert.deepEqual(migrated.inv[0],equipment);assert.equal(migrated.offhand[2],200);
 assert.equal(context.migrate({v:15,generator:8,p:{}}).generator,8);assert.equal(context.migrate({v:15,generator:9,p:{}}).generator,9);
 assert.equal(context.migrate({v:1,p:{}}).generator,1);assert.equal(context.migrate({v:12,p:{}}).generator,2);
 // Frame detection/destruction with optional corners, both orientations and a build marker.
@@ -137,4 +157,4 @@ for(const axis of [0,1]){
  world.setBlock(x,y+2,z,0);context.portals.invalidatePortal(x,y+2,z);
  assert(![...cells.values()].includes(B.portal));assert.equal(world.getBlock(20,35,20),B.bricks,'frame maintenance changed a neighbouring build');
 }
-console.log(`PASS: syntax, soundpack, 256 stable IDs + ${BLOCKS.length-512} appended, ${LEGACY.hashes.length} legacy chunks, v3-v9 determinism/resources/villages/uranium, migration and both portal frames.`);
+console.log(`PASS: syntax, soundpack, 256 stable IDs + ${BLOCKS.length-512} appended, ${LEGACY.hashes.length} legacy chunks, v3-v10 determinism/resources/villages/uranium/Nether Update, migration and both portal frames.`);
