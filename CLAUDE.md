@@ -33,7 +33,7 @@ Two limits on that freedom:
   `renderScene()` replaces the plain `renderer.render(scene, camera)`.
   Solid and cut chunk meshes are on layer 1 so the shadow pass sees them.
 - Section 46 is boats (an entity kind with its own float/row physics).
-- Villages (generator 7) live in `worldgen-src`: `villageAt()` plans a cell,
+- Villages (generator 7+) live in `worldgen-src`: `villageAt()` plans a cell,
   `drawVillages()` draws the overlapping pieces into each chunk.
 - `world.dimension` can be unset for the overworld; compare with
   `(world.dimension||'overworld')`.
@@ -67,10 +67,10 @@ Two limits on that freedom:
   `BLOCKS` has holes at 256–511, so loops over it must skip empty entries.
 - **World generation is frozen per generator version.** Every shipped
   generator must keep producing byte-identical chunks: the test pins chunk
-  hashes for generators 1–6. Generator 7 (Caves & Cliffs, wide rivers,
+  hashes for generators 1–7. Generator 8 (Caves & Cliffs, wide rivers,
   coal-lined cave mouths, full villages) is the default for new worlds; once
   it ships, pin it too. Change terrain only by adding a version: guard new
-  code with `version>=8`, keep `R()` call order unchanged for older versions,
+  code with `version>=9`, keep `R()` call order unchanged for older versions,
   give new features their own `mulberry32` stream or a position hash, and
   bump the default in the three `genVersion` spots and the guest-meta check.
   Features that span chunks (tunnels, villages) are planned from world

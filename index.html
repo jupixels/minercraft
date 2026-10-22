@@ -578,6 +578,7 @@ function makeGen(seed, B, version=1,dimension='overworld'){
       }
       // Generator 6: stone around a cave mouth is studded with coal, so torches are at hand.
       function lineCoal(wx,wy,wz,r,p){
+        if(version>=8)p*=.6;   // generator 8: 40% less coal around cave mouths
         const R2=(r+1.5)**2,x0=Math.max(0,Math.floor(wx-r-1.5)-ox),x1=Math.min(15,Math.ceil(wx+r+1.5)-ox),z0=Math.max(0,Math.floor(wz-r-1.5)-oz),z1=Math.min(15,Math.ceil(wz+r+1.5)-oz);
         for(let z=z0;z<=z1;z++)for(let x=x0;x<=x1;x++)for(let y=Math.max(2,Math.floor(wy-r-1.5));y<=Math.min(CH-2,wy+r+1.5);y++){
           const gx=ox+x,gz=oz+z,dd=(gx+.5-wx)**2+(y+.5-wy)**2+(gz+.5-wz)**2;if(dd>R2)continue;const i=I(x,y,z);if(d[i]!==B.stone)continue;
@@ -2845,7 +2846,7 @@ const store = {
   del(k){ try{ localStorage.removeItem(k); }catch(e){} },
   keys(){ try{ return Object.keys(localStorage); }catch(e){ return []; } },
 };
-world.persist = false;world.genVersion=7; world.containers = new Map(); world.name='World';
+world.persist = false;world.genVersion=8; world.containers = new Map(); world.name='World';
 function loadChunkEdits(cx,cz){
   const k=ckey(cx,cz); if(world.edits.has(k)) return world.edits.get(k);
   if(!world.persist) return null;
@@ -3771,7 +3772,7 @@ function setupTitleWorld(meta){
   const seed = meta ? meta.seed : 20261018;
   world.dimension=meta?.dimension||'overworld';world.dimensionStates=meta?.dimensions||{};
   world.dimension=meta?.dimension||'overworld';
-  world.genVersion=meta?.generator||7;
+  world.genVersion=meta?.generator||8;
   world.persist = !!meta;            // read saved edits so the panorama shows your builds
   if(world.seed!==seed || !workers.length||world.builtGenVersion!==world.genVersion||world.builtDimension!==(world.dimension||'overworld')){ world.edits.clear(); world.dirtyEdits.clear(); startWorld(seed, null, false); }
   if(meta){ titleCam.x=meta.p.x; titleCam.z=meta.p.z; titleCam.y=Math.max(meta.p.y+6, SEA+12); }
@@ -3792,7 +3793,7 @@ function beginGame(seed, meta, mode){
   respawnPending=false;resetMobs();clearSigns();resetRedstone();
   if(world.builtDimension!==world.dimension){world.edits.clear();world.dirtyEdits.clear();}
   if(world.loadedSlot!==worldSlot){world.edits.clear();world.dirtyEdits.clear();world.seed=NaN;world.loadedSlot=worldSlot;}
-  world.genVersion=meta?.generator||7;
+  world.genVersion=meta?.generator||8;
   world.mp=meta?.mp&&typeof meta.mp==='object'?meta.mp:null;
   world.persist = true;
   if(!meta){ world.edits.clear(); world.containers.clear(); }
@@ -7063,7 +7064,7 @@ function netEnterWorld(w,dimChange){
  net.me=w.you||net.me;net.dim=w.dim;net.inWorld=true;netClearAvatars();
  const spawn=Array.isArray(w.spawn)&&w.spawn.every(Number.isFinite)?w.spawn:null,at=Array.isArray(w.at)&&w.at.every(Number.isFinite)?w.at:[.5,80,.5];
  const pos=dimChange?at:s?.p&&s.p.every(Number.isFinite)?s.p:spawn||at;
- const meta={v:15,name:String(w.name||'World').slice(0,32),seed:w.seed|0,mode:w.mode==='creative'?'creative':'survival',generator:[1,2,3,4,5,6,7].includes(w.gen)?w.gen:7,dimension:['overworld','nether','end'].includes(w.dim)?w.dim:'overworld',
+ const meta={v:15,name:String(w.name||'World').slice(0,32),seed:w.seed|0,mode:w.mode==='creative'?'creative':'survival',generator:[1,2,3,4,5,6,7,8].includes(w.gen)?w.gen:8,dimension:['overworld','nether','end'].includes(w.dim)?w.dim:'overworld',
   spawn:dimChange?at:spawn,time:+w.day||0,days:w.days|0,weather:{type:Array.isArray(w.w)?w.w[0]:'clear',remaining:1e9},
   p:{x:pos[0],y:pos[1],z:pos[2],yaw:pos[3]||0,pitch:pos[4]||0,fire:0,hp:s?.hp??20,food:s?.food??20,sat:s?.sat??5,xp:s?.xp??0,fly:false},
   inv:s?.inv||[],armor:s?.armor||[],offhand:s?.off||null,sel:s?.sel||0,effects:s?.fx||{},signs:Array.isArray(w.signs)?w.signs:[],pistons:Array.isArray(w.pistons)?w.pistons:[],
