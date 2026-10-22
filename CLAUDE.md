@@ -19,7 +19,7 @@ Two limits on that freedom:
 ## Layout
 
 - `index.html` — the whole game: HTML, CSS and JavaScript in one file
-  (~7,100 lines). The code is split into numbered sections with banner
+  (~8,700 lines). The code is split into numbered sections with banner
   comments (`1. CONFIG & SMALL HELPERS` … `46. BOATS`); grep for the
   banner to find a system. Numbers are labels, not file order.
 - Section 2 defines every block and item. Section 44 draws the textures for
@@ -48,6 +48,25 @@ Two limits on that freedom:
 - Time of day: `setWorldTime(d,lock)` (pause-menu slider, Freeze/Resume
   button, `/time set|add|lock|unlock|query`); `world.dayLock` stops the cycle
   in `updateSky`, is saved in meta (v16) and travels to guests as `lk`.
+- Section 48 is the Nether Update: Nether blocks/items, netherite, the Nether
+  mobs and their AI (`NETHER_AI`, wrapped into `tickHostile`), biome- and
+  structure-aware spawning (`NETHER_SPAWNS`, `STRUCTURE_SPAWNS`), structure
+  loot (`LOOT_TABLES`, used by `getContainer` via `chestLoot`), bartering,
+  respawn anchors (container type `anchor`, charge in `burn`), biome fog and
+  ambient motes (wraps `updateSky`), `/locate` and `/netherupdate`. It also
+  holds two shared mob fixes: `unsafeStep()` keeps ground mobs from walking
+  off ledges or into lava, and `mobDamage` melee hits knock the player back.
+- The generator-10 Nether is `makeNether10()` in `worldgen-src`: density is
+  sampled on a 4×4×4 grid and interpolated (`columnSolid()` reproduces it
+  exactly for one column, which huge fungi and bastions use to find floors
+  in neighbouring chunks). Fortresses and bastions are planned per 256-block
+  region (`planRegion`); `gen.structureAt(x,y,z)` and
+  `gen.nearestStructure(x,z,type)` work on the main thread too. Overworld
+  generator 10 adds ruined portals (`ruinedPortalAt`, 320-block cells).
+- Each world has `world.netherGen` (meta `netherGen`, save v17) next to
+  `world.genVersion`; `genVer()` picks the one for the current dimension and is
+  what workers, `gen` and `builtGenVersion` use. Migration gives worlds that never
+  visited the Nether `netherGen` 10 and keeps the old Nether for the rest.
 - Section 47 is uranium: ore (generator 9), yellowcake, and the Enrichment
   Table (container type `enrichment`, ticked by the host from
   `updateFurnaces`). It is groundwork for a bigger nuclear update.
@@ -92,15 +111,16 @@ Two limits on that freedom:
   `BLOCKS` has holes at 256–511, so loops over it must skip empty entries.
 - **World generation is frozen per generator version.** Every shipped
   generator must keep producing byte-identical chunks: the test pins chunk
-  hashes for generators 1–8. Generator 9 (generator 8 plus uranium veins)
-  is the default for new worlds; once it ships, pin it too. Change terrain
-  only by adding a version: guard new code with `version>=10`, keep `R()` call order unchanged for older versions,
+  hashes for generators 1–8. Generator 10 (generator 9 plus ruined portals,
+  and the new Nether) is the default for new worlds; once it ships, pin it
+  too (generator 9 is pinned). Change terrain
+  only by adding a version: guard new code with `version>=11`, keep `R()` call order unchanged for older versions,
   give new features their own `mulberry32` stream or a position hash, and
   bump the default in the three `genVersion` spots and the guest-meta check.
   Features that span chunks (tunnels, villages) are planned from world
   coordinates per cell and cached, so every chunk agrees on them.
 - **Saves migrate forward.** World metadata carries a version `v` (currently
-  16). When you change the save shape, bump it and add a step to
+  17). When you change the save shape, bump it and add a step to
   `migrateMeta()` so old saves load. Saves live in `localStorage`
   (`bc.*` keys; per-world `bc.w<slot>.*`).
 - **The texture atlas is 16 × 64 tiles** (`ATLAS_ROWS`); about 600 are used.
@@ -153,7 +173,7 @@ How syncing works, so new features stay multiplayer-safe:
 - New kinds of shared state that don't go through the functions above need a
   message: add a case to `netHostOnMsg` (guest → host; validate everything,
   guests are untrusted) and to `netClientOnMsg` (host → guest).
-- `NET_V` is the protocol version (currently 4). Bump it whenever messages
+- `NET_V` is the protocol version (currently 5). Bump it whenever messages
   or block ids change in an incompatible way, so mismatched players get a
   "refresh to update" message instead of a broken game.
 - Friendly fire is the host's setting `world.mp.pvp` (pause-menu button or

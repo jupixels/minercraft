@@ -1228,6 +1228,19 @@ if(typeof importScripts === 'function'){
 <script>
 "use strict";
 /* CHANGELOG & ROADMAP
+ * 2026-10-22 NETHER UPDATE (generator 10, save v17, NET_V 5, section 48):
+ * - The Nether has five biomes over 3D-noise caverns: Nether Wastes, Crimson and
+ *   Warped Forests (huge fungi, vines), Soul Sand Valleys (fossils, basalt pillars)
+ *   and Basalt Deltas. Nether Fortresses (blaze rooms, wart gardens, bridges) and
+ *   Bastion Remnants (three floors, treasure chest on a gold dais) every ~256 blocks.
+ * - Overworld generator 10 = generator 9 + ruined portals. The Nether has its own
+ *   generator (meta.netherGen) so worlds that never visited it get the new one;
+ *   /netherupdate confirm rebuilds an old Nether on request.
+ * - Mobs: piglins (barter, neutral to gold wearers), brutes, zombified piglins,
+ *   hoglins, blazes, wither skeletons, magma cubes, rideable striders.
+ * - Netherite, respawn anchors, fire charges, soul torches, structure loot,
+ *   biome fog and ambient motes, /locate. Mobs avoid ledges and lava; melee
+ *   hits knock the player back; v16 world exports import again.
  * 2026-10-19 OVERHAUL:
  * - Mobs no longer walk backwards (models faced away from their motion). All 15
  *   creatures rebuilt as skinned box models with per-face pixel art, forward
@@ -6231,7 +6244,7 @@ function renderDoll(){
  applyArmorToModel(doll.model);updateAvatarHand(doll.model,doll.hand,inv.heldId(),doll.handCache);
  doll.renderer.render(doll.scene,doll.cam);
 }
-function deathText(cause){return {pvp:'Another player defeated you.',fall:'You hit the ground too hard.',drown:'You ran out of air.',starve:'You ran out of food.',cactus:'You got too close to a cactus.',zombie:'A moss wanderer caught you.',spider:'A dusk crawler caught you.',arrow:'An arrow found its mark.',explosion:'You were caught in an explosion.',fire:'You burned in the heat.',lightning:'Lightning struck you.',command:'You used /kill.',void:'You fell out of the world.',starwing:'The Starwing struck you down.'}[cause]||'Your adventure ended.';}
+function deathText(cause){return {pvp:'Another player defeated you.',fall:'You hit the ground too hard.',drown:'You ran out of air.',starve:'You ran out of food.',cactus:'You got too close to a cactus.',zombie:'A moss wanderer caught you.',spider:'A dusk crawler caught you.',arrow:'An arrow found its mark.',explosion:'You were caught in an explosion.',fire:'You burned in the heat.',lightning:'Lightning struck you.',command:'You used /kill.',void:'You fell out of the world.',starwing:'The Starwing struck you down.',wither:'You withered away.',piglin:'A piglin defended its gold.',piglin_brute:'A piglin brute guarded the bastion.',zombified_piglin:'You angered a zombified piglin.',hoglin:'A hoglin ran you down.',wither_skeleton:'A wither skeleton cut you down.',magma_cube:'A magma cube squashed you.',blaze:'A blaze burned you.'}[cause]||'Your adventure ended.';}
 const advancements=new Set(),advanceQueue=[];let advanceTimer=0;
 const advanceToast=el('div','panel',{position:'fixed',right:g(5),top:g(5),padding:g(7),fontSize:g(10),display:'none',pointerEvents:'none',zIndex:20},document.body);
 function awardAdvancement(name,id=B.log){if(advancements.has(name)||!world.persist)return;advancements.add(name);advanceQueue.push([name,id]);showNextAdvancement();}
@@ -6688,7 +6701,7 @@ function livingInteract(){
 }
 function buildJournal(panel){
  label(panel,10,8,'Field Guide & Statistics');const text=el('div',null,{position:'absolute',left:g(10),top:g(25),width:g(267),height:g(170),overflowY:'auto',fontSize:g(10),lineHeight:'1.3',userSelect:'text'},panel);
- text.textContent='WASD move · Space jump · Shift sneak/dismount · E inventory · Q drop · F3 timings · V (or F5) camera · T chat (/help).\n\n'+Object.entries(worldStats).map(([k,v])=>k+': '+Math.floor(v)).join(' · ')+'\n\n'+[...advancements].join(' · ')+'\n\nFarm with hoes, plant seeds on hydrated soil. Breed cows/sheep with wheat, pigs with carrots, chickens with seeds. Shear sheep, milk cows, fish with a rod. Wolves like bones; cats like fish. Tame horses, then equip a saddle. Villagers trade for emeralds. Uranium ore (deep underground, iron pickaxe) smelts into yellowcake; an Enrichment Table powered by redstone splits 3 yellowcake into enriched and depleted uranium (villagers sell raw uranium too). Change the time of day from the pause menu or with /time. Build a 4×5 obsidian frame (2×3 clear opening; corners optional), then light it. Stand inside for two seconds. Step out after arriving before travelling again. Brew wart into water bottles, then add ingredients. Enchant held equipment with lapis and XP. Hoppers pull from above and output downward; power pauses them. Furnace output is extracted below; fuel is loaded manually. Fit a chest with a dispenser mechanism and pulse it with redstone. F swaps your selected item with the visible offhand slot; hold right-click to block frontal attacks with a shield. Hold equipment before opening an enchanting table; shift-click bottles, ingredients and blaze fuel into a brewing stand. Export or back up worlds from Pause.\n\nTHE END: craft Eyes of Ender (blaze powder + nether quartz + emerald, makes 2), then End Portal Frames (eye on top, glass-obsidian-glass below). Place 12 frames in a flat 5×5 ring with the corners left out around a 3×3 hole; the portal opens when the ring is complete. Jump in. The Starwing heals from the glowing crystals on the obsidian pillars: break or shoot them first. Defeat it to open the way home.';
+ text.textContent='WASD move · Space jump · Shift sneak/dismount · E inventory · Q drop · F3 timings · V (or F5) camera · T chat (/help).\n\n'+Object.entries(worldStats).map(([k,v])=>k+': '+Math.floor(v)).join(' · ')+'\n\n'+[...advancements].join(' · ')+'\n\nFarm with hoes, plant seeds on hydrated soil. Breed cows/sheep with wheat, pigs with carrots, chickens with seeds. Shear sheep, milk cows, fish with a rod. Wolves like bones; cats like fish. Tame horses, then equip a saddle. Villagers trade for emeralds. Uranium ore (deep underground, iron pickaxe) smelts into yellowcake; an Enrichment Table powered by redstone splits 3 yellowcake into enriched and depleted uranium (villagers sell raw uranium too). Change the time of day from the pause menu or with /time. Build a 4×5 obsidian frame (2×3 clear opening; corners optional), then light it. Stand inside for two seconds. Step out after arriving before travelling again. Brew wart into water bottles, then add ingredients. Enchant held equipment with lapis and XP. Hoppers pull from above and output downward; power pauses them. Furnace output is extracted below; fuel is loaded manually. Fit a chest with a dispenser mechanism and pulse it with redstone. F swaps your selected item with the visible offhand slot; hold right-click to block frontal attacks with a shield. Hold equipment before opening an enchanting table; shift-click bottles, ingredients and blaze fuel into a brewing stand. Export or back up worlds from Pause.\n\nTHE END: craft Eyes of Ender (blaze powder + nether quartz + emerald, makes 2), then End Portal Frames (eye on top, glass-obsidian-glass below). Place 12 frames in a flat 5×5 ring with the corners left out around a 3×3 hole; the portal opens when the ring is complete. Jump in. The Starwing heals from the glowing crystals on the obsidian pillars: break or shoot them first. Defeat it to open the way home.\n\nTHE NETHER (new worlds, or worlds that had never been there): five biomes — Nether Wastes, Crimson and Warped Forests, Soul Sand Valleys and Basalt Deltas. Nether Fortresses hold blaze spawners, wither skeletons, nether wart and loot; Bastion Remnants are guarded by piglins and hold gold and netherite. Piglins leave you alone while you wear a piece of gold armor; hand them (or drop) a gold ingot to barter. Hitting one, opening bastion chests or breaking their gold angers them. Zombified piglins are peaceful until one is hit. Hoglins fear warped fungus and breed with crimson fungus. Saddle a strider to cross the lava sea; feed it warped fungus to breed. Ancient debris (diamond pickaxe, low down) smelts into netherite scrap; 4 scrap + 4 gold make an ingot that upgrades diamond gear in a crafting grid and keeps its enchantments. Charge a respawn anchor with glowstone to respawn in the Nether. /locate fortress|bastion|ruined_portal finds the nearest one.';
  text.style.whiteSpace='pre-wrap';
 }
 function buildLivingTextures(){
@@ -6750,7 +6763,7 @@ function repairStack(st){
 }
 function buildRepairGui(panel){label(panel,8,8,'Repair equipment · material + 1 XP level');const candidates=inv.slots.concat(armorSlots,offhand).filter(s=>s&&ITEMS[s.id]?.durability&&(s.d??ITEMS[s.id].durability)<ITEMS[s.id].durability).slice(0,7);candidates.forEach((s,i)=>{const b=el('button','btn',{position:'absolute',left:g(10),top:g(28+i*21),width:g(218)},panel,itemLabel(s.id)+' '+s.d+'/'+ITEMS[s.id].durability);b.onclick=()=>{if(repairStack(s))buildGui();};});}
 function buildMapGui(panel){
- label(panel,10,8,world.dimension==='nether'?'Nether Survey':world.dimension==='end'?'End Survey':'Explorer Map');const cv=el('canvas',null,{position:'absolute',left:g(14),top:g(27),width:g(160),height:g(160),imageRendering:'pixelated'},panel);cv.width=cv.height=16;const ctx=cv.getContext('2d'),px=Math.floor(player.pos.x),pz=Math.floor(player.pos.z),colors=['#719557','#d3bc7c','#54775b','#d1e0e1','#9eae7c','#416f9e','#2e527d','#4b88a8','#61724b','#477d3a','#a9a050','#ad724d','#3e633b','#90828e','#d1e0e1'];for(let z=0;z<16;z++)for(let x=0;x<16;x++){const wx=px+(x-8)*4,wz=pz+(z-8)*4,b=gen.biomeAt(wx,wz);ctx.fillStyle=world.dimension==='nether'?'#8c4937':world.dimension==='end'?(gen.heightAt(wx,wz)?'#dcd9a5':'#120a1c'):colors[b]||'#9b987b';ctx.fillRect(x,z,1,1);}ctx.fillStyle='#fff';ctx.fillRect(8,8,1,1);label(panel,10,192,'X '+px+'  Z '+pz+' · white: you');
+ label(panel,10,8,world.dimension==='nether'?'Nether Survey':world.dimension==='end'?'End Survey':'Explorer Map');const cv=el('canvas',null,{position:'absolute',left:g(14),top:g(27),width:g(160),height:g(160),imageRendering:'pixelated'},panel);cv.width=cv.height=16;const ctx=cv.getContext('2d'),px=Math.floor(player.pos.x),pz=Math.floor(player.pos.z),colors=['#719557','#d3bc7c','#54775b','#d1e0e1','#9eae7c','#416f9e','#2e527d','#4b88a8','#61724b','#477d3a','#a9a050','#ad724d','#3e633b','#90828e','#d1e0e1'];for(let z=0;z<16;z++)for(let x=0;x<16;x++){const wx=px+(x-8)*4,wz=pz+(z-8)*4,b=gen.biomeAt(wx,wz);ctx.fillStyle=world.dimension==='nether'?(gen.BIOME_NAMES.length===5?['#8c4937','#a3202a','#167a72','#5e4a3c','#5a5660'][b]:'#8c4937'):world.dimension==='end'?(gen.heightAt(wx,wz)?'#dcd9a5':'#120a1c'):colors[b]||'#9b987b';ctx.fillRect(x,z,1,1);}ctx.fillStyle='#fff';ctx.fillRect(8,8,1,1);label(panel,10,192,'X '+px+'  Z '+pz+' · white: you');
 }
 function engineeringInteract(){
  const id=inv.heldId();if(id===B.map){openGui('map');return true;}if(id===B.repair_kit){openGui('repair');return true;}
@@ -7741,7 +7754,7 @@ function piglinSpec(o){return {scale:.95,parts:[
  {id:'earL',parent:'head',pivot:[5,6,0],box:[0,-5,-2,1,5,4],c:o.skin,rot:[0,0,.5],limb:{idle:true,amp:.15,axis:'z',phase:1}},
  {id:'armR',pivot:[-6,22,0],box:[-2,-10,-2,4,12,4],c:o.skin,rot:[-.35,0,0],limb:{amp:.25,phase:0},f:{sides:(P,w,h)=>rectP(P,0,0,w,4,o.shirt),top:(P,w,h)=>rectP(P,0,0,w,h,o.shirt)}},
  {id:'armL',pivot:[6,22,0],box:[-2,-10,-2,4,12,4],c:o.skin,limb:{amp:.5,phase:Math.PI},f:{sides:(P,w,h)=>rectP(P,0,0,w,4,o.shirt),top:(P,w,h)=>rectP(P,0,0,w,h,o.shirt)}},
- {id:'weapon',parent:'armR',pivot:[0,-10,0],box:o.axe?[-.5,-9,-.5,1,10,1]:[-.5,-10,-.5,1,10,1],c:o.axe?[110,80,48]:[244,206,70],n:12},
+ {id:'weapon',parent:'armR',pivot:[0,-10,0],rot:[-1.15,0,0],box:o.axe?[-.5,-9,-.5,1,10,1]:[-.5,-10,-.5,1,10,1],c:o.axe?[110,80,48]:[244,206,70],n:12},
  ...(o.axe?[{id:'axehead',parent:'weapon',pivot:[0,-8,0],box:[-.6,-1,-.5,1.2,4,4],c:[244,206,70]}]:[{id:'guard',parent:'weapon',pivot:[0,-2,0],box:[-2,-1,-.5,4,1,1],c:[200,160,40]}]),
  {id:'crossbow',parent:'armL',pivot:[0,-10,0],box:[-4,-1,-1,8,2,3],c:[120,86,52],hidden:true},
  {id:'gold',parent:'armL',pivot:[0,-10,0],box:[-1.5,-1,-1.5,3,2,3],c:[250,214,70],hidden:true},
@@ -8035,6 +8048,7 @@ const netherAtmo={fog:[.17,.045,.025],tint:[1,.65,.45],near:1,b:0,partT:0};
  const b=gen.biomeAt(Math.floor(camPos.x),Math.floor(camPos.z)),k=1-Math.exp(-dt*1.5),A=netherAtmo;A.b=b;
  for(let i=0;i<3;i++){A.fog[i]+=(NETHER_FOG[b][i]-A.fog[i])*k;A.tint[i]+=(NETHER_TINT[b][i]-A.tint[i])*k;}
  A.near+=(((b===3||b===4)?.55:b===2?.8:1)-A.near)*k;
+ U.uAmbient.value=[.27,.25,.25,.23,.3][b];   // brighter than the old Nether so caves and fortress halls stay readable
  scene.background.setRGB(A.fog[0],A.fog[1],A.fog[2]);U.uFogColor.value.copy(scene.background);U.uSkyTint.value.setRGB(A.tint[0],A.tint[1],A.tint[2]);
  if(!player.eyeInWater)U.uFog.value.set(8,CONFIG.renderDistance*16*.9*A.near);
 };}
@@ -8069,7 +8083,16 @@ function netherTick(dt){
   const s=gen?.nearestStructure?.(player.pos.x,player.pos.z,want);
   if(!s){chatLine(want==='ruined_portal'?'Ruined portals need a world made with generator 10 (new worlds).':'That structure is not in this dimension'+(world.dimension==='nether'?' — this Nether predates the Nether Update.':'.'));return true;}
   chatLine(`Nearest ${want.replace('_',' ')}: ${s.x}, ${s.y}, ${s.z} (${Math.round(Math.hypot(s.x-player.pos.x,s.z-player.pos.z))} blocks away)`);return true;}
- if(cmd==='/help'){const r=_cmd(line);chatLine('Also: /locate fortress|bastion|ruined_portal');return r;}
+ // Opt-in for worlds that already visited the old Nether: rebuild it as the generator 10 Nether.
+ if(cmd==='/netherupdate'){
+  if((world.netherGen||world.genVersion)>=10){chatLine('This world already has the new Nether.');return true;}
+  if(net.role||!world.persist){chatLine('Run this in a saved single-player world.');return true;}
+  if(world.dimension!=='overworld'){chatLine('Run this from the Overworld.');return true;}
+  if(args[1]!=='confirm'){chatLine('This rebuilds the Nether with biomes, fortresses and bastions. Everything built or left in this world\'s old Nether is lost. Type /netherupdate confirm to go ahead.');return true;}
+  const pre=chunkPrefixFor('nether');for(const k of [...store.keys()])if(k.startsWith(pre))store.del(k);
+  if(world.dimensionStates)delete world.dimensionStates.nether;world.portalLinks=(world.portalLinks||[]).filter(p=>!p.nether);
+  world.netherGen=10;saveWorld();chatLine('The Nether has been rebuilt. Step through a portal to see it.');return true;}
+ if(cmd==='/help'){const r=_cmd(line);chatLine('Also: /locate fortress|bastion|ruined_portal · /netherupdate (older worlds)');return r;}
  return _cmd(line);};}
 
 /* =========================================================================
@@ -8316,7 +8339,7 @@ function netProjectileHit(e,p){
  if(net.role!=='host')return false;const big=e.owner==='voidorb'?.5:0;
  for(const peer of net.peers.values()){const pp=peer.v;if(!peer.name||!pp||(peer.flags&8)||peer.mode==='creative')continue;
   if(Math.abs(p.x-pp.x)<PW+.08+big&&Math.abs(p.z-pp.z)<PW+.08+big&&p.y>pp.y-big&&p.y<pp.y+PH+big){
-   netSendPeer(peer,{t:'hurt',a:e.owner==='hostile'?4:6,c:e.owner==='fireball'?'fire':e.owner==='voidorb'?'starwing':'arrow',x:pp.x-e.vel.x,z:pp.z-e.vel.z,f:e.owner==='fireball'?5:0});return true;}}
+   netSendPeer(peer,{t:'hurt',a:e.owner==='hostile'?4:e.owner==='smallfire'?5:6,c:e.owner==='fireball'||e.owner==='smallfire'?'fire':e.owner==='voidorb'?'starwing':'arrow',x:pp.x-e.vel.x,z:pp.z-e.vel.z,f:e.owner==='fireball'||e.owner==='smallfire'?5:0});return true;}}
  return false;
 }
 {const _xp=spawnXP;spawnXP=function(value,x,y,z){if(net.role==='host'&&net.credit){netSendPeer(net.credit,{t:'xp',v:value,p:[r2(x),r2(y),r2(z)]});return null;}return _xp(value,x,y,z);};}
