@@ -16,8 +16,15 @@ assert.deepEqual([...source.matchAll(/<script[^>]+src="([^"]+)"/g)].map(m=>m[1])
 const context={};vm.createContext(context);
 vm.runInContext(source.slice(source.indexOf('const B = {};'),source.indexOf('const isBlockId ='))+';globalThis.registry={B,BLOCKS,ITEMS};',context);
 const {B,BLOCKS,ITEMS}=context.registry;
-assert.equal(BLOCKS.length,256);assert(BLOCKS.every((b,i)=>b.id===i));
-assert.equal(digest(JSON.stringify(BLOCKS.map(b=>[b.id,b.name]))),LEGACY.registry,'saved block IDs/names changed');
+// Ids 0-255 are the original blocks (unchanged), 256-511 belong to items only, and
+// new blocks append from 512. The extension hash pins the first 397 new ids; later
+// blocks may only be appended after them.
+const legacy=BLOCKS.slice(0,256);assert.equal(legacy.length,256);assert(legacy.every((b,i)=>b&&b.id===i));
+assert.equal(digest(JSON.stringify(legacy.map(b=>[b.id,b.name]))),LEGACY.registry,'saved block IDs/names changed');
+for(let i=256;i<512;i++)assert(!BLOCKS[i],'block ids 256-511 are reserved for items');
+assert(BLOCKS.length<=1024);for(let i=512;i<BLOCKS.length;i++)assert(BLOCKS[i]&&BLOCKS[i].id===i,'extended block ids must be contiguous');
+assert.equal(digest(JSON.stringify(BLOCKS.slice(512,909).map(b=>[b.id,b.name]))),'f245d780f7538ab90f3f79e6525d6564e5399178ea04a32f79943ea23f672805','extended block IDs/names changed');
+for(const id of Object.keys(ITEMS).map(Number))assert(id>=256&&id<512&&!BLOCKS[id],'item ids live in 256-511');
 const generation=source.match(/id="worldgen-src">([\s\S]*?)<\/script>/)[1],make=new Function(generation+';return makeGen;')();
 for(const [version,seed,dimension,x,z,expected] of LEGACY.hashes)assert.equal(digest(make(seed,B,version,dimension).genChunk(x,z)),expected,`legacy ${version}/${seed}/${dimension}/${x},${z}`);
 for(const seed of [42,12345,-98765]){
@@ -34,10 +41,22 @@ for(const seed of [42,12345,-98765]){
  }
  assert(wart>0&&quartz>0&&groundGlow>0,'Nether survival resources missing');
 }
+// Generator 4 (Caves & Cliffs): deterministic 16-bit chunks, big caverns, deepslate and cave resources.
+for(const seed of [42,-98765]){
+ const a=make(seed,B,4),b=make(seed,B,4),v3=make(seed,B,3);let air4=0,air3=0;const seen=new Set();
+ for(let z=-3;z<=3;z++)for(let x=-3;x<=3;x++){
+  const data=a.genChunk(x,z),old=v3.genChunk(x,z);assert(data instanceof Uint16Array&&data.length===32768);
+  if(x===0||z===0)assert.equal(digest(data),digest(b.genChunk(x,z)),'generator 4 depends on request order');
+  for(let zz=0;zz<16;zz++)for(let xx=0;xx<16;xx++)for(let y=8;y<a.heightAt(x*16+xx,z*16+zz)-10;y++){const i=xx+(zz<<4)+(y<<8);if(data[i]===0)air4++;if(old[i]===0)air3++;}
+  for(const id of data)seen.add(id);
+ }
+ assert(air4>air3*3,'big caves missing from generator 4');
+ for(const name of ['deepslate','deepslate_iron_ore','deepslate_diamond_ore','tuff','granite','iron_ore','coal_ore'])assert(seen.has(B[name]),name+' missing from generator 4');
+}
 // Legacy metadata must retain generator and equipment, including offhand enchants.
 vm.runInContext(source.slice(source.indexOf('function migrateMeta('),source.indexOf('function mobRecord('))+';globalThis.migrate=migrateMeta;',context);
 const equipment=[315,1,123,{fortune:2}],old={v:12,generator:2,inv:[equipment],offhand:[384,1,200,null],p:{x:1,y:70,z:2}};
-const migrated=context.migrate(old);assert.equal(migrated.v,14);assert.equal(migrated.generator,2);assert.deepEqual(migrated.inv[0],equipment);assert.equal(migrated.offhand[2],200);
+const migrated=context.migrate(old);assert.equal(migrated.v,15);assert.equal(migrated.generator,2);assert.deepEqual(migrated.inv[0],equipment);assert.equal(migrated.offhand[2],200);
 assert.equal(context.migrate({v:1,p:{}}).generator,1);assert.equal(context.migrate({v:12,p:{}}).generator,2);
 // Frame detection/destruction with optional corners, both orientations and a build marker.
 const cells=new Map(),key=(x,y,z)=>`${x},${y},${z}`;
@@ -52,4 +71,4 @@ for(const axis of [0,1]){
  world.setBlock(x,y+2,z,0);context.portals.invalidatePortal(x,y+2,z);
  assert(![...cells.values()].includes(B.portal));assert.equal(world.getBlock(20,35,20),B.bricks,'frame maintenance changed a neighbouring build');
 }
-console.log(`PASS: syntax, soundpack, 256 stable IDs, ${LEGACY.hashes.length} legacy chunks, v3 determinism/resources, migration and both portal frames.`);
+console.log(`PASS: syntax, soundpack, 256 stable IDs + ${BLOCKS.length-512} appended, ${LEGACY.hashes.length} legacy chunks, v3/v4 determinism/resources, migration and both portal frames.`);
