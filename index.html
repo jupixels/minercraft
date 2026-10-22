@@ -381,6 +381,137 @@ function makeGen(seed, B, version=1,dimension='overworld'){
     return Math.max(4, Math.min(CH-10, Math.floor(h)));
   }
 
+  // ---- Generator 7 villages: a central well, gravel roads radiating out, houses facing the
+  // roads, crop farms, animal pens and lamp posts, in a style that suits the biome. The
+  // layout is planned once per 384-block cell from world coordinates (own RNG), so every
+  // chunk agrees on it; each chunk only draws the pieces that overlap it.
+  const villageCache=new Map(),VCELL=384;
+  const VSTYLE={
+    oak:{wall:B.planks,corner:B.log,floor:B.planks,found:B.cobblestone,stairs:B.oak_stairs,roof:B.planks,path:B.gravel},
+    spruce:{wall:B.spruce_planks,corner:B.spruce_log,floor:B.spruce_planks,found:B.cobblestone,stairs:B.spruce_stairs,roof:B.spruce_planks,path:B.gravel},
+    acacia:{wall:B.acacia_planks,corner:B.acacia_log,floor:B.acacia_planks,found:B.terracotta,stairs:B.acacia_stairs,roof:B.acacia_planks,path:B.coarse_dirt},
+    sand:{wall:B.sandstone,corner:B.cut_sandstone,floor:B.smooth_sandstone,found:B.sandstone,roof:B.smooth_sandstone,trim:B.cut_sandstone,path:B.smooth_sandstone,flat:true},
+  };
+  function villageAt(gx,gz){
+    const key=gx+','+gz;if(villageCache.has(key))return villageCache.get(key);
+    const r=mulberry32(seed^Math.imul(gx,73856093)^Math.imul(gz,19349663)^0x7177a9e);let v=null;
+    // up to three candidate sites per cell; the first suitable one hosts the village
+    if(r()<.7)for(let tries=0;tries<3&&!v;tries++){
+      const cx=Math.floor(gx*VCELL+80+r()*(VCELL-160)),cz=Math.floor(gz*VCELL+80+r()*(VCELL-160)),h0=heightAt(cx,cz),b=biomeAt(cx,cz);
+      const style=b===1?'sand':b===2||b===3?'spruce':b===10?'acacia':b===0||b===4?'oak':null;
+      let lo=h0,hi=h0;for(let k=0;k<8;k++){const a=k/8*Math.PI*2,h=heightAt(cx+Math.cos(a)*22,cz+Math.sin(a)*22);lo=Math.min(lo,h);hi=Math.max(hi,h);}
+      if(style&&h0>SEA+2&&h0<SEA+36&&hi-lo<=14&&lo>SEA-2)v=planVillage(cx,cz,style,r);
+    }
+    villageCache.set(key,v);return v;
+  }
+  function planVillage(cx,cz,style,r){
+    const S=[],roads=[],rects=[];
+    const free=(x0,z0,x1,z1)=>rects.every(q=>x1<q[0]-1||x0>q[2]+1||z1<q[1]-1||z0>q[3]+1);
+    const flat=(x0,z0,x1,z1)=>{const c=heightAt((x0+x1)>>1,(z0+z1)>>1);for(const [x,z] of [[x0,z0],[x1,z0],[x0,z1],[x1,z1]]){const h=heightAt(x,z);if(h<=SEA||Math.abs(h-c)>3)return -1;}return c;};
+    const add=(type,x0,z0,x1,z1,face,extra)=>{if(!free(x0,z0,x1,z1))return false;const y=flat(x0,z0,x1,z1);if(y<0)return false;rects.push([x0,z0,x1,z1]);S.push({type,x0,z0,x1,z1,face,y,seed:(r()*1e9)|0,...extra});return true;};
+    add('well',cx-2,cz-2,cx+2,cz+2,0);
+    const DIRS=[[1,0],[0,1],[-1,0],[0,-1]];
+    for(let k=0;k<4;k++){
+      if(k>1&&r()<.2)continue;const [dx,dz]=DIRS[k],len=24+Math.floor(r()*26);
+      // a 3-wide road from the well outward
+      const ax0=dx?cx+dx*3:cx-1,az0=dz?cz+dz*3:cz-1,ax1=dx?cx+dx*len:cx+1,az1=dz?cz+dz*len:cz+1;
+      const road=[Math.min(ax0,ax1),Math.min(az0,az1),Math.max(ax0,ax1),Math.max(az0,az1)];roads.push(road);rects.push(road);
+      let side=r()<.5?1:-1;
+      for(let t=6;t<len-3;t+=4+Math.floor(r()*4)){
+        side=-side;const px=-dz*side,pz=dx*side;        // perpendicular toward this side of the road
+        const roll=r(),type=roll<.32?'house':roll<.52?'farm':roll<.62?'bighouse':roll<.7?'pen':roll<.76?'smithy':roll<.8?'library':'house';
+        const [w,dd]=type==='farm'?[9,7]:type==='bighouse'?[9,7]:type==='pen'?[7,7]:type==='smithy'||type==='library'?[7,7]:[5+2*((r()*2)|0),5];
+        // along-road extent w, depth dd away from the road; door faces the road
+        const along=Math.floor(t-w/2),gap=2+((r()*2)|0);
+        const ux=cx+dx*along,uz=cz+dz*along;               // start corner along the road centre line
+        const n0=2+gap,n1=n0+dd-1;                            // distance from road centre line
+        const xA=ux+px*n0,zA=uz+pz*n0,xB=ux+dx*(w-1)+px*n1,zB=uz+dz*(w-1)+pz*n1;
+        const x0=Math.min(xA,xB),x1=Math.max(xA,xB),z0=Math.min(zA,zB),z1=Math.max(zA,zB);
+        const face=px===1?3:px===-1?1:pz===1?0:2,toward=(face+2)%4;  // wall facing the road
+        if(add(type,x0,z0,x1,z1,toward)){
+          // a short path from the door to the road
+          const mx=(x0+x1)>>1,mz=(z0+z1)>>1,ex=toward===3?x1+1:toward===1?x0-1:mx,ez=toward===0?z1+1:toward===2?z0-1:mz;
+          roads.push([Math.min(ex,ex-px*(gap)),Math.min(ez,ez-pz*(gap)),Math.max(ex,ex-px*(gap)),Math.max(ez,ez-pz*(gap))]);
+        }
+        if(r()<.45){const lx=cx+dx*(t+2)-px*3,lz=cz+dz*(t+2)-pz*3;add('lamp',lx,lz,lx,lz,0);}
+      }
+    }
+    return {cx,cz,style,S,roads,x0:cx-80,z0:cz-80,x1:cx+80,z1:cz+80};
+  }
+  function drawVillages(d,ox,oz,I){
+    const gx0=Math.floor((ox-90)/VCELL),gx1=Math.floor((ox+16+90)/VCELL),gz0=Math.floor((oz-90)/VCELL),gz1=Math.floor((oz+16+90)/VCELL);
+    for(let gz=gz0;gz<=gz1;gz++)for(let gx=gx0;gx<=gx1;gx++){
+      const v=villageAt(gx,gz);if(!v||v.x1<ox||v.x0>ox+15||v.z1<oz||v.z0>oz+15)continue;
+      const st=VSTYLE[v.style],inC=(x,z)=>x>=ox&&x<ox+16&&z>=oz&&z<oz+16;
+      const set=(x,y,z,id)=>{if(y>0&&y<CH&&inC(x,z))d[I(x-ox,y,z-oz)]=id;};
+      const get=(x,y,z)=>inC(x,z)&&y>=0&&y<CH?d[I(x-ox,y,z-oz)]:-1;
+      const soft=id=>id===0||id===B.tall_grass||id===B.dandelion||id===B.poppy||id===B.fern||id===B.dead_bush||id===B.pink_petals||id===B.water||id===B.leaves||id===B.spruce_leaves||id===B.birch_leaves||BLOCKS_PLANT(id);
+      // roads: replace the ground with path blocks; plank bridges over water
+      for(const [x0,z0,x1,z1] of v.roads)for(let z=Math.max(z0,oz);z<=Math.min(z1,oz+15);z++)for(let x=Math.max(x0,ox);x<=Math.min(x1,ox+15);x++){
+        const h=heightAt(x,z);
+        if(h<SEA){set(x,SEA,z,st.floor);continue;}
+        let y=h;while(y>1&&soft(get(x,y,z)))y--;
+        const top=get(x,y,z);if(top===B.water){set(x,y,z,st.floor);continue;}
+        set(x,y,z,(x*7+z*13)%5===0&&st.path===B.gravel?B.coarse_dirt:st.path);for(let k=1;k<4;k++)if(soft(get(x,y+k,z))&&get(x,y+k,z)!==B.water)set(x,y+k,z,0);
+      }
+      for(const s of v.S){if(s.x1+2<ox||s.x0-2>ox+15||s.z1+2<oz||s.z0-2>oz+15)continue;buildStructure(s,st,set,get);}
+    }
+  }
+  function BLOCKS_PLANT(id){return id===B.cornflower||id===B.allium||id===B.azure_bluet||id===B.oxeye_daisy||id===B.red_tulip||id===B.orange_tulip||id===B.white_tulip||id===B.pink_tulip||id===B.lily_of_the_valley||id===B.blue_orchid||id===B.pumpkin||id===B.melon||id===B.log||id===B.spruce_log||id===B.birch_log||id===B.cactus||id===B.sugar_cane||id===B.acacia_leaves||id===B.acacia_log||id===B.dark_leaves||id===B.jungle_leaves||id===B.cherry_leaves||id===B.cherry_log;}
+  function buildStructure(s,st,set,get){
+    const {x0,z0,x1,z1,y}=s,rr=mulberry32(s.seed),face=s.face,fd=[[0,1],[-1,0],[0,-1],[1,0]][face];
+    const clear=(top)=>{for(let z=z0-1;z<=z1+1;z++)for(let x=x0-1;x<=x1+1;x++){const edge=x<x0||x>x1||z<z0||z>z1;for(let yy=y+1;yy<=y+top;yy++){const id=get(x,yy,z);if(!edge||id!==-1&&(id===0||BLOCKS_PLANT(id)||id===B.leaves||id===B.spruce_leaves||id===B.birch_leaves||id===B.tall_grass||id===B.fern))set(x,yy,z,0);}}};
+    const found=(x,z,id)=>{for(let yy=y-1;yy>y-7;yy--){const g=get(x,yy,z);if(g!==0&&g!==B.water&&g!==B.tall_grass&&g!==-1&&!BLOCKS_PLANT(g))break;set(x,yy,z,id);}};
+    const door=(x,z)=>{set(x,y+1,z,B.door+face);set(x,y+2,z,B.door_top+face);set(x+fd[0],y,z+fd[1],st.path);set(x+fd[0],y+1,z+fd[1],0);set(x+fd[0],y+2,z+fd[1],0);};
+    if(s.type==='lamp'){clear(4);set(x0,y,z0,st.found);set(x0,y+1,z0,B.fence);set(x0,y+2,z0,B.fence);set(x0,y+3,z0,B.torch);return;}
+    if(s.type==='well'){clear(4);
+      // cobblestone rim around a 3x3 pool, fence posts at the corners holding a slab roof
+      for(let z=z0;z<=z1;z++)for(let x=x0;x<=x1;x++){found(x,z,B.cobblestone);const rim=x===x0||x===x1||z===z0||z===z1,corner=(x===x0||x===x1)&&(z===z0||z===z1);
+        if(rim){set(x,y,z,B.cobblestone);set(x,y+1,z,corner?B.fence:B.cobblestone_slab);if(corner)set(x,y+2,z,B.fence);}
+        else{set(x,y,z,B.water);set(x,y-1,z,B.water);set(x,y-2,z,B.water);set(x,y-3,z,B.cobblestone);}
+        set(x,y+3,z,B.cobblestone_slab);}
+      return;}
+    if(s.type==='farm'){clear(4);const lx=x1-x0>=z1-z0,crop=[B.wheat_crop_0,B.carrot_crop_0,B.potato_crop_0][(rr()*3)|0];
+      for(let z=z0;z<=z1;z++)for(let x=x0;x<=x1;x++){found(x,z,B.dirt);const ring=x===x0||x===x1||z===z0||z===z1,mid=lx?z===((z0+z1)>>1):x===((x0+x1)>>1);
+        if(ring)set(x,y,z,st.corner);else if(mid)set(x,y,z,B.water);else{set(x,y,z,B.farmland_wet);set(x,y+1,z,crop+3+((rr()*5)|0));}}
+      if(rr()<.5){set(x0,y+1,z0,B.hay_bale);}return;}
+    if(s.type==='pen'){clear(4);const gx=(x0+x1)>>1,gz=(z0+z1)>>1,gxx=face===3?x1:face===1?x0:gx,gzz=face===0?z1:face===2?z0:gz;
+      for(let z=z0;z<=z1;z++)for(let x=x0;x<=x1;x++){found(x,z,B.dirt);set(x,y,z,B.grass);const ring=x===x0||x===x1||z===z0||z===z1;if(ring)set(x,y+1,z,x===gxx&&z===gzz?B.fence_gate+(face%2===0?0:1):B.fence);}
+      set(x0+1,y+1,z0+1,B.hay_bale);set(x0+1,y+2,z0+1,B.hay_bale);set(x0+2,y+1,z0+1,B.hay_bale);return;}
+    // houses, the big house, the smithy and the library
+    const H=s.type==='bighouse'||s.type==='library'?5:4,big=s.type!=='house';clear(H+7);
+    const wall=s.type==='smithy'?B.cobblestone:st.wall,corner=s.type==='smithy'&&!st.flat?st.corner:st.corner;
+    for(let z=z0;z<=z1;z++)for(let x=x0;x<=x1;x++){found(x,z,st.found);set(x,y,z,s.type==='smithy'&&!st.flat?B.cobblestone:st.floor);
+      const ex=x===x0||x===x1,ez=z===z0||z===z1;if(!ex&&!ez){for(let k=1;k<=H;k++)set(x,y+k,z,0);continue;}
+      for(let k=1;k<=H;k++){let id=ex&&ez?corner:wall;const along=ex?z-z0:x-x0,span=ex?z1-z0:x1-x0;
+        if(!(ex&&ez)&&k===2&&along>0&&along<span&&along%2===0&&span>2)id=st.flat?0:B.glass_pane;
+        if(!(ex&&ez)&&k===H&&!st.flat)id=st.corner;set(x,y+k,z,id);}}
+    // door in the middle of the wall that faces the road
+    const mx=(x0+x1)>>1,mz=(z0+z1)>>1;door(face===3?x1:face===1?x0:mx,face===0?z1:face===2?z0:mz);
+    // roof: flat with a trim for desert houses, otherwise a stair gable along the long side
+    if(st.flat){for(let z=z0;z<=z1;z++)for(let x=x0;x<=x1;x++){const e=x===x0||x===x1||z===z0||z===z1;set(x,y+H+1,z,e?st.trim:st.roof);if(e&&(x+z)%2===0)set(x,y+H+2,z,st.trim);}}
+    else{const alongX=x1-x0>=z1-z0;
+      for(let k=0;;k++){const a=(alongX?z0:x0)-1+k,b=(alongX?z1:x1)+1-k,yy=y+H+1+k;if(a>b)break;
+        for(let t=(alongX?x0:z0)-1;t<=(alongX?x1:z1)+1;t++){
+          const put=(q,id)=>alongX?set(t,yy,q,id):set(q,yy,t,id);
+          if(a===b){put(a,st.roof);continue;}
+          put(a,st.stairs+(alongX?0:3));put(b,st.stairs+(alongX?2:1));
+          const endT=t===(alongX?x0:z0)||t===(alongX?x1:z1);if(endT)for(let q=a+1;q<b;q++)put(q,st.roof);
+        }}}
+    // furniture
+    const inX0=x0+1,inX1=x1-1,inZ0=z0+1,inZ1=z1-1,back=(face+2)%4,bd=[[0,1],[-1,0],[0,-1],[1,0]][back];
+    const bx=back===3?inX1:back===1?inX0:inX0,bz=back===0?inZ1:back===2?inZ0:inZ0;
+    // bed against the back wall, its head toward the wall
+    const hx=bx,hz=bz,fx=hx-bd[0],fz=hz-bd[1];set(fx,y+1,fz,B.bed+back);set(hx,y+1,hz,B.bed_head+back);
+    const ox2=back===1||back===3?bx:inX1,oz2=back===0||back===2?bz:inZ1;
+    if(s.type==='smithy'){set(ox2,y+1,oz2,B.furnace+face);set(inX1,y+1,inZ0,B.chest+face);set(inX0,y+1,inZ1,B.crafting_table);}
+    else if(s.type==='library'){// bookshelves two high along the back wall, a reading table in the middle
+      for(let q=(back%2===0?inX0:inZ0);q<=(back%2===0?inX1:inZ1);q++){const x=back%2===0?q:bx,z=back%2===0?bz:q;if(get(x,y+1,z)===0||get(x,y+1,z)===B.bed+back||get(x,y+1,z)===B.bed_head+back){set(x,y+1,z,B.bookshelf);set(x,y+2,z,B.bookshelf);}}
+      set(mx,y+1,mz,B.crafting_table);set(inX0===mx?inX1:inX0,y+1,mz,B.chest+face);}
+    else{set(ox2,y+1,oz2,B.crafting_table);if(big)set(back%2===0?inX1:(back===3?inX0:inX1),y+1,back%2===0?(back===0?inZ0:inZ1):inZ1,B.chest+face);}
+    // a torch inside on the wall opposite the door
+    const tx=back===3?inX1:back===1?inX0:mx,tz=back===0?inZ1:back===2?inZ0:mz;if(get(tx,y+3,tz)===0)set(tx,y+3,tz,B.wall_torch+face);
+  }
   function genChunk(cx, cz){
     const d = version>=4 ? new Uint16Array(CS*CS*CH) : new Uint8Array(CS*CS*CH);
     const ox = cx*CS, oz = cz*CS;
@@ -478,7 +609,8 @@ function makeGen(seed, B, version=1,dimension='overworld'){
         }
         if(r()<.035){
           // Rare dry ravine: a coherent curved cleft, rather than noise pinholes.
-          for(let k=0;k<=24;k++){const x=upper.x+k-12,z=upper.z+Math.sin(k/12)*4,h=heightAt(x,z);if(h>SEA+5)hollow(x,h-8,z,1.8,10,true);}
+          // (Generator 7 drops it: the straight open slot looked like an unnatural channel.)
+          if(version<7)for(let k=0;k<=24;k++){const x=upper.x+k-12,z=upper.z+Math.sin(k/12)*4,h=heightAt(x,z);if(h>SEA+5)hollow(x,h-8,z,1.8,10,true);}
         }
         if(version>=5){
           // Generator 5: cave openings. Most cells get a sloping mouth from the surface
@@ -487,9 +619,14 @@ function makeGen(seed, B, version=1,dimension='overworld'){
           const e=mulberry32(seed^salt^0x5ca7e),low=node(gx,gz,0);
           for(let k=0;k<2;k++){if(e()>(k?.5:.92))continue;
             const a=e()*Math.PI*2,dist=14+e()*22,sx=upper.x+Math.cos(a)*dist,sz=upper.z+Math.sin(a)*dist,h=heightAt(sx,sz);
-            if(h<=SEA+3||h>=CH-12)continue;
+            if(h<=SEA+(version>=7?7:3)||h>=CH-12)continue;
             const mid={x:(sx+upper.x)/2+(e()-.5)*10,y:Math.max(upper.y+4,h-14),z:(sz+upper.z)/2+(e()-.5)*10};
-            if(version>=6){
+            if(version>=7){
+              // Generator 7: a deep round pit marks the mouth; below it the throat runs as a
+              // proper tunnel under the ground, so no open slot or water channel cuts the land.
+              hollow(sx,h-1,sz,5,5,true);lineCoal(sx,h-2,sz,5,.16);
+              passage({x:sx,y:h-5,z:sz},mid,salt^(0x6e01+k*977),false,1.6,.2);passage(mid,upper,salt^(0x6e02+k*977),false,1.3,.1);
+            }else if(version>=6){
               // Generator 6: wide, obvious mouths — a sunken bowl at the surface, a broad
               // sloping throat lined with coal, then a roomier tunnel down to the network.
               hollow(sx,h,sz,5.2,3.6,true);lineCoal(sx,h-1,sz,5.2,.16);
@@ -726,7 +863,7 @@ function makeGen(seed, B, version=1,dimension='overworld'){
       }
       // Tiny villages are two original cottages and a connecting gravel path.
       const vb=bio[8+8*16],vh=hm[8+8*16];
-      if((vb===0||vb===10)&&vh>SEA+2&&vh<SEA+24&&R()<.018){
+      if((vb===0||vb===10)&&vh>SEA+2&&vh<SEA+24&&R()<.018&&version<7){   // generator 7 builds full villages instead
         for(const hx of [2,9]){const hz=5,hy=vh+1;for(let y=hy-1;y<=hy+4;y++)for(let z=hz;z<hz+5;z++)for(let x=hx;x<hx+5;x++){
           const edge=x===hx||x===hx+4||z===hz||z===hz+4;let id=0;if(y===hy-1)id=B.cobblestone;else if(y===hy+4)id=B.planks;else if(edge)id=y===hy+2&&x===hx+2?B.glass:B.planks;d[I(x,y,z)]=id;
         }
@@ -749,9 +886,10 @@ function makeGen(seed, B, version=1,dimension='overworld'){
         if(up===0&&(top===B.grass||top===B.grass_taiga)&&R()<(b===9?.012:.0025))d[i+256]=b===9?B.melon:B.pumpkin;
       }
     }
+    if(version>=7)drawVillages(d,ox,oz,I);
     return d;
   }
-  return {genChunk, heightAt, biomeAt, mountainAt, BIOME_NAMES};
+  return {genChunk, heightAt, biomeAt, mountainAt, BIOME_NAMES, villageAt:version>=7?villageAt:()=>null, VCELL};
 }
 
 /* Original Nether generator: self-contained, deterministic worker code. */
@@ -1085,6 +1223,9 @@ if(typeof importScripts === 'function'){
  * shorter; undead burn by the clock; creative starts with an empty hotbar.
  * Generator 5 (new worlds): generator 4 plus cave openings from the surface
  * (sloping mouths into the tunnel network and occasional sinkholes).
+ * Generator 7 (new worlds): full villages (well, roads, houses, farms, pens,
+ * smithies, libraries, lamps) and cave mouths as round pits over buried
+ * tunnels instead of open slots. Boats ride smoothly with a seated rider.
  */
 /* =========================================================================
    1. CONFIG & SMALL HELPERS
@@ -2076,7 +2217,7 @@ vec3 shadeLight(bool plant){
 #ifdef SHADOWS
   sh=sunShadow(plant?vec3(0.0,1.0,0.0):N);
 #endif
-  vec3 c=uSkyCol*s*(0.5+0.14*N.y)+uSunCol*nl*sh*smoothstep(0.55,0.95,vLight.y)*1.15+vec3(1.0,0.82,0.6)*pow(b,1.6)*0.95;
+  vec3 c=uSkyCol*s*(0.56+0.22*N.y)+uSunCol*nl*sh*smoothstep(0.55,0.95,vLight.y)+vec3(1.0,0.78,0.52)*pow(b,1.7)*0.9;
   return max(c,vec3(max(uAmbient,mix(.03,.72,uNightVision))))*ao;
 }
 #endif`;
@@ -2692,7 +2833,7 @@ const store = {
   del(k){ try{ localStorage.removeItem(k); }catch(e){} },
   keys(){ try{ return Object.keys(localStorage); }catch(e){ return []; } },
 };
-world.persist = false;world.genVersion=6; world.containers = new Map(); world.name='World';
+world.persist = false;world.genVersion=7; world.containers = new Map(); world.name='World';
 function loadChunkEdits(cx,cz){
   const k=ckey(cx,cz); if(world.edits.has(k)) return world.edits.get(k);
   if(!world.persist) return null;
@@ -3618,7 +3759,7 @@ function setupTitleWorld(meta){
   const seed = meta ? meta.seed : 20261018;
   world.dimension=meta?.dimension||'overworld';world.dimensionStates=meta?.dimensions||{};
   world.dimension=meta?.dimension||'overworld';
-  world.genVersion=meta?.generator||6;
+  world.genVersion=meta?.generator||7;
   world.persist = !!meta;            // read saved edits so the panorama shows your builds
   if(world.seed!==seed || !workers.length||world.builtGenVersion!==world.genVersion||world.builtDimension!==(world.dimension||'overworld')){ world.edits.clear(); world.dirtyEdits.clear(); startWorld(seed, null, false); }
   if(meta){ titleCam.x=meta.p.x; titleCam.z=meta.p.z; titleCam.y=Math.max(meta.p.y+6, SEA+12); }
@@ -3639,7 +3780,7 @@ function beginGame(seed, meta, mode){
   respawnPending=false;resetMobs();clearSigns();resetRedstone();
   if(world.builtDimension!==world.dimension){world.edits.clear();world.dirtyEdits.clear();}
   if(world.loadedSlot!==worldSlot){world.edits.clear();world.dirtyEdits.clear();world.seed=NaN;world.loadedSlot=worldSlot;}
-  world.genVersion=meta?.generator||6;
+  world.genVersion=meta?.generator||7;
   world.mp=meta?.mp&&typeof meta.mp==='object'?meta.mp:null;
   world.persist = true;
   if(!meta){ world.edits.clear(); world.containers.clear(); }
@@ -4739,6 +4880,8 @@ function tickEntities(dt){
   }
   entityClock.ms=performance.now()-start;
 }
+// Where the rider's feet go relative to the mount, chosen so the seated hips meet the seat.
+const RIDE_SEAT={boat:-.45,horse:.6};
 function updateEntities(dt){
   if(mouse.right&&inv.heldId()===B.bow&&gameState==='playing')combat.draw=Math.min(1,combat.draw+dt);else if(inv.heldId()!==B.bow)combat.draw=0;
   entityClock.acc=Math.min(entityClock.acc+dt,.2);
@@ -4746,6 +4889,7 @@ function updateEntities(dt){
   const alpha=entityClock.acc/.05;
   for(const e of entities){
     const m=e.model,p=e.pos,d=MOB_DEFS[e.kind];m.g.position.set(lerp(e.prev.x,p.x,alpha),lerp(e.prev.y,p.y,alpha),lerp(e.prev.z,p.z,alpha));
+    if(riding===e){const g=m.g.position;player.pos.set(g.x,g.y+RIDE_SEAT[d.boat?'boat':'horse'],g.z);player.vel.set(0,0,0);if(d.boat)steerBoat(e,dt);}
     m.g.rotation.set(0,e.yaw,e.dead?Math.min(Math.PI/2,e.dead*3):0);m.g.scale.setScalar(mobScale(e));
     // per-mob lighting: dark in caves, lit by torches, bright in daylight
     e.lightT=(e.lightT||0)-dt;if(e.lightT<=0){e.lightT=.35+Math.random()*.2;m.light=lightAt(p.x,p.y+d.h*.6,p.z);}
@@ -4755,6 +4899,7 @@ function updateEntities(dt){
     if(m.nodes.saddle)m.nodes.saddle.visible=!!e.saddled;
     if(!e.dead)m.head.rotation.y=clamp(wrapAngle(Math.atan2(player.pos.x-p.x,player.pos.z-p.z)-e.yaw),-.8,.8);
   }
+  if(riding&&entities.includes(riding))updateCamera(0);
 }
 
 /* =========================================================================
@@ -5361,6 +5506,8 @@ function buildPlayerModel(){
  avatar.hand=new THREE.Group();avatar.hand.position.set(0,-10/16,1/16);avatar.model.nodes.armR.add(avatar.hand);avatar.handId=-1;
  avatar.group.visible=false;scene.add(avatar.group);
 }
+// Seated: legs straight out in front, arms reaching forward as if holding the oars or reins.
+function sitPose(m){const n=m.nodes;if(n.legL){n.legL.rotation.set(-1.45,0,0);n.legR.rotation.set(-1.45,0,0);}if(n.armL){n.armL.rotation.x=Math.min(n.armL.rotation.x,-.55);if(!(swingT<1))n.armR.rotation.x=-.55;}}
 function updateAvatarHand(model,hand,id,cache){
  if(cache.id===id)return;cache.id=id;while(hand.children.length)hand.remove(hand.children[0]);if(!id)return;
  const o=heldMeshFor(id),m=new THREE.Mesh(o.mesh.geometry,heldMaterial());
@@ -5373,7 +5520,7 @@ function updateThirdPerson(dt){
  const p=player,m=avatar.model,crouch=p.sneaking&&!p.flying;avatar.group.position.set(p.pos.x,p.pos.y-(crouch?.12:0),p.pos.z);avatar.group.rotation.y=p.yaw+Math.PI;
  const moving=Math.min(1,Math.hypot(p.vel.x,p.vel.z)/4);
  poseHumanoid(m,p.bob*2,p.onGround||p.inWater?moving:.15,swingT<1?swingT:0,-p.pitch*.9);
- m.nodes.body.rotation.x=crouch?.35:0;
+ m.nodes.body.rotation.x=crouch?.35:0;if(riding)sitPose(m);
  applyArmorToModel(m);updateAvatarHand(m,avatar.hand,inv.heldId(),avatar);
  const L=held.light||1;m.mat.color.setRGB(L,L,L);
  const sign=cameraMode===1?1:-1,dx=Math.sin(p.yaw)*sign*Math.cos(p.pitch),dz=Math.cos(p.yaw)*sign*Math.cos(p.pitch),dy=-Math.sin(p.pitch)*sign;
@@ -5795,7 +5942,7 @@ function petAndGuardianAI(e,dt,speed){
 }
 function tickRiding(e,dt){
  if(keys.has('ShiftLeft')||keys.has('ShiftRight')||e.dead){riding=null;player.pos.set(e.pos.x+1.5,e.pos.y,e.pos.z);player.vel.set(0,0,0);return;}
- const f=(keys.has('KeyW')?1:0)-(keys.has('KeyS')?1:0),s=(keys.has('KeyD')?1:0)-(keys.has('KeyA')?1:0);e.yaw=player.yaw;e.vel.x=(-Math.sin(e.yaw)*f+Math.cos(e.yaw)*s)*7;e.vel.z=(-Math.cos(e.yaw)*f-Math.sin(e.yaw)*s)*7;if(keys.has('Space')&&e.onGround)e.vel.y=10;mobPhysics(e,dt);player.pos.set(e.pos.x,e.pos.y+1.45,e.pos.z);player.vel.set(0,0,0);player.fallStart=null;
+ const f=(keys.has('KeyW')?1:0)-(keys.has('KeyS')?1:0),s=(keys.has('KeyD')?1:0)-(keys.has('KeyA')?1:0);e.yaw=player.yaw;e.vel.x=(-Math.sin(e.yaw)*f+Math.cos(e.yaw)*s)*7;e.vel.z=(-Math.cos(e.yaw)*f-Math.sin(e.yaw)*s)*7;if(keys.has('Space')&&e.onGround)e.vel.y=10;mobPhysics(e,dt);player.pos.set(e.pos.x,e.pos.y+RIDE_SEAT.horse,e.pos.z);player.vel.set(0,0,0);player.fallStart=null;
 }
 function seedVillageMobs(c){
  if(world.dimension!=='overworld'||world.genVersion<2)return;const key='village:'+c.cx+','+c.cz;if(mobChunks.has(key))return;
@@ -6265,25 +6412,30 @@ function spTargets(){
  }
  if(!shaderPack.post){
   const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute([-1,-1,0,3,-1,0,-1,3,0],3));
-  shaderPack.postU={tColor:{value:null},tDepth:{value:null},uSunUv:{value:new THREE.Vector2()},uSunVis:{value:0},uSunCol:{value:new THREE.Color()},uWarm:{value:0},uUnder:{value:0},uAspect:{value:1}};
+  shaderPack.postU={tColor:{value:null},tDepth:{value:null},uSunUv:{value:new THREE.Vector2()},uSunVis:{value:0},uSunCol:{value:new THREE.Color()},uWarm:{value:0},uUnder:{value:0},uAspect:{value:1},uNear:{value:.05},uFar:{value:1200},uHaze:{value:new THREE.Color()},uHazeAmt:{value:0}};
   const mat=new THREE.ShaderMaterial({uniforms:shaderPack.postU,depthTest:false,depthWrite:false,
    vertexShader:`varying vec2 vUv; void main(){ vUv=position.xy*0.5+0.5; gl_Position=vec4(position.xy,0.0,1.0); }`,
-   fragmentShader:`uniform sampler2D tColor,tDepth; uniform vec2 uSunUv; uniform float uSunVis,uWarm,uUnder,uAspect; uniform vec3 uSunCol; varying vec2 vUv;
-    float aces(float x){ return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14),0.0,1.0); }
+   fragmentShader:`uniform sampler2D tColor,tDepth; uniform vec2 uSunUv; uniform float uSunVis,uWarm,uUnder,uAspect,uNear,uFar,uHazeAmt; uniform vec3 uSunCol,uHaze; varying vec2 vUv;
+    // Natural "complementary"-style grade: soft filmic highlights, gently muted colour,
+    // aerial haze that tints distance toward the sky (warmer toward the sun), subtle shafts.
+    vec3 filmic(vec3 x){ return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14),0.0,1.0); }
+    float lin(float d){ float z=d*2.0-1.0; return 2.0*uNear*uFar/(uFar+uNear-z*(uFar-uNear)); }
     void main(){
-     vec3 c=texture2D(tColor,vUv).rgb;
+     vec3 c=texture2D(tColor,vUv).rgb; float dep=texture2D(tDepth,vUv).r; bool sky=dep>=0.99999;
+     vec2 o=(vUv-uSunUv)*vec2(uAspect,1.0); float r=length(o), toSun=exp(-r*1.6)*uSunVis;
+     if(!sky&&uHazeAmt>0.0){ float dist=lin(dep), h=(1.0-exp(-dist*0.003))*uHazeAmt; vec3 hc=mix(uHaze,uHaze*0.6+uSunCol*0.7,toSun); c=mix(c,hc,h); }
      if(uSunVis>0.001){
-      // god rays: march toward the sun and gather how much open sky lies on the way
-      vec2 d=(uSunUv-vUv)/40.0, uv=vUv; float acc=0.0, w=1.0;
-      for(int i=0;i<40;i++){ uv+=d; if(uv.x<0.0||uv.y<0.0||uv.x>1.0||uv.y>1.0) break; acc+=step(0.99999,texture2D(tDepth,uv).r)*w; w*=0.955; }
-      vec2 o=(vUv-uSunUv)*vec2(uAspect,1.0); float r=length(o);
-      c+=uSunCol*(acc/22.0*0.55*exp(-r*1.4)+exp(-r*7.0)*0.35)*uSunVis;
+      vec2 d=(uSunUv-vUv)/36.0, uv=vUv; float acc=0.0, w=1.0;
+      for(int i=0;i<36;i++){ uv+=d; if(uv.x<0.0||uv.y<0.0||uv.x>1.0||uv.y>1.0) break; acc+=step(0.99999,texture2D(tDepth,uv).r)*w; w*=0.95; }
+      c+=uSunCol*(acc/20.0*0.22*exp(-r*1.8)+exp(-r*9.0)*0.18)*uSunVis;
      }
-     // filmic curve on brightness only, so skies and foliage keep their colour
-     float L=dot(c,vec3(0.2126,0.7152,0.0722)); c*=aces(L*1.12)/max(L,1e-4); c=min(c,vec3(1.0));
-     float l=dot(c,vec3(0.2126,0.7152,0.0722)); c=mix(vec3(l),c,1.07);
-     c*=mix(vec3(1.0),vec3(1.07,0.98,0.88),uWarm); c=mix(c,c*vec3(0.85,0.97,1.08),uUnder);
-     vec2 q=vUv-0.5; c*=1.0-dot(q,q)*0.45;
+     c*=0.97;
+     float L=dot(c,vec3(0.2126,0.7152,0.0722)); vec3 lp=c*(filmic(vec3(L)).r/max(L,1e-4));
+     c=mix(lp,filmic(c),sky?0.0:0.3);                            // per-channel rolloff softens bright colours
+     float l=dot(c,vec3(0.2126,0.7152,0.0722)); c=mix(vec3(l),c,sky?1.12:1.02);
+     c=mix(c,c*c*(3.0-2.0*c),0.18);                              // mild S-curve for depth
+     c*=mix(vec3(1.0),vec3(1.05,0.99,0.92),uWarm); c=mix(c,c*vec3(0.8,0.95,1.08),uUnder);
+     vec2 q=vUv-0.5; c*=1.0-dot(q,q)*0.3;
      gl_FragColor=vec4(c,1.0);
     }`});
   shaderPack.post=new THREE.Scene();const m=new THREE.Mesh(geo,mat);m.frustumCulled=false;shaderPack.post.add(m);shaderPack.postCam=new THREE.Camera();
@@ -6297,9 +6449,9 @@ function spUniforms(){
  U.uSkyTop.value.copy(sky.domeU.uTop.value);U.uSkyHor.value.copy(sky.domeU.uHor.value);
  if(!over){U.uSunCol.value.setRGB(0,0,0);U.uSkyCol.value.copy(U.uSkyTint.value).multiplyScalar(U.uSky.value*1.15);U.uShadowAmt.value=0;U.uDay.value=0;return {sun,vis:0,day:0};}
  const day=THREE.MathUtils.smoothstep(sunY,-0.12,0.18);U.uDay.value=day;
- if(sunY>-0.04){U.uSunDir.value.copy(sun);U.uSunCol.value.setRGB(1,.52,.26).lerp(_spCol.setRGB(1,.95,.86),THREE.MathUtils.smoothstep(sunY,.04,.45)).multiplyScalar(.78*THREE.MathUtils.smoothstep(sunY,-.04,.12)*(1-wet*.85));}
- else{U.uSunDir.value.copy(sun).negate();U.uSunCol.value.setRGB(.11,.14,.24).multiplyScalar(THREE.MathUtils.smoothstep(-sunY,.04,.2)*(1-wet*.8));}
- _spCol.copy(sky.domeU.uHor.value).lerp(sky.domeU.uTop.value,.5);U.uSkyCol.value.setRGB(1,1,1).lerp(_spCol,.42).multiplyScalar(U.uSky.value*.62);
+ if(sunY>-0.04){U.uSunDir.value.copy(sun);U.uSunCol.value.setRGB(1,.56,.3).lerp(_spCol.setRGB(1,.92,.8),THREE.MathUtils.smoothstep(sunY,.04,.45)).multiplyScalar(.9*THREE.MathUtils.smoothstep(sunY,-.04,.12)*(1-wet*.85));}
+ else{U.uSunDir.value.copy(sun).negate();U.uSunCol.value.setRGB(.09,.12,.22).multiplyScalar(THREE.MathUtils.smoothstep(-sunY,.04,.2)*(1-wet*.8));}
+ _spCol.copy(sky.domeU.uHor.value).lerp(sky.domeU.uTop.value,.55);U.uSkyCol.value.setRGB(1,1,1).lerp(_spCol,.7).multiplyScalar(U.uSky.value*.55);
  U.uShadowAmt.value=CONFIG.shaders==='ultra'?THREE.MathUtils.smoothstep(Math.abs(U.uSunDir.value.y),.04,.22)*(1-wet*.85):0;
  return {sun,vis:THREE.MathUtils.smoothstep(sunY,-.06,.06)*(1-wet)*(player.eyeInWater?.25:1),day};
 }
@@ -6345,7 +6497,8 @@ function renderScene(){
  camera.getWorldDirection(_spV);_spV2.copy(info.sun).multiplyScalar(500).add(camera.position).project(camera);
  const front=_spV.dot(info.sun)>0&&Math.abs(_spV2.x)<1.6&&Math.abs(_spV2.y)<1.6;
  P.uSunUv.value.set(_spV2.x*.5+.5,_spV2.y*.5+.5);P.uSunVis.value=front?info.vis*((world.dimension||'overworld')==='overworld'?1:0):0;
- P.uSunCol.value.copy(U.uSunCol.value);P.uWarm.value=(world.dimension||'overworld')==='overworld'?.12+.6*(1-THREE.MathUtils.smoothstep(Math.sin(dayTime*Math.PI*2),.05,.5))*info.day:.2;P.uUnder.value=player.eyeInWater?1:0;
+ P.uNear.value=camera.near;P.uFar.value=camera.far;P.uHaze.value.copy(U.uFogColor.value);P.uHazeAmt.value=player.eyeInWater?0:(world.dimension||'overworld')==='overworld'?.35*(1-(weather.strength||0)*.4):.3;
+ P.uSunCol.value.copy(U.uSunCol.value);P.uWarm.value=(world.dimension||'overworld')==='overworld'?.05+.55*(1-THREE.MathUtils.smoothstep(Math.sin(dayTime*Math.PI*2),.05,.5))*info.day:.2;P.uUnder.value=player.eyeInWater?1:0;
  renderer.render(shaderPack.post,shaderPack.postCam);
 }
 /* =========================================================================
@@ -6377,8 +6530,8 @@ function tickBoat(e,dt,driven){
  if(inWater){v.y+=((wl-.3)-p.y)*40*dt;v.y*=Math.exp(-7*dt);v.x*=Math.exp(-.9*dt);v.z*=Math.exp(-.9*dt);}
  else{v.y=Math.max(-30,v.y-28*dt);const f=e.onGround?Math.exp(-7*dt):Math.exp(-.4*dt);v.x*=f;v.z*=f;}
  if(driven){
-  const fwd=(keys.has('KeyW')?1:0)-(keys.has('KeyS')?.5:0),turn=(keys.has('KeyA')?1:0)-(keys.has('KeyD')?1:0);
-  e.yaw+=turn*dt*(inWater?2.2:1.2);const acc=fwd*(inWater?11:2.2);v.x+=Math.sin(e.yaw)*acc*dt;v.z+=Math.cos(e.yaw)*acc*dt;
+  const fwd=(keys.has('KeyW')?1:0)-(keys.has('KeyS')?.5:0);
+  const acc=fwd*(inWater?11:2.2);v.x+=Math.sin(e.yaw)*acc*dt;v.z+=Math.cos(e.yaw)*acc*dt;
   const sp=Math.hypot(v.x,v.z),max=inWater?8:1.5;if(sp>max){v.x*=max/sp;v.z*=max/sp;}
   if(fwd){e.row=(e.row||0)+dt*7;}
  }
@@ -6387,9 +6540,11 @@ function tickBoat(e,dt,driven){
  for(let k=0;k<steps;k++){const dy=v.y*sd,my=moveAxis(p,1,dy,d.w,d.h);if(my!==dy){if(dy<0)e.onGround=true;v.y=0;}
   const dx=v.x*sd,dz=v.z*sd;if(moveAxis(p,0,dx,d.w,d.h)!==dx)v.x*=-.2;if(moveAxis(p,2,dz,d.w,d.h)!==dz)v.z*=-.2;}
 }
+// Turning runs every frame (not on the 20 Hz tick) and turns the rider's view with the boat.
+function steerBoat(e,dt){if(gameState!=='playing')return;const turn=(keys.has('KeyA')?1:0)-(keys.has('KeyD')?1:0);if(!turn)return;const r=turn*dt*(boatWaterLevel(e.pos)!==null?2.2:1.2);e.yaw+=r;player.yaw+=r;}
 function tickBoatRide(e,dt){
  if(keys.has('ShiftLeft')||keys.has('ShiftRight')||e.dead||!entities.includes(e)){riding=null;player.pos.set(e.pos.x,e.pos.y+.7,e.pos.z);player.vel.set(0,0,0);player.fallStart=null;return;}
- const y0=e.yaw;tickBoat(e,dt,true);player.yaw+=e.yaw-y0;player.pos.set(e.pos.x,e.pos.y-.15,e.pos.z);player.vel.set(0,0,0);player.fallStart=null;player.onGround=true;
+ tickBoat(e,dt,true);player.pos.set(e.pos.x,e.pos.y+RIDE_SEAT.boat,e.pos.z);player.vel.set(0,0,0);player.fallStart=null;player.onGround=true;
 }
 function placeBoat(){
  if(inv.heldId()!==B.oak_boat)return false;
@@ -6614,7 +6769,7 @@ function netUpdateAvatars(dt){
   const moved=Math.hypot(a.pos.x-ox,a.pos.z-oz);a.walk+=moved*2.4;a.moving=lerp(a.moving||0,Math.min(1,moved/(dt*4+1e-6)),k);
   if(a.swing<1)a.swing=Math.min(1,a.swing+dt*3.3);
   const crouch=!!(a.flags&1);g.position.set(a.pos.x,a.pos.y-(crouch?.12:0),a.pos.z);g.rotation.y=a.yaw+Math.PI;
-  poseHumanoid(a.model,a.walk,a.moving,a.swing<1?a.swing:0,-a.pitch*.9);a.model.nodes.body.rotation.x=crouch?.35:0;
+  poseHumanoid(a.model,a.walk,a.flags&16?0:a.moving,a.swing<1?a.swing:0,-a.pitch*.9);a.model.nodes.body.rotation.x=crouch?.35:0;if(a.flags&16)sitPose(a.model);
   updateAvatarHand(a.model,a.hand,a.held,a.cache);
   a.lightT-=dt;if(a.lightT<=0){a.lightT=.4;a.light=Math.max(.25,lightAt(a.pos.x,a.pos.y+1,a.pos.z));}a.model.mat.color.setRGB(a.light,a.light,a.light);
  }
@@ -6639,7 +6794,7 @@ function attackPlayer(){
  wearHeld(tool?.tool==='sword'?1:2);player.exh+=.1;for(let i=0;i<5;i++)emitParticle(a.pos.x,a.pos.y+1.2,a.pos.z,(Math.random()-.5)*2,1.5,(Math.random()-.5)*2,TEX.redstone_ore);
  return true;
 }
-function netMyFlags(){return (player.sneaking?1:0)|(swingT<.3?2:0)|(player.flying?4:0)|(player.health<=0||gameState==='dead'?8:0);}
+function netMyFlags(){return (player.sneaking?1:0)|(swingT<.3?2:0)|(player.flying?4:0)|(player.health<=0||gameState==='dead'?8:0)|(riding?16:0);}
 
 /* ---- hostile mobs, projectiles and spawns consider every player in the world ---- */
 const _hostTarget={pos:player.pos,mode:'survival',active:false,hurt:(n,c,s)=>mobDamage(n,c,s)};
@@ -6887,7 +7042,7 @@ function netEnterWorld(w,dimChange){
  net.me=w.you||net.me;net.dim=w.dim;net.inWorld=true;netClearAvatars();
  const spawn=Array.isArray(w.spawn)&&w.spawn.every(Number.isFinite)?w.spawn:null,at=Array.isArray(w.at)&&w.at.every(Number.isFinite)?w.at:[.5,80,.5];
  const pos=dimChange?at:s?.p&&s.p.every(Number.isFinite)?s.p:spawn||at;
- const meta={v:15,name:String(w.name||'World').slice(0,32),seed:w.seed|0,mode:w.mode==='creative'?'creative':'survival',generator:[1,2,3,4,5,6].includes(w.gen)?w.gen:6,dimension:['overworld','nether','end'].includes(w.dim)?w.dim:'overworld',
+ const meta={v:15,name:String(w.name||'World').slice(0,32),seed:w.seed|0,mode:w.mode==='creative'?'creative':'survival',generator:[1,2,3,4,5,6,7].includes(w.gen)?w.gen:7,dimension:['overworld','nether','end'].includes(w.dim)?w.dim:'overworld',
   spawn:dimChange?at:spawn,time:+w.day||0,days:w.days|0,weather:{type:Array.isArray(w.w)?w.w[0]:'clear',remaining:1e9},
   p:{x:pos[0],y:pos[1],z:pos[2],yaw:pos[3]||0,pitch:pos[4]||0,fire:0,hp:s?.hp??20,food:s?.food??20,sat:s?.sat??5,xp:s?.xp??0,fly:false},
   inv:s?.inv||[],armor:s?.armor||[],offhand:s?.off||null,sel:s?.sel||0,effects:s?.fx||{},signs:Array.isArray(w.signs)?w.signs:[],pistons:Array.isArray(w.pistons)?w.pistons:[],
