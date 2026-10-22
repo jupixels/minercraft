@@ -5944,11 +5944,20 @@ function tickRiding(e,dt){
  if(keys.has('ShiftLeft')||keys.has('ShiftRight')||e.dead){riding=null;player.pos.set(e.pos.x+1.5,e.pos.y,e.pos.z);player.vel.set(0,0,0);return;}
  const f=(keys.has('KeyW')?1:0)-(keys.has('KeyS')?1:0),s=(keys.has('KeyD')?1:0)-(keys.has('KeyA')?1:0);e.yaw=player.yaw;e.vel.x=(-Math.sin(e.yaw)*f+Math.cos(e.yaw)*s)*7;e.vel.z=(-Math.cos(e.yaw)*f-Math.sin(e.yaw)*s)*7;if(keys.has('Space')&&e.onGround)e.vel.y=10;mobPhysics(e,dt);player.pos.set(e.pos.x,e.pos.y+RIDE_SEAT.horse,e.pos.z);player.vel.set(0,0,0);player.fallStart=null;
 }
+// Guardians stand outdoors: the nearest column in this chunk open to the sky, standing on
+// solid ground (not a roof, leaves or water), searched outward from the house.
+function outdoorSpot(c,bx,bz){
+ const d=c.data,at=(x,y,z)=>d[x+(z<<4)+(y<<8)];
+ for(let r=2;r<16;r++)for(let dz=-r;dz<=r;dz++)for(let dx=-r;dx<=r;dx++){if(Math.max(Math.abs(dx),Math.abs(dz))!==r)continue;const x=bx+dx,z=bz+dz;if(x<0||x>15||z<0||z>15)continue;
+  let y=CH-1;while(y>0&&at(x,y,z)===0)y--;const g=BLOCKS[at(x,y,z)];
+  if(g&&g.solid&&g.opaque&&!g.fluid&&!LEAVES.has(at(x,y,z))&&![B.planks,B.spruce_planks,B.acacia_planks,B.smooth_sandstone,B.cut_sandstone,B.cobblestone_slab,B.log,B.spruce_log,B.acacia_log].includes(at(x,y,z))&&!BLOCKS[at(x,y,z)].name.includes('stairs')&&y<CH-3)return [x,y+1,z];}
+ return null;
+}
 function seedVillageMobs(c){
  if(world.dimension!=='overworld'||world.genVersion<2)return;const key='village:'+c.cx+','+c.cz;if(mobChunks.has(key))return;
  for(let i=0;i<c.data.length;i++)if(c.data[i]>=B.bed&&c.data[i]<B.bed+4){mobChunks.add(key);const x=c.cx*16+(i&15)+.5,y=i>>8,z=c.cz*16+((i>>4)&15)+.5;
   const m={kind:'villager',x,y,z,hp:20,persistent:true};if(entities.length<ENTITY_LIMIT&&gameState==='playing')spawnMob(m.kind,x,y,z,m);else dormantMobs.push(m);
-  if((c.cx+c.cz)%2===0)dormantMobs.push({kind:'guardian',x:x-1,y,z,hp:80,persistent:true});break;
+  if((c.cx+c.cz)%2===0){const o=outdoorSpot(c,i&15,(i>>4)&15);if(o)dormantMobs.push({kind:'guardian',x:c.cx*16+o[0]+.5,y:o[1],z:c.cz*16+o[2]+.5,hp:80,persistent:true});}break;
  }
 }
 const TRADE_OFFERS=[['wheat',20,'emerald',1],['coal',16,'emerald',1],['emerald',1,'bread',6],['emerald',3,'iron_pickaxe',1],['leather',8,'emerald',1],['emerald',5,'book',1]];
