@@ -33,6 +33,8 @@ Two limits on that freedom:
   `renderScene()` replaces the plain `renderer.render(scene, camera)`.
   Solid and cut chunk meshes are on layer 1 so the shadow pass sees them.
 - Section 46 is boats (an entity kind with its own float/row physics).
+- Villages (generator 7) live in `worldgen-src`: `villageAt()` plans a cell,
+  `drawVillages()` draws the overlapping pieces into each chunk.
 - `world.dimension` can be unset for the overworld; compare with
   `(world.dimension||'overworld')`.
 - `<script type="text/plain" id="worldgen-src">` — terrain generation. It runs
@@ -65,13 +67,14 @@ Two limits on that freedom:
   `BLOCKS` has holes at 256–511, so loops over it must skip empty entries.
 - **World generation is frozen per generator version.** Every shipped
   generator must keep producing byte-identical chunks: the test pins chunk
-  hashes for generators 1–5 (120 chunks). Generator 6 (Caves & Cliffs, cave
-  openings, wide river valleys, big coal-lined cave mouths) is the default for
-  new worlds; once it ships, pin it in the test too. Change terrain only by
-  adding a new generator version: guard new code with `version>=7`, keep
-  `R()` call order unchanged for older versions, give new features their own
-  `mulberry32` stream or a position hash, and bump the default in the three
-  `genVersion` spots and the guest-meta check (`[1,…,6].includes(w.gen)`).
+  hashes for generators 1–6. Generator 7 (Caves & Cliffs, wide rivers,
+  coal-lined cave mouths, full villages) is the default for new worlds; once
+  it ships, pin it too. Change terrain only by adding a version: guard new
+  code with `version>=8`, keep `R()` call order unchanged for older versions,
+  give new features their own `mulberry32` stream or a position hash, and
+  bump the default in the three `genVersion` spots and the guest-meta check.
+  Features that span chunks (tunnels, villages) are planned from world
+  coordinates per cell and cached, so every chunk agrees on them.
 - **Saves migrate forward.** World metadata carries a version `v` (currently
   15). When you change the save shape, bump it and add a step to
   `migrateMeta()` so old saves load. Saves live in `localStorage`
@@ -148,3 +151,35 @@ Match the existing code: compact, dense JavaScript with short helpers,
 (`.btn`, `.field`, `.screen`, `.panel`) sized in `var(--g)` units so the GUI
 scale setting works. Keep menu screens fitting in roughly 240 `--g` units of
 height.
+
+## Working with the owner
+
+- One branch and PR per batch of requests, with a plain-language PR
+  description that lists anything added beyond the request.
+- Don't test extensively; the owner play-tests. Run the regression test plus
+  one targeted check (a worldgen probe or a single screenshot), then ship.
+- Ask only when a request collides with a hard rule or is costly to redo;
+  otherwise decide and say what you decided.
+- Terrain changes only reach new worlds; say so, since the owner often plays
+  older worlds.
+- For visuals, show screenshots and stop tuning once the owner approves.
+- Match Minecraft's look and feel with original procedural art, never Mojang
+  assets. Shader taste: natural "Complementary Unbound" style (soft filmic,
+  bluish ambient, warm sun, light haze), not bright or oversaturated.
+
+## What works best here
+
+- Probe worldgen headless: `new Function(<worldgen-src>+';return makeGen;')()`
+  in Node to measure features (cave air %, openings, river widths), render
+  top-down PPM maps, and diff chunk hashes against `main` before committing.
+- Headless browser checks: Playwright with three.js r128 served from npm
+  (`three@0.128.0`) via a route for the cdnjs URL, `?autostart`, then drive
+  `player`, `dayTime`, `CONFIG.shaders` through `page.evaluate`. Shader
+  compile errors only show as `THREE.WebGLProgram` console errors.
+- Anything that follows an entity (riders, cameras) must use its interpolated
+  render position (`e.model.g.position`), not the 20 Hz tick position.
+- Browsers refuse pointer lock for ~1 s after Esc and key presses aren't
+  gestures; never treat one failed request as permanent.
+- Keep GLSL preprocessor lines (`#ifdef`/`#endif`) on their own lines inside
+  template strings.
+
