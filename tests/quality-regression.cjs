@@ -29,6 +29,8 @@ assert.equal(digest(JSON.stringify(BLOCKS.slice(512,909).map(b=>[b.id,b.name])))
 assert.equal(digest(JSON.stringify(BLOCKS.slice(512,913).map(b=>[b.id,b.name]))),'0b585e8c976fd2357e46b634a0dcbab7fa928e2c98aedd8fdbdc89c75beb548a','uranium block IDs/names changed');
 // The Nether Update appended 913-950 (nylium, fungi, vines, gold ore, debris, bastion stone, netherite, shapes).
 assert.equal(digest(JSON.stringify(BLOCKS.slice(512,951).map(b=>[b.id,b.name]))),'e0f1d3313282580f03fbbf768c5e21a974da6699e55d38b8abf1dbdd6d5705ca','Nether Update block IDs/names changed');
+// Gravestones appended 951-954 (one directional block).
+assert.equal(digest(JSON.stringify(BLOCKS.slice(512,955).map(b=>[b.id,b.name]))),'c440a903bb5562eaf3079ac51c52f583f0f62e15398a0fefa80ecdfd56eac3ba','gravestone block IDs/names changed');
 for(const id of Object.keys(ITEMS).map(Number))assert(id>=256&&id<512&&!BLOCKS[id],'item ids live in 256-511');
 // Items defined outside section 2 (boats, spawn eggs) must not reuse a section-2 item id.
 {const reg=source.slice(source.indexOf('const B = {};'),source.indexOf('const isBlockId =')),rest=source.replace(reg,''),later=[...rest.matchAll(/defItem\((\d+),/g)].map(m=>+m[1]);
@@ -141,7 +143,7 @@ for(const seed of [42,-98765]){
 // Legacy metadata must retain generator and equipment, including offhand enchants.
 vm.runInContext(source.slice(source.indexOf('function migrateMeta('),source.indexOf('function mobRecord('))+';globalThis.migrate=migrateMeta;',context);
 const equipment=[315,1,123,{fortune:2}],old={v:12,generator:2,inv:[equipment],offhand:[384,1,200,null],p:{x:1,y:70,z:2}};
-const migrated=context.migrate(old);assert.equal(migrated.v,17);assert.equal(migrated.netherGen,10);assert.equal(context.migrate({v:16,generator:4,dimensions:{nether:{}},p:{}}).netherGen,4);assert.equal(migrated.dayLock,false);assert.equal(migrated.generator,2);assert.deepEqual(migrated.inv[0],equipment);assert.equal(migrated.offhand[2],200);
+const migrated=context.migrate(old);assert.equal(migrated.v,18);assert.equal(JSON.stringify([migrated.graves,migrated.waypoints,migrated.villages]),'[[],{},{}]');assert.equal(migrated.netherGen,10);assert.equal(context.migrate({v:16,generator:4,dimensions:{nether:{}},p:{}}).netherGen,4);assert.equal(migrated.dayLock,false);assert.equal(migrated.generator,2);assert.deepEqual(migrated.inv[0],equipment);assert.equal(migrated.offhand[2],200);
 assert.equal(context.migrate({v:15,generator:8,p:{}}).generator,8);assert.equal(context.migrate({v:15,generator:9,p:{}}).generator,9);
 assert.equal(context.migrate({v:1,p:{}}).generator,1);assert.equal(context.migrate({v:12,p:{}}).generator,2);
 // Frame detection/destruction with optional corners, both orientations and a build marker.
