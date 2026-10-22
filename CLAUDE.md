@@ -67,6 +67,21 @@ Two limits on that freedom:
   `world.genVersion`; `genVer()` picks the one for the current dimension and is
   what workers, `gen` and `builtGenVersion` use. Migration gives worlds that never
   visited the Nether `netherGen` 10 and keeps the old Nether for the rest.
+- Sections 49–55 (after section 48, before BOOT): 49 touch controls
+  (`touchUI`, `touchMove`; the joystick feeds `updatePlayer` as analog input,
+  `setTouchMode` switches on the last input type, ghost clicks are swallowed),
+  50 gravestones (block `grave`, container type `grave` with 41 slots: 36
+  inventory, 4 armour, offhand; `world.graves`, `digGrave`, `myGrave`), 51 map
+  and waypoints (`world.waypoints[dimension]`, `hudMarkers`/`updateMarkers`,
+  `drawMap` with a per-chunk colour cache), 52 photo mode (`photo`, game state
+  `'photo'`; depth of field is `uDof`/`uFocus` in the shader-pack composite),
+  53 pathfinding (`navYaw`/`navSearch`, budgeted by `NAV`; drops are capped at 3
+  blocks so paths agree with `unsafeStep`), 54 living villages (`villagerAI`,
+  village growth via `gen.buildPiece`, `world.villages`) and 55 UI extras.
+- Mob interactions go through `mobUse(actor, mob)` (section 40). An actor is
+  `localActor()` or, on the host, `peerActor()` for a guest; add new animal
+  interactions there, using `a.held`, `a.consume()`, `a.give()`, `a.ride()`, so
+  they work for guests automatically.
 - Section 47 is uranium: ore (generator 9), yellowcake, and the Enrichment
   Table (container type `enrichment`, ticked by the host from
   `updateFurnaces`). It is groundwork for a bigger nuclear update.
@@ -120,7 +135,7 @@ Two limits on that freedom:
   Features that span chunks (tunnels, villages) are planned from world
   coordinates per cell and cached, so every chunk agrees on them.
 - **Saves migrate forward.** World metadata carries a version `v` (currently
-  17). When you change the save shape, bump it and add a step to
+  18). When you change the save shape, bump it and add a step to
   `migrateMeta()` so old saves load. Saves live in `localStorage`
   (`bc.*` keys; per-world `bc.w<slot>.*`).
 - **The texture atlas is 16 × 64 tiles** (`ATLAS_ROWS`); about 600 are used.
@@ -173,20 +188,33 @@ How syncing works, so new features stay multiplayer-safe:
 - New kinds of shared state that don't go through the functions above need a
   message: add a case to `netHostOnMsg` (guest → host; validate everything,
   guests are untrusted) and to `netClientOnMsg` (host → guest).
-- `NET_V` is the protocol version (currently 5). Bump it whenever messages
+- `NET_V` is the protocol version (currently 6). Bump it whenever messages
   or block ids change in an incompatible way, so mismatched players get a
   "refresh to update" message instead of a broken game.
 - Friendly fire is the host's setting `world.mp.pvp` (pause-menu button or
   `/friendlyfire on|off`). It travels to guests in the welcome snapshot and
   the `time` broadcast. Guests send `pvp` hits to the host, which checks the
   setting, range and rate before passing them on as `hurt`.
+- Guests interact with mobs by request: `use` (mob net id, held item, sneak)
+  → host checks the mob exists, is in reach and the item matches what the guest
+  was last seen holding, runs `mobUse` with a `peerActor`, and replies `used`
+  with ops (consume, give, wear, toast, ride). A guest riding a mount simulates
+  it locally and reports `mnt` (position, yaw); the host accepts only small
+  steps near the guest, keeps one rider per mount (`e.rider`), and `dmt` ends
+  the ride. `ps` rows carry the mount's id so every client draws riders on the
+  mount's interpolated position. Guest deaths send `grave` (slots, position);
+  the host digs the grave and answers `graves` with that guest's grave list.
+  Guest waypoints stay in the guest's browser (`bc.mpwp.<host world id>`).
 - Wrapped functions are reassigned globals (`spawnItem = function…`), so
   always call them by name rather than keeping your own reference.
 
 Known limits: the world is online only while the host's tab is open;
 simulation only runs in chunks the host has loaded; the host leads portal
-travel; only the host can feed, tame or ride animals; there's no TURN server,
-so some strict networks can't connect.
+travel; only the host sleeps through the night; villager trade stock is not
+synced (each guest trades with their own copy); village growth only happens
+near the host; photo mode can't freeze the shared world, so in multiplayer it
+freezes mobs only in the photographer's view; there's no TURN server, so some
+strict networks can't connect.
 
 ## Style
 
