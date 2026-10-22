@@ -45,6 +45,9 @@ Two limits on that freedom:
   colour+depth copy so it can refract, and the post chain does SSAO,
   shadow-mapped volumetric light, bloom and ACES.
 - Section 46 is boats (an entity kind with its own float/row physics).
+- Time of day: `setWorldTime(d,lock)` (pause-menu slider, Freeze/Resume
+  button, `/time set|add|lock|unlock|query`); `world.dayLock` stops the cycle
+  in `updateSky`, is saved in meta (v16) and travels to guests as `lk`.
 - Section 47 is uranium: ore (generator 9), yellowcake, and the Enrichment
   Table (container type `enrichment`, ticked by the host from
   `updateFurnaces`). It is groundwork for a bigger nuclear update.
@@ -71,6 +74,8 @@ Two limits on that freedom:
   The only external script is three.js r128 from cdnjs, and the test asserts
   that list exactly. Don't add another `<script src>` without updating the
   test on purpose.
+- **Item ids are global.** Items are also defined outside section 2 (boats at
+  452, spawn eggs from 400); the test fails if an id is defined twice.
 - **Block IDs are permanent.** Saves store raw IDs, so an id → name pair
   never changes. The id space is split three ways:
   - `0–255`: the original blocks. Frozen; the test hashes them.
@@ -95,7 +100,7 @@ Two limits on that freedom:
   Features that span chunks (tunnels, villages) are planned from world
   coordinates per cell and cached, so every chunk agrees on them.
 - **Saves migrate forward.** World metadata carries a version `v` (currently
-  15). When you change the save shape, bump it and add a step to
+  16). When you change the save shape, bump it and add a step to
   `migrateMeta()` so old saves load. Saves live in `localStorage`
   (`bc.*` keys; per-world `bc.w<slot>.*`).
 - **The texture atlas is 16 × 64 tiles** (`ATLAS_ROWS`); about 600 are used.
@@ -148,7 +153,7 @@ How syncing works, so new features stay multiplayer-safe:
 - New kinds of shared state that don't go through the functions above need a
   message: add a case to `netHostOnMsg` (guest → host; validate everything,
   guests are untrusted) and to `netClientOnMsg` (host → guest).
-- `NET_V` is the protocol version (currently 3). Bump it whenever messages
+- `NET_V` is the protocol version (currently 4). Bump it whenever messages
   or block ids change in an incompatible way, so mismatched players get a
   "refresh to update" message instead of a broken game.
 - Friendly fire is the host's setting `world.mp.pvp` (pause-menu button or
