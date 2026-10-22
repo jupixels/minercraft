@@ -208,6 +208,7 @@ img,canvas.px{image-rendering:pixelated;image-rendering:crisp-edges}
     <button class="btn" id="bResume">Back to Game</button>
     <div class="lbl sh" id="shaderLbl" style="margin-top:calc(var(--g)*5);margin-bottom:0;text-align:center">Shaders</div>
     <div class="btn" id="bShaders" role="slider" tabindex="0" aria-label="Shaders" aria-valuemin="0" aria-valuemax="2"><div class="sKnob"></div><span data-m="off">Off</span><span data-m="fancy">Fancy</span><span data-m="ultra">Ultra</span></div>
+    <div class="row"><div class="btn half slider" id="sTime"></div><button class="btn half" id="bTimeLock">Freeze Time</button></div>
     <div class="row"><button class="btn half" id="bOptP">Options...</button><button class="btn half" id="bSoundP"></button></div>
     <div class="row"><button class="btn half" id="bExport">Export World</button><button class="btn half" id="bImport">Import World</button></div>
     <div class="row"><button class="btn half" id="bBackup">Create Backup</button><button class="btn half" id="bRestore">Restore Backup</button></div>
@@ -1592,7 +1593,8 @@ for(const [id,name,label,o] of [[436,'clay_ball','Clay Ball'],[437,'nether_brick
   [441,'melon_slice','Melon Slice',{food:2}],[442,'pumpkin_pie','Pumpkin Pie',{food:8}],[443,'golden_carrot','Golden Carrot',{food:6}],[444,'cookie','Cookie',{food:2}],[445,'bowl','Bowl'],[446,'mushroom_stew','Mushroom Stew',{food:6,stack:1}],
   [447,'spyglass','Spyglass',{stack:1}],[448,'clock','Clock',{stack:1}],[449,'glow_berries','Glow Berries',{food:2,places:B.cave_vines}],[450,'raw_iron','Raw Iron'],[451,'raw_gold','Raw Gold']])defItem(id,name,Object.assign({label},o));
 // Uranium chain (section 47): raw ore -> yellowcake (furnace) -> enriched + depleted (enrichment table).
-for(const [id,name,label] of [[452,'raw_uranium','Raw Uranium'],[453,'yellowcake','Yellowcake'],[454,'enriched_uranium','Enriched Uranium'],[455,'depleted_uranium','Depleted Uranium']])defItem(id,name,{label});
+// 452 is the boat (section 46), so raw uranium is 456.
+for(const [id,name,label] of [[456,'raw_uranium','Raw Uranium'],[453,'yellowcake','Yellowcake'],[454,'enriched_uranium','Enriched Uranium'],[455,'depleted_uranium','Depleted Uranium']])defItem(id,name,{label});
 BLOCKS[B.uranium_ore].drop=BLOCKS[B.deepslate_uranium_ore].drop=B.raw_uranium;
 BLOCKS[B.clay].drop=B.clay_ball;BLOCKS[B.clay].dropCount=[4,4];BLOCKS[B.melon].dropCount=[3,7];BLOCKS[B.amethyst_cluster].dropCount=[2,4];BLOCKS[B.deepslate_iron_ore].drop=B.raw_iron;BLOCKS[B.deepslate_gold_ore].drop=B.raw_gold;BLOCKS[B.melon].drop=B.melon_slice;BLOCKS[B.amethyst_cluster].drop=B.amethyst_shard;BLOCKS[B.cave_vines].drop=B.glow_berries;
 const isBlockId = (id)=> id>0 && !!BLOCKS[id];
@@ -3062,7 +3064,7 @@ function saveWorld(){
   }
   if(ok) world.dirtyEdits.clear();
   const containers=[]; for(const [k,c] of world.containers) containers.push([k,{t:c.type,s:c.slots.map(st=>packStack(st)),b:c.burn||0,bm:c.burnMax||0,c:c.cook||0,p:!!c.powered}]);
-  const meta = { v:15, endPortals:world.endPortals||[], endBoss:world.endBoss||{defeated:false}, pendingItems:[...craftGrid2,...craftGrid3,cursor].filter(Boolean).map(packStack), portalLinks:world.portalLinks||[],offhand:packStack(offhand[0]),pistons:[...pistonSticky],plantAges:[...world.plantAges], stats:worldStats,deathCause:world.deathCause||'', dimension:world.dimension||'overworld',dimensions:world.dimensionStates||{}, effects:player.effects||{}, advancements:[...advancements], tnt:primedTNT.map(e=>[e.pos.x,e.pos.y,e.pos.z,e.fuse]), days:dayCount,weather:{type:weather.type,remaining:weather.remaining}, generator:world.genVersion||2, mp:world.mp||undefined, signs:[...signTexts], armor:armorSlots.map(packStack), xpOrbs:xpOrbs.map(e=>[e.value,e.pos.x,e.pos.y,e.pos.z]), mobs:saveMobs(), mobChunks:[...mobChunks], name:world.name, seed:world.seed, mode:player.mode, time:dayTime, spawn:world.spawn,
+  const meta = { v:16, dayLock:!!world.dayLock, endPortals:world.endPortals||[], endBoss:world.endBoss||{defeated:false}, pendingItems:[...craftGrid2,...craftGrid3,cursor].filter(Boolean).map(packStack), portalLinks:world.portalLinks||[],offhand:packStack(offhand[0]),pistons:[...pistonSticky],plantAges:[...world.plantAges], stats:worldStats,deathCause:world.deathCause||'', dimension:world.dimension||'overworld',dimensions:world.dimensionStates||{}, effects:player.effects||{}, advancements:[...advancements], tnt:primedTNT.map(e=>[e.pos.x,e.pos.y,e.pos.z,e.fuse]), days:dayCount,weather:{type:weather.type,remaining:weather.remaining}, generator:world.genVersion||2, mp:world.mp||undefined, signs:[...signTexts], armor:armorSlots.map(packStack), xpOrbs:xpOrbs.map(e=>[e.value,e.pos.x,e.pos.y,e.pos.z]), mobs:saveMobs(), mobChunks:[...mobChunks], name:world.name, seed:world.seed, mode:player.mode, time:dayTime, spawn:world.spawn,
     p:{ x:+player.pos.x.toFixed(4), y:+player.pos.y.toFixed(4), z:+player.pos.z.toFixed(4), yaw:+player.yaw.toFixed(3), pitch:+player.pitch.toFixed(3),
         fire:player.fire||0, hp:player.health, food:player.food, sat:player.sat, xp:player.xp, fly:player.flying },
     inv: inv.slots.map(st=>packStack(st)), sel:inv.sel, containers,
@@ -3594,7 +3596,7 @@ function buildGui(){
   let panel;
   if(guiOpen==='enchant'){panel=el('div','panel',{width:g(230),height:g(190)},wrap);buildEnchantGui(panel);
   }else if(guiOpen==='brewing'){panel=el('div','panel',{width:g(176),height:g(166)},wrap);label(panel,58,7,'Brewing Stand');for(let i=0;i<3;i++)addSlot(panel,36+i*36,45,{arr:guiData.slots,i,kind:'brew_bottle'});addSlot(panel,80,18,{arr:guiData.slots,i:3,kind:'brew_ingredient'});addSlot(panel,8,18,{arr:guiData.slots,i:4,kind:'brew_fuel'});const progress=label(panel,8,68,'Blaze fuel · 20 seconds per brew');progress.classList.add('brew-progress');progress.style.fontSize=g(9);addInvSlots(panel,8,84);
-  }else if(guiOpen==='trade'){panel=el('div','panel',{width:g(210),height:g(180)},wrap);buildTradeGui(panel,guiData);
+  }else if(guiOpen==='trade'){panel=el('div','panel',{width:g(210),height:g(202)},wrap);buildTradeGui(panel,guiData);
   }else if(guiOpen==='journal'){panel=el('div','panel',{width:g(290),height:g(208)},wrap);buildJournal(panel);
   }else if(guiOpen==='sign'){
     panel=el('div','panel',{width:g(176),height:g(90)},wrap);label(panel,12,10,'Edit Sign (16 characters)');
@@ -3982,7 +3984,7 @@ function beginGame(seed, meta, mode){
   player.mode = mode || 'survival';Object.assign(player,{air:300,exh:0,regenT:0,starveT:0,drownT:0,cactusT:0,eatT:0,chewT:0,fireT:0});
   inv.slots.fill(null); armorSlots.fill(null); inv.sel=0; craftGrid2.fill(null); craftGrid3.fill(null); cursor=null;
   if(meta){
-    world.name=meta.name||'World'; world.spawn=meta.spawn; dayTime=meta.time||0.3;
+    world.name=meta.name||'World'; world.spawn=meta.spawn; dayTime=meta.time||0.3; world.dayLock=!!meta.dayLock;
     Object.assign(player,{fire:meta.p.fire||0,health:meta.p.hp??20, food:meta.p.food??20, sat:meta.p.sat??5, xp:meta.p.xp||0, flying:!!meta.p.fly && mode==='creative'});
     (meta.inv||[]).slice(0,36).forEach((s,i)=>{ inv.slots[i]=unpackStack(s); });
     (meta.armor||[]).forEach((s,i)=>{if(i<4)armorSlots[i]=unpackStack(s);});
@@ -3992,7 +3994,7 @@ function beginGame(seed, meta, mode){
     for(const packed of meta.pendingItems||[]){const st=unpackStack(packed);if(st){const left=inv.add(st.id,st.count,st);if(left)spawnItem(st.id,left,player.pos.x,player.pos.y+1,player.pos.z,false,st);}}
     for(const [k,c] of (meta.containers||[])){ const [x,y,z]=k.split(',').map(Number); const o={type:c.t, slots:c.s.map(unpackStack), burn:c.b, burnMax:c.bm, cook:c.c,powered:!!c.p, x,y,z}; world.containers.set(k,o); }
   } else {
-    dayTime=0.27; Object.assign(player,{health:20,food:20,sat:5,xp:0,flying:false,air:300,fire:0});
+    dayTime=0.27; world.dayLock=false; Object.assign(player,{health:20,food:20,sat:5,xp:0,flying:false,air:300,fire:0});
     world.spawn=null;
   }
   for(const [key,text] of meta?.signs||[])signTexts.set(key,text);
@@ -4431,7 +4433,7 @@ function updateSky(dt, camPos){
     scene.background.setRGB(.17,.045,.025);U.uFogColor.value.copy(scene.background);U.uFog.value.set(12,CONFIG.renderDistance*16*.9);U.uSky.value=.35;U.uSkyTint.value.setRGB(1,.65,.45);sfx.rain(0);sfx.update(dt);return;
   }
 
-  dayTime = (dayTime + dt/DAY_LENGTH); if(dayTime>=1){ dayTime-=1; dayCount++; }
+  if(!world.dayLock){ dayTime = (dayTime + dt/DAY_LENGTH); if(dayTime>=1){ dayTime-=1; dayCount++; } }   // frozen from the pause menu or /time lock
   const a=dayTime*Math.PI*2, sunY=Math.sin(a);
   const sunDir=_sunDir.set(Math.cos(a), sunY, 0.18).normalize();
   const day = THREE.MathUtils.smoothstep(sunY,-0.18,0.22);          // 0 night .. 1 day
@@ -5029,6 +5031,7 @@ function migrateMeta(m){
   if(m.v<13){m.pendingItems=[];m.portalLinks=[];m.v=13;}
   if(m.v<14){m.endPortals=[];m.endBoss={defeated:false};m.v=14;}
   if(m.v<15){if(m.mp&&typeof m.mp==='object')m.mp.pvp=!!m.mp.pvp;m.v=15;}   // 16-bit block ids, generator 4, friendly fire
+  if(m.v<16){m.dayLock=false;m.v=16;}   // time of day can be frozen
   if(![1,2,3,4,5,6,7,8,9].includes(m.generator))m.generator=2;   // keep the generator a world was built with (4+ used to fall back to 2)
   return m;
 }
@@ -5953,7 +5956,7 @@ const advancements=new Set(),advanceQueue=[];let advanceTimer=0;
 const advanceToast=el('div','panel',{position:'fixed',right:g(5),top:g(5),padding:g(7),fontSize:g(10),display:'none',pointerEvents:'none',zIndex:20},document.body);
 function awardAdvancement(name,id=B.log){if(advancements.has(name)||!world.persist)return;advancements.add(name);advanceQueue.push([name,id]);showNextAdvancement();}
 function showNextAdvancement(){if(advanceTimer||!advanceQueue.length)return;const [name,id]=advanceQueue.shift();advanceToast.innerHTML='';const icon=el('img',null,{width:g(16),height:g(16),verticalAlign:'middle',marginRight:g(5)},advanceToast);icon.src=iconURL(id);const text=el('span',null,null,advanceToast);text.textContent='Advancement: '+name;advanceToast.style.display='block';advanceTimer=setTimeout(()=>{advanceTimer=0;advanceToast.style.display='none';showNextAdvancement();},3500);}
-function checkAdvancement(id){if([B.log,B.spruce_log,B.birch_log,B.cherry_log,B.jungle_log,B.acacia_log].includes(id))awardAdvancement('Getting Wood',id);if(id===B.cobblestone)awardAdvancement('Stone Age',id);if(id===B.iron_ingot)awardAdvancement('Acquire Hardware',id);if(id===B.diamond)awardAdvancement('Shining Discovery',id);if(id===B.bread)awardAdvancement('Fresh Bread',id);}
+function checkAdvancement(id){if([B.log,B.spruce_log,B.birch_log,B.cherry_log,B.jungle_log,B.acacia_log].includes(id))awardAdvancement('Getting Wood',id);if(id===B.cobblestone)awardAdvancement('Stone Age',id);if(id===B.iron_ingot)awardAdvancement('Acquire Hardware',id);if(id===B.diamond)awardAdvancement('Shining Discovery',id);if(id===B.bread)awardAdvancement('Fresh Bread',id);if(id===B.raw_uranium)awardAdvancement('Hot Rocks',id);if(id===B.enriched_uranium)awardAdvancement('Enriched',id);}
 let chatOpen=false;const chatLog=el('div','sh',{position:'fixed',left:g(4),bottom:g(62),maxWidth:'70vw',fontSize:g(10),pointerEvents:'none',zIndex:20},document.body);
 const chatInput=el('input','field',{position:'fixed',left:g(4),bottom:g(42),width:'calc(100% - var(--g)*8)',display:'none',zIndex:21},document.body);chatInput.maxLength=180;chatInput.setAttribute('aria-label','Chat or command');
 function chatLine(text){const d=el('div',null,{padding:g(2),background:'rgba(0,0,0,.55)',marginTop:g(1)},chatLog);d.textContent=text;while(chatLog.children.length>6)chatLog.firstChild.remove();setTimeout(()=>d.remove(),15000);}
@@ -5962,11 +5965,17 @@ function closeChat(){chatOpen=false;chatInput.style.display='none';chatInput.blu
 function command(line){
  const args=line.trim().split(/\s+/),cmd=args.shift().toLowerCase();if(!cmd.startsWith('/')){chatLine('You: '+line);return true;}
  let ok=true,message='';const coord=(s,base)=>s?.startsWith('~')?base+(Number(s.slice(1))||0):Number(s);
- if(cmd==='/help')message='/gamemode /time set /tp /give /weather /seed /kill /spawnpoint /difficulty /dimension /power /friendlyfire';
+ if(cmd==='/help')message='/gamemode /time set|add|lock|unlock|query /tp /give /weather /seed /kill /spawnpoint /difficulty /dimension /power /friendlyfire';
  else if(cmd==='/dimension'){ok=switchDimension(args[0],null,args[0]==='end'||world.dimension==='end'?'end':'portal');message='Travelling to '+args[0];}
  else if(cmd==='/power'){const p=target||{x:Math.floor(player.pos.x),y:Math.floor(player.pos.y),z:Math.floor(player.pos.z)};message='Redstone power: '+powerAt(p.x,p.y,p.z);}
  else if(cmd==='/gamemode'){const mode=({0:'survival',1:'creative'})[args[0]]||args[0];if(!['survival','creative'].includes(mode))ok=false;else{player.mode=mode;if(mode==='survival')player.flying=false;message='Game mode: '+mode;}}
- else if(cmd==='/time'&&args[0]==='set'){const names={day:.02,noon:.25,night:.55,midnight:.75},v=names[args[1]]??Number(args[1])/24000;if(!Number.isFinite(v))ok=false;else{dayTime=((v%1)+1)%1;message='Time updated';}}
+ else if(cmd==='/time'){   // /time set <sunrise|day|noon|sunset|night|midnight|hh:mm|ticks> · add <ticks|hh:mm> · lock · unlock · query
+  const parse=a=>{const named={sunrise:0,day:.02,noon:.25,sunset:.5,night:.55,midnight:.75}[a];if(named!==undefined)return named;const hm=/^(\d{1,2}):(\d{2})$/.exec(a||'');if(hm)return ((+hm[1]+ +hm[2]/60-6)/24+1)%1;const n=Number(a);return a&&Number.isFinite(n)?n/24000:NaN;};
+  if(args[0]==='set'||args[0]==='add'){const hm=/^(\d{1,3}):(\d{2})$/.exec(args[1]||''),v=args[0]==='add'?(hm?(+hm[1]+ +hm[2]/60)/24:Number(args[1])/24000):parse(args[1]);   // add takes ticks or a duration h:mm
+   if(!args[1]||!Number.isFinite(v))ok=false;else{setWorldTime(args[0]==='add'?dayTime+v:v);message='Time is now '+timeClock(dayTime);}}
+  else if(args[0]==='lock'||args[0]==='unlock'){setWorldTime(dayTime,args[0]==='lock');message=world.dayLock?'Time frozen at '+timeClock(dayTime):'Daylight cycle resumed';}
+  else if(args[0]==='query'||!args[0])message='It is '+timeClock(dayTime)+', day '+(dayCount+1)+(world.dayLock?' (time frozen)':'');
+  else ok=false;}
  else if(cmd==='/tp'){const p=player.pos,x=coord(args[0],p.x),y=coord(args[1],p.y),z=coord(args[2],p.z);if(![x,y,z].every(Number.isFinite)||Math.abs(x)>500000||Math.abs(z)>500000||y<1||y>CH-2)ok=false;else{p.set(x,y,z);player.vel.set(0,0,0);player.fallStart=null;message='Teleported';}}
  else if(cmd==='/give'){if(args[0]==='@s')args.shift();const name=args[0],id=B[name]??Number(name),count=Number(args[1]||1);if(!itemDef(id)||id===0||!Number.isInteger(count)||count<1||count>2304)ok=false;else{const left=inv.add(id,count);if(left)spawnItem(id,left,player.pos.x,player.pos.y+1,player.pos.z);message='Given '+count+' '+itemLabel(id);}}
  else if(cmd==='/weather'){ok=setWeather(args[0],Number(args[1])||300);message='Weather: '+args[0];}
@@ -6360,7 +6369,7 @@ function seedVillageMobs(c){
   if((c.cx+c.cz)%2===0){const o=outdoorSpot(c,i&15,(i>>4)&15);if(o)dormantMobs.push({kind:'guardian',x:c.cx*16+o[0]+.5,y:o[1],z:c.cz*16+o[2]+.5,hp:80,persistent:true});}break;
  }
 }
-const TRADE_OFFERS=[['wheat',20,'emerald',1],['coal',16,'emerald',1],['emerald',1,'bread',6],['emerald',3,'iron_pickaxe',1],['leather',8,'emerald',1],['emerald',5,'book',1]];
+const TRADE_OFFERS=[['wheat',20,'emerald',1],['coal',16,'emerald',1],['emerald',1,'bread',6],['emerald',3,'iron_pickaxe',1],['leather',8,'emerald',1],['emerald',5,'book',1],['emerald',4,'raw_uranium',3]];   // the last one lets older worlds (no uranium ore) reach the enrichment chain
 function inventoryCount(id){let count=0;for(const s of inv.slots)if(s?.id===id)count+=s.count;return count;}
 function consumeInventory(id,count){if(inventoryCount(id)<count)return false;for(let i=0;i<36&&count>0;i++){const s=inv.slots[i];if(s?.id!==id)continue;const n=Math.min(count,s.count);s.count-=n;count-=n;if(!s.count)inv.slots[i]=null;}return true;}
 function trade(e,index){const offer=TRADE_OFFERS[index];if(!e||e.dead||!offer)return false;if(!e.stock)e.stock=TRADE_OFFERS.map(()=>16);if(e.stock[index]<=0||inventoryCount(B[offer[0]])<offer[1]||!inventoryRoomFor(B[offer[2]]))return false;consumeInventory(B[offer[0]],offer[1]);const left=inv.add(B[offer[2]],offer[3]);if(left)spawnItem(B[offer[2]],left,player.pos.x,player.pos.y+1,player.pos.z);e.stock[index]--;worldStats.trades++;spawnXP(2,e.pos.x,e.pos.y+1,e.pos.z);onInventoryChange();return true;}
@@ -6399,7 +6408,7 @@ function livingInteract(){
 }
 function buildJournal(panel){
  label(panel,10,8,'Field Guide & Statistics');const text=el('div',null,{position:'absolute',left:g(10),top:g(25),width:g(267),height:g(170),overflowY:'auto',fontSize:g(10),lineHeight:'1.3',userSelect:'text'},panel);
- text.textContent='WASD move · Space jump · Shift sneak/dismount · E inventory · Q drop · F3 timings · V (or F5) camera · T chat (/help).\n\n'+Object.entries(worldStats).map(([k,v])=>k+': '+Math.floor(v)).join(' · ')+'\n\n'+[...advancements].join(' · ')+'\n\nFarm with hoes, plant seeds on hydrated soil. Breed cows/sheep with wheat, pigs with carrots, chickens with seeds. Shear sheep, milk cows, fish with a rod. Wolves like bones; cats like fish. Tame horses, then equip a saddle. Villagers trade for emeralds. Build a 4×5 obsidian frame (2×3 clear opening; corners optional), then light it. Stand inside for two seconds. Step out after arriving before travelling again. Brew wart into water bottles, then add ingredients. Enchant held equipment with lapis and XP. Hoppers pull from above and output downward; power pauses them. Furnace output is extracted below; fuel is loaded manually. Fit a chest with a dispenser mechanism and pulse it with redstone. F swaps your selected item with the visible offhand slot; hold right-click to block frontal attacks with a shield. Hold equipment before opening an enchanting table; shift-click bottles, ingredients and blaze fuel into a brewing stand. Export or back up worlds from Pause.\n\nTHE END: craft Eyes of Ender (blaze powder + nether quartz + emerald, makes 2), then End Portal Frames (eye on top, glass-obsidian-glass below). Place 12 frames in a flat 5×5 ring with the corners left out around a 3×3 hole; the portal opens when the ring is complete. Jump in. The Starwing heals from the glowing crystals on the obsidian pillars: break or shoot them first. Defeat it to open the way home.';
+ text.textContent='WASD move · Space jump · Shift sneak/dismount · E inventory · Q drop · F3 timings · V (or F5) camera · T chat (/help).\n\n'+Object.entries(worldStats).map(([k,v])=>k+': '+Math.floor(v)).join(' · ')+'\n\n'+[...advancements].join(' · ')+'\n\nFarm with hoes, plant seeds on hydrated soil. Breed cows/sheep with wheat, pigs with carrots, chickens with seeds. Shear sheep, milk cows, fish with a rod. Wolves like bones; cats like fish. Tame horses, then equip a saddle. Villagers trade for emeralds. Uranium ore (deep underground, iron pickaxe) smelts into yellowcake; an Enrichment Table powered by redstone splits 3 yellowcake into enriched and depleted uranium (villagers sell raw uranium too). Change the time of day from the pause menu or with /time. Build a 4×5 obsidian frame (2×3 clear opening; corners optional), then light it. Stand inside for two seconds. Step out after arriving before travelling again. Brew wart into water bottles, then add ingredients. Enchant held equipment with lapis and XP. Hoppers pull from above and output downward; power pauses them. Furnace output is extracted below; fuel is loaded manually. Fit a chest with a dispenser mechanism and pulse it with redstone. F swaps your selected item with the visible offhand slot; hold right-click to block frontal attacks with a shield. Hold equipment before opening an enchanting table; shift-click bottles, ingredients and blaze fuel into a brewing stand. Export or back up worlds from Pause.\n\nTHE END: craft Eyes of Ender (blaze powder + nether quartz + emerald, makes 2), then End Portal Frames (eye on top, glass-obsidian-glass below). Place 12 frames in a flat 5×5 ring with the corners left out around a 3×3 hole; the portal opens when the ring is complete. Jump in. The Starwing heals from the glowing crystals on the obsidian pillars: break or shoot them first. Defeat it to open the way home.';
  text.style.whiteSpace='pre-wrap';
 }
 function buildLivingTextures(){
@@ -6443,9 +6452,9 @@ function slotTransfer(source,target,sourceIndices=null,targetIndices=null,accept
 function tickAutomation(dt){
  automationT+=dt;if(automationT<.4)return;automationT=0;compassHud.style.display=inv.heldId()===B.compass&&gameState==='playing'?'block':'none';if(inv.heldId()===B.compass&&world.spawn){const dx=world.spawn[0]-player.pos.x,dz=world.spawn[2]-player.pos.z,index=(Math.round(Math.atan2(dx,-dz)/(Math.PI/4))+8)%8;compassHud.textContent='Spawn: '+['N','NE','E','SE','S','SW','W','NW'][index]+' · '+Math.round(Math.hypot(dx,dz))+' blocks';}let processed=0;
  const containers=[...world.containers.values()];for(let checked=0;checked<Math.min(256,containers.length)&&processed<24;checked++){const c=containers[automationCursor++%containers.length];if(c.type!=='hopper'||Math.abs(c.x-player.pos.x)>40||Math.abs(c.z-player.pos.z)>40)continue;processed++;if(adjacentPower(c.x,c.y,c.z)>0)continue;
-  const above=world.containers.get(posKey(c.x,c.y+1,c.z));if(above)slotTransfer(above.slots,c.slots,above.type==='furnace'?[2]:above.type==='brewing'?[0,1,2]:null);
+  const above=world.containers.get(posKey(c.x,c.y+1,c.z));if(above)slotTransfer(above.slots,c.slots,above.type==='furnace'?[2]:above.type==='brewing'?[0,1,2]:above.type==='enrichment'?[2,3]:null);
   for(let i=itemEntities.length-1;i>=0;i--){const e=itemEntities[i];if(Math.abs(e.pos.x-c.x-.5)<.65&&Math.abs(e.pos.z-c.z-.5)<.65&&e.pos.y>c.y+.5&&e.pos.y<c.y+1.8){const source=[makeStack(e.id,e.count,e)];if(slotTransfer(source,c.slots)){e.count--;if(e.count<=0)removeItem(e);}break;}}
-  const below=world.containers.get(posKey(c.x,c.y-1,c.z));if(below){if(below.type==='furnace')slotTransfer(c.slots,below.slots,null,[0],st=>SMELT[st.id]!==undefined);else if(below.type==='brewing')slotTransfer(c.slots,below.slots,null,[0,1,2,3,4],(st,j)=>canAccept({kind:j<3?'brew_bottle':j===3?'brew_ingredient':'brew_fuel'},st.id));else slotTransfer(c.slots,below.slots);}
+  const below=world.containers.get(posKey(c.x,c.y-1,c.z));if(below){if(below.type==='furnace')slotTransfer(c.slots,below.slots,null,[0],st=>SMELT[st.id]!==undefined);else if(below.type==='brewing')slotTransfer(c.slots,below.slots,null,[0,1,2,3,4],(st,j)=>canAccept({kind:j<3?'brew_bottle':j===3?'brew_ingredient':'brew_fuel'},st.id));else if(below.type==='enrichment')slotTransfer(c.slots,below.slots,null,[0,1],(st,j)=>canAccept({kind:j?'enrich_power':'enrich_feed'},st.id));else slotTransfer(c.slots,below.slots);}
  }
  if(guiOpen==='hopper')renderGui();
 }
@@ -7362,7 +7371,7 @@ window.__bc = { checkEndPortalAt, get endPortals(){return world.endPortals;}, ge
        list and the connection handshake (encrypted with ECDH + AES-GCM);
        no gameplay goes through them.
    ========================================================================= */
-const NET_V=3, NET_NS='minercraft-jupixels/v1', NET_MAX=8, NET_STALE=150000;
+const NET_V=4, NET_NS='minercraft-jupixels/v1', NET_MAX=8, NET_STALE=150000;
 const NET_QS=new URLSearchParams(location.search);
 const NET_BROKERS=(NET_QS.get('relay')||'wss://broker.emqx.io:8084/mqtt,wss://broker.hivemq.com:8884/mqtt,wss://test.mosquitto.org:8081/mqtt').split(',').map(s=>s.trim()).filter(Boolean);
 const NET_RTC={iceServers:[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']},{urls:'stun:stun.cloudflare.com:3478'}]};
@@ -7479,7 +7488,7 @@ function netSnapshot(at){
  if(world.persist){const prefix=chunkPrefix();for(const k of store.keys())if(k.startsWith(prefix)){const rest=k.slice(prefix.length);if(/^-?\d+,-?\d+$/.test(rest))edits[rest]=store.get(k)||'';}}
  for(const [k,m] of world.edits){const cx=Math.floor(k/65536)-32768,cz=(k%65536)-32768;edits[cx+','+cz]=netEncodeEdits(m);}
  const items=itemEntities.filter(e=>e.nid&&!e.fly).map(e=>[e.nid,e.id,e.count,e.d??null,e.en||null,r2(e.pos.x),r2(e.pos.y),r2(e.pos.z)]);
- return {name:world.name,seed:world.seed,gen:world.genVersion||2,dim:world.dimension||'overworld',mode:world.mp?.mode||player.mode,spawn:world.spawn,day:dayTime,days:dayCount,
+ return {name:world.name,seed:world.seed,lk:!!world.dayLock,gen:world.genVersion||2,dim:world.dimension||'overworld',mode:world.mp?.mode||player.mode,spawn:world.spawn,day:dayTime,days:dayCount,
   w:[weather.type,weather.remaining],diff:CONFIG.difficulty,pvp:!!world.mp?.pvp,signs:[...signTexts],pistons:[...pistonSticky],edits,items,host:net.me,at:at||[player.pos.x,player.pos.y,player.pos.z]};
 }
 
@@ -7797,7 +7806,7 @@ function netClientOnMsg(link,m,attempt){
   case 'it-':{const e=itemEntities.find(x=>x.nid===m.n);if(e){net.applying=true;try{removeItem(e);}finally{net.applying=false;}}break;}
   case 'itc':{const e=itemEntities.find(x=>x.nid===m.n);if(e&&m.c>0&&m.c<=64&&e.count!==m.c){e.count=m.c;itemGroup.remove(e.mesh);e.mesh.userData.mat.dispose();e.mesh=makeItemVisual(e.id,e.count);itemGroup.add(e.mesh);}break;}
   case 'give':{let st;try{st=unpackStack(m.st);}catch(e){}if(!st||!itemDef(st.id))break;const left=inv.add(st.id,st.count,st);sfx.pop?.();checkAdvancement?.(st.id);if(left>0)spawnItem(st.id,left,player.pos.x,player.pos.y+1,player.pos.z,false,st);onInventoryChange();break;}
-  case 'time':if(net.pvp!==!!m.pvp&&net.inWorld)toast('Friendly fire is '+(m.pvp?'on':'off'));net.pvp=!!m.pvp;if(Number.isFinite(m.d))dayTime=m.d;if(Number.isFinite(m.n))dayCount=m.n;if(Array.isArray(m.w)&&weather.type!==m.w[0])setWeather(m.w[0],1e9);weather.remaining=1e9;if(m.diff)CONFIG.difficulty=m.diff;break;
+  case 'time':if(typeof m.lk==='boolean')world.dayLock=m.lk;if(net.pvp!==!!m.pvp&&net.inWorld)toast('Friendly fire is '+(m.pvp?'on':'off'));net.pvp=!!m.pvp;if(Number.isFinite(m.d))dayTime=m.d;if(Number.isFinite(m.n))dayCount=m.n;if(Array.isArray(m.w)&&weather.type!==m.w[0])setWeather(m.w[0],1e9);weather.remaining=1e9;if(m.diff)CONFIG.difficulty=m.diff;break;
   case 'chat':netChat(m.s?String(m.m):`<${m.f}> ${netCleanText(m.m,180)}`,m.s?'#ffff55':null);break;
   case 'join':netChat(`${m.n} joined the world`,'#ffff55');break;
   case 'leave':netChat(`${m.n} left the world`,'#ffff55');netDropAvatar(m.n);break;
@@ -7821,7 +7830,7 @@ function netEnterWorld(w,dimChange){
  net.me=w.you||net.me;net.dim=w.dim;net.inWorld=true;netClearAvatars();
  const spawn=Array.isArray(w.spawn)&&w.spawn.every(Number.isFinite)?w.spawn:null,at=Array.isArray(w.at)&&w.at.every(Number.isFinite)?w.at:[.5,80,.5];
  const pos=dimChange?at:s?.p&&s.p.every(Number.isFinite)?s.p:spawn||at;
- const meta={v:15,name:String(w.name||'World').slice(0,32),seed:w.seed|0,mode:w.mode==='creative'?'creative':'survival',generator:[1,2,3,4,5,6,7,8,9].includes(w.gen)?w.gen:9,dimension:['overworld','nether','end'].includes(w.dim)?w.dim:'overworld',
+ const meta={v:16,dayLock:!!w.lk,name:String(w.name||'World').slice(0,32),seed:w.seed|0,mode:w.mode==='creative'?'creative':'survival',generator:[1,2,3,4,5,6,7,8,9].includes(w.gen)?w.gen:9,dimension:['overworld','nether','end'].includes(w.dim)?w.dim:'overworld',
   spawn:dimChange?at:spawn,time:+w.day||0,days:w.days|0,weather:{type:Array.isArray(w.w)?w.w[0]:'clear',remaining:1e9},
   p:{x:pos[0],y:pos[1],z:pos[2],yaw:pos[3]||0,pitch:pos[4]||0,fire:0,hp:s?.hp??20,food:s?.food??20,sat:s?.sat??5,xp:s?.xp??0,fly:false},
   inv:s?.inv||[],armor:s?.armor||[],offhand:s?.off||null,sel:s?.sel||0,effects:s?.fx||{},signs:Array.isArray(w.signs)?w.signs:[],pistons:Array.isArray(w.pistons)?w.pistons:[],
@@ -7852,7 +7861,7 @@ function netFrame(dt){
    for(const p of peers)if(p.v)rows.push([p.name,r2(p.v.x),r2(p.v.y),r2(p.v.z),r2(p.yaw||0),r2(p.pitch||0),p.held||0,p.flags||0]);
    for(const p of peers)linkSend(p,{t:'ps',l:rows.filter(r=>r[0]!==p.name)});}
   if(t.mobs>=.1){t.mobs=0;for(const p of peers){if(!p.v)continue;const l=[];for(const e of entities)if(e.pos.distanceToSquared(p.v)<80*80||MOB_DEFS[e.kind].boss)l.push(netMobRow(e));linkSend(p,{t:'mobs',l});}}
-  if(t.time>=2){t.time=0;netBroadcast({t:'time',d:dayTime,n:dayCount,w:[weather.type,weather.remaining],diff:CONFIG.difficulty,pvp:!!world.mp?.pvp});}
+  if(t.time>=2){t.time=0;netBroadcast({t:'time',d:dayTime,n:dayCount,w:[weather.type,weather.remaining],diff:CONFIG.difficulty,pvp:!!world.mp?.pvp,lk:!!world.dayLock});}
   if(t.cont>=.25){t.cont=0;for(const p of peers){if(!p.viewing)continue;const c=world.containers.get(p.viewing);if(!c)continue;const j=netContainerJSON(c);if(j!==p.viewJSON){p.viewJSON=j;const o=JSON.parse(j);linkSend(p,{t:'cdata',k:p.viewing,c:o});}}}
   if(t.ping>=3){t.ping=0;for(const p of peers)linkSend(p,{t:'pi',k:performance.now()});const l=[[net.me,0,1],...peers.map(p=>[p.name,p.ping||0,0])];net.roster=l;netBroadcast({t:'roster',l});}
   if(t.list>=25){t.list=0;netPublishListing();}
@@ -7980,7 +7989,7 @@ function netUpdatePause(){
 $('bMpOpen').onclick=()=>{clickSound();
  if(net.role==='host'){if(!stopArmed){stopArmed=true;netUpdatePause();return;}stopArmed=false;netStop('The host stopped hosting this world.');world.mp.on=false;saveWorld();netUpdatePause();toast('Your world is offline now');return;}
  hostVis=world.mp?.vis||'public';$('mphName').value=CONFIG.playerName||'';netUpdateHostScreen();showScreen('mphost');};
-function netSetPvp(on){if(!world.mp)return false;world.mp.pvp=!!on;saveWorld();if(net.role==='host'){netBroadcast({t:'time',d:dayTime,n:dayCount,w:[weather.type,weather.remaining],diff:CONFIG.difficulty,pvp:world.mp.pvp});netChat('Friendly fire is now '+(on?'on: players can hurt each other':'off'),'#ffff55');}return true;}
+function netSetPvp(on){if(!world.mp)return false;world.mp.pvp=!!on;saveWorld();if(net.role==='host'){netBroadcast({t:'time',d:dayTime,n:dayCount,w:[weather.type,weather.remaining],diff:CONFIG.difficulty,pvp:world.mp.pvp,lk:!!world.dayLock});netChat('Friendly fire is now '+(on?'on: players can hurt each other':'off'),'#ffff55');}return true;}
 $('bMpPvp').onclick=()=>{clickSound();if(net.role==='host'){netSetPvp(!world.mp.pvp);netUpdatePause();}};
 // Minimal full-screen toggle (bottom-right corner); hidden where the browser can't do it.
 {const fs=$('fsBtn'),root=document.documentElement;if(!(root.requestFullscreen||root.webkitRequestFullscreen))fs.style.display='none';
@@ -7998,7 +8007,19 @@ function setShaderMode(m){if((CONFIG.shaders||'off')===m)return;CONFIG.shaders=m
  b.onpointerdown=e=>{drag=true;b.setPointerCapture?.(e.pointerId);pick(e);e.stopPropagation();};b.onpointermove=e=>{if(drag)pick(e);};b.onpointerup=b.onpointercancel=()=>drag=false;
  b.onkeydown=e=>{const i=SHADER_ORDER.indexOf(CONFIG.shaders||'off'),d=e.key==='ArrowRight'||e.key==='ArrowUp'?1:e.key==='ArrowLeft'||e.key==='ArrowDown'?-1:0;if(d){setShaderMode(SHADER_ORDER[Math.max(0,Math.min(2,i+d))]);e.preventDefault();}};
  updateShaderButton();}
-{const _osc3=onStateChange;onStateChange=function(s){_osc3(s);if(s==='paused')updateShaderButton();};}
+{const _osc3=onStateChange;onStateChange=function(s){_osc3(s);if(s==='paused'){updateShaderButton();updateTimeControls();}};}
+// Time of day: the pause-menu slider sets the clock (dragging it moves the sun live) and
+// "Day Cycle" freezes or resumes it; /time does the same from chat. The host's choice
+// reaches guests in the regular 'time' broadcast; guests see the controls greyed out.
+function timeClock(d){const m=Math.round(((d*24+6)%24)*60)%1440;return String(m/60|0).padStart(2,'0')+':'+String(m%60).padStart(2,'0');}
+function setWorldTime(d,lock){if(net.role==='client')return false;dayTime=((d%1)+1)%1;if(lock!==undefined)world.dayLock=!!lock;
+ if(shaderPack.ultra)shaderPack.ultra.lutDirty=true;if(gameState!=='title')updateSky(0,camera.position);
+ if(net.role==='host')netBroadcast({t:'time',d:dayTime,n:dayCount,w:[weather.type,weather.remaining],diff:CONFIG.difficulty,pvp:!!world.mp?.pvp,lk:!!world.dayLock});return true;}
+function updateTimeControls(){const client=net.role==='client';
+ makeSlider('sTime',v=>'Time: '+timeClock(((v-6)/24+1)%1),0,23.75,.25,()=>Math.round(((dayTime*24+6)%24)*4)/4%24,v=>setWorldTime(((v-6)/24+1)%1));
+ const s=$('sTime');s.querySelector('input').disabled=client;s.style.filter=client?'brightness(.55)':'';
+ const b=$('bTimeLock');b.textContent=world.dayLock?'Resume Time':'Freeze Time';b.disabled=client;}
+$('bTimeLock').onclick=()=>{if(net.role==='client')return;clickSound();setWorldTime(dayTime,!world.dayLock);updateTimeControls();toast(world.dayLock?'Time frozen at '+timeClock(dayTime):'Daylight cycle resumed');};
 // Switch this world between Survival and Creative from the pause menu (saved with the world).
 function updateModeButton(){const b=$('bGameMode');b.textContent='Mode: '+(player.mode==='creative'?'Creative':'Survival');b.disabled=net.role==='client';}
 $('bGameMode').onclick=()=>{if(net.role==='client')return;clickSound();player.mode=player.mode==='creative'?'survival':'creative';if(player.mode==='survival'){player.flying=false;}else{player.health=20;player.food=20;}
