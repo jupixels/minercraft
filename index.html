@@ -48,6 +48,16 @@ img,canvas.px{image-rendering:pixelated;image-rendering:crisp-edges}
 #bShaders.off{filter:saturate(.45) brightness(.85);box-shadow:inset 0 var(--g) 0 rgba(255,255,255,.4),inset 0 calc(var(--g)*-2) 0 rgba(0,0,0,.3)}
 #bShaders.off:hover{filter:saturate(.8)}
 #bShaders.ultra{box-shadow:inset 0 var(--g) 0 rgba(255,255,255,.7),inset 0 calc(var(--g)*-2) 0 rgba(40,0,60,.35),0 0 calc(var(--g)*8) rgba(255,190,120,.85);animation:shaderPulse 1.8s ease-in-out infinite}
+/* pause-menu shader slider: three stops, a glass knob that slides to the chosen one */
+#bShaders{justify-content:space-around;padding:0 calc(var(--g)*2)}
+#bShaders span{position:relative;z-index:2;flex:1;text-align:center;opacity:.6;transition:opacity .15s;pointer-events:none}
+#bShaders span.on{opacity:1;color:#fff}
+#bShaders span+span{border-left:var(--g) solid rgba(255,255,255,.22)}
+#bShaders .sKnob{position:absolute;z-index:1;top:var(--g);bottom:var(--g);width:calc((100% - var(--g)*4)/3);left:calc(var(--g)*2);box-sizing:border-box;pointer-events:none;
+  border:var(--g) solid #fff;background:linear-gradient(180deg,rgba(255,255,255,.45),rgba(255,255,255,.12) 50%,rgba(0,0,0,.15));
+  box-shadow:0 0 calc(var(--g)*4) rgba(255,255,255,.7),inset 0 calc(var(--g)*-1) 0 rgba(0,0,0,.35);transition:left .22s cubic-bezier(.3,1.4,.5,1)}
+#bShaders:focus-visible{outline:var(--g) solid #ffffa0}
+#shaderLbl{color:#e0e0e0}
 @keyframes shaderShine{0%{left:-50%}55%,100%{left:130%}}
 @keyframes shaderPulse{50%{filter:brightness(1.12)}}
 .row{display:flex;gap:calc(var(--g)*4)}
@@ -196,7 +206,8 @@ img,canvas.px{image-rendering:pixelated;image-rendering:crisp-edges}
   <div id="pause" class="screen dim hidden">
     <div class="sh title-h">Game Menu</div>
     <button class="btn" id="bResume">Back to Game</button>
-    <button class="btn" id="bShaders" style="margin-top:calc(var(--g)*6)">Shaders: Off</button>
+    <div class="lbl sh" id="shaderLbl" style="margin-top:calc(var(--g)*5);margin-bottom:0;text-align:center">Shaders</div>
+    <div class="btn" id="bShaders" role="slider" tabindex="0" aria-label="Shaders" aria-valuemin="0" aria-valuemax="2"><div class="sKnob"></div><span data-m="off">Off</span><span data-m="fancy">Fancy</span><span data-m="ultra">Ultra</span></div>
     <div class="row"><button class="btn half" id="bOptP">Options...</button><button class="btn half" id="bSoundP"></button></div>
     <div class="row"><button class="btn half" id="bExport">Export World</button><button class="btn half" id="bImport">Import World</button></div>
     <div class="row"><button class="btn half" id="bBackup">Create Backup</button><button class="btn half" id="bRestore">Restore Backup</button></div>
@@ -887,6 +898,15 @@ function makeGen(seed, B, version=1,dimension='overworld'){
         if(up===0&&(top===B.grass||top===B.grass_taiga)&&R()<(b===9?.012:.0025))d[i+256]=b===9?B.melon:B.pumpkin;
       }
     }
+    if(version>=9){
+      // Uranium: short veins a little rarer than iron, y 4-52, in stone or deepslate. Its own
+      // random stream keeps every other feature identical to generator 8.
+      const U9=mulberry32((seed^Math.imul(cx,0x2c1b3c6d)^Math.imul(cz,0x297a2d39)^0x2350b)>>>0);
+      for(let n=0;n<19;n++){let x=(U9()*16)|0,y=4+((U9()*48)|0),z=(U9()*16)|0;const len=1+((U9()*6)|0);
+        for(let k=0;k<len;k++){
+          if(x>=0&&x<16&&z>=0&&z<16&&y>0&&y<CH){const i=I(x,y,z);if(d[i]===B.stone)d[i]=B.uranium_ore;else if(d[i]===B.deepslate)d[i]=B.deepslate_uranium_ore;}
+          const dir=(U9()*6)|0;if(dir===0)x++;else if(dir===1)x--;else if(dir===2)y++;else if(dir===3)y--;else if(dir===4)z++;else z--;}}
+    }
     if(version>=7)drawVillages(d,ox,oz,I);
     return d;
   }
@@ -1521,6 +1541,12 @@ for(const [mat,label,tile,full,o] of [['cobblestone','Cobblestone','cobblestone'
   xShapes(mat,label,typeof tile==='string'?{all:tile}:tile,full,XSTONE);
 for(const [mat,label,tile,full] of [['spruce','Spruce','spruce_planks',B.spruce_planks],['birch','Birch','birch_planks',B.birch_planks],['cherry','Cherry','cherry_planks',B.cherry_planks],['jungle','Jungle','jungle_planks',B.jungle_planks],['acacia','Acacia','acacia_planks',B.acacia_planks],['dark_oak','Dark Oak','dark_oak_planks',B.dark_oak_planks],['mangrove','Mangrove','mangrove_planks',B.mangrove_planks],['bamboo','Bamboo','bamboo_planks',B.bamboo_planks],['crimson','Crimson','crimson_planks',B.crimson_planks],['warped','Warped','warped_planks',B.warped_planks]])
   xShapes(mat,label,{all:tile},full,XWOOD);
+// Uranium (section 47): pitchblende ore with yellow-green autunite crusts, its deepslate
+// variant, a raw block and the enrichment table (a centrifuge cascade; container 'enrichment').
+xb('uranium_ore','Uranium Ore',{...XSTONE,hardness:3.5,minTier:3},['sore',[44,46,40],[214,222,64],[120,150,40],6]);
+xb('deepslate_uranium_ore','Deepslate Uranium Ore',{...XSTONE,hardness:5,minTier:3},['ore',[64,64,70],[44,46,40],[226,232,78],[130,160,44]]);
+xb('raw_uranium_block','Block of Raw Uranium',{...XSTONE,hardness:5,minTier:3},['raw',[92,98,64]]);
+xb('enrichment_table','Enrichment Table',{...XSTONE,hardness:3.5,minTier:1,container:'enrichment'},{top:'enrich_top',bottom:'enrich_bottom',side:'enrich_side'});
 if(extId>BLOCK_ID_LIMIT)throw Error('Block id space exhausted');
 const BLOCK_COUNT = BLOCKS.length;
 const LEAVES = new Set([8,30,39,41]);
@@ -1565,6 +1591,9 @@ DYES.forEach(([c],i)=>defItem(420+i,c+'_dye',{label:dyeLabel(c)+' Dye',icon:c+'_
 for(const [id,name,label,o] of [[436,'clay_ball','Clay Ball'],[437,'nether_brick','Nether Brick'],[438,'prismarine_shard','Prismarine Shard'],[439,'prismarine_crystals','Prismarine Crystals'],[440,'amethyst_shard','Amethyst Shard'],
   [441,'melon_slice','Melon Slice',{food:2}],[442,'pumpkin_pie','Pumpkin Pie',{food:8}],[443,'golden_carrot','Golden Carrot',{food:6}],[444,'cookie','Cookie',{food:2}],[445,'bowl','Bowl'],[446,'mushroom_stew','Mushroom Stew',{food:6,stack:1}],
   [447,'spyglass','Spyglass',{stack:1}],[448,'clock','Clock',{stack:1}],[449,'glow_berries','Glow Berries',{food:2,places:B.cave_vines}],[450,'raw_iron','Raw Iron'],[451,'raw_gold','Raw Gold']])defItem(id,name,Object.assign({label},o));
+// Uranium chain (section 47): raw ore -> yellowcake (furnace) -> enriched + depleted (enrichment table).
+for(const [id,name,label] of [[452,'raw_uranium','Raw Uranium'],[453,'yellowcake','Yellowcake'],[454,'enriched_uranium','Enriched Uranium'],[455,'depleted_uranium','Depleted Uranium']])defItem(id,name,{label});
+BLOCKS[B.uranium_ore].drop=BLOCKS[B.deepslate_uranium_ore].drop=B.raw_uranium;
 BLOCKS[B.clay].drop=B.clay_ball;BLOCKS[B.clay].dropCount=[4,4];BLOCKS[B.melon].dropCount=[3,7];BLOCKS[B.amethyst_cluster].dropCount=[2,4];BLOCKS[B.deepslate_iron_ore].drop=B.raw_iron;BLOCKS[B.deepslate_gold_ore].drop=B.raw_gold;BLOCKS[B.melon].drop=B.melon_slice;BLOCKS[B.amethyst_cluster].drop=B.amethyst_shard;BLOCKS[B.cave_vines].drop=B.glow_berries;
 const isBlockId = (id)=> id>0 && !!BLOCKS[id];
 const itemDef = (id)=> BLOCKS[id] || ITEMS[id];
@@ -2175,6 +2204,7 @@ const U = {   // shared uniforms
   // Ultra only: sky-view LUT, pre-exposure, linear sun radiance, ambient cube, scene copy for refraction
   uSkyLut:{value:null}, uExposure:{value:1}, uSunRad:{value:new THREE.Vector3()}, uTrueSun:{value:new THREE.Vector3(0,1,0)}, uAtmo:{value:0}, uHazeK:{value:.0016},
   uAmb:{value:[0,1,2,3,4,5].map(()=>new THREE.Vector3())}, uSceneCol:{value:null}, uSceneDep:{value:null}, uRefract:{value:0}, uScreen:{value:new THREE.Vector2(1,1)}, uNearFar:{value:new THREE.Vector2(.05,1200)},
+  uBoom:{value:new THREE.Vector4()},   // explosion light: xyz position, w intensity (shader modes)
 };
 // Ultra shared GLSL: linear <-> gamma-encoded HDR, the sky-view LUT lookup and aerial perspective.
 // Ultra writes pre-exposed linear HDR as pow(c,1/2.2) into a half-float target, so plain
@@ -2242,12 +2272,21 @@ float sunShadow(vec3 N){
   float nl=clamp(dot(N,uSunDir),0.0,1.0);
   vec4 sc=uShadowVP*vec4(vWorld+N*(0.035+0.07*(1.0-nl)),1.0); vec3 p=sc.xyz/sc.w*0.5+0.5;
   if(p.x<0.0||p.y<0.0||p.x>1.0||p.y>1.0||p.z>1.0) return 1.0;
+#ifdef LITE
+  // Fancy: same filter shape on a 1024² map with 6 of the 12 taps
+  float lit=0.0, t=1.3/1024.0, bias=0.0004+0.0009*(1.0-nl);
+  vec2 k[6]; k[0]=vec2(-0.326,-0.406); k[1]=vec2(-0.696,0.457); k[2]=vec2(0.962,-0.195); k[3]=vec2(0.519,0.767); k[4]=vec2(0.185,-0.893); k[5]=vec2(-0.792,-0.598);
+  for(int i=0;i<6;i++) lit+=step(p.z-bias,unpackRGBAToDepth(texture2D(uShadowMap,p.xy+k[i]*t)));
+  float edge=smoothstep(0.0,0.08,min(min(p.x,p.y),min(1.0-p.x,1.0-p.y)));
+  return mix(1.0,lit/6.0,uShadowAmt*edge);
+#else
   float lit=0.0, t=1.3/2048.0, bias=0.00025+0.0006*(1.0-nl);
   vec2 k[12]; k[0]=vec2(-0.326,-0.406); k[1]=vec2(-0.840,-0.074); k[2]=vec2(-0.696,0.457); k[3]=vec2(-0.203,0.621); k[4]=vec2(0.962,-0.195); k[5]=vec2(0.473,-0.480);
   k[6]=vec2(0.519,0.767); k[7]=vec2(0.185,-0.893); k[8]=vec2(0.507,0.064); k[9]=vec2(0.896,0.412); k[10]=vec2(-0.322,-0.933); k[11]=vec2(-0.792,-0.598);
   for(int i=0;i<12;i++) lit+=step(p.z-bias,unpackRGBAToDepth(texture2D(uShadowMap,p.xy+k[i]*t)));
   float edge=smoothstep(0.0,0.08,min(min(p.x,p.y),min(1.0-p.x,1.0-p.y)));
   return mix(1.0,lit/12.0,uShadowAmt*edge);
+#endif
 }
 #else
 float sunShadow(vec3 N){
@@ -2275,7 +2314,7 @@ vec3 shadeLight(bool plant){
   return max(c,vec3(max(uAmbient,mix(.03,.72,uNightVision))))*ao;
 }
 #ifdef ULTRA
-uniform vec3 uAmb[6];
+uniform vec3 uAmb[6]; uniform vec4 uBoom;
 vec3 ambCube(vec3 N){ vec3 n=N*N; return n.x*(N.x>0.0?uAmb[0]:uAmb[1])+n.y*(N.y>0.0?uAmb[2]:uAmb[3])+n.z*(N.z>0.0?uAmb[4]:uAmb[5]); }
 // Physically based shading in linear light: albedo x (sun radiance x N.L x shadow + sky
 // ambient cube x sky visibility x AO + blackbody torch light). Plants get wrap lighting and
@@ -2294,6 +2333,7 @@ vec3 shadeUltra(bool plant){
   if(plant) direct+=uSunRad*sunVis*pow(max(dot(-V,L),0.0),6.0)*1.6;
   vec3 amb=ambCube(plant?normalize(N+vec3(0.0,1.0,0.0)):N)*skyVis*ao;
   vec3 torch=vec3(1.0,0.5,0.18)*pow(b,2.6)*1.3/pow(uExposure,0.7)*ao;
+  if(uBoom.w>0.001){ vec3 bd=uBoom.xyz-vWorld; float bl=dot(bd,bd); torch+=vec3(1.0,0.6,0.28)*uBoom.w*(plant?0.7:max(dot(N,bd*inversesqrt(bl+1e-4)),0.0)*0.85+0.15)*30.0/pow(uExposure,0.6)/(1.0+bl*0.18); }
   vec3 floorL=vec3(max(uAmbient*0.25,mix(0.0012,0.35,uNightVision)))/uExposure;
   return max(direct+amb+torch,floorL*ao);
 }
@@ -2981,7 +3021,7 @@ const store = {
   del(k){ try{ localStorage.removeItem(k); }catch(e){} },
   keys(){ try{ return Object.keys(localStorage); }catch(e){ return []; } },
 };
-world.persist = false;world.genVersion=8; world.containers = new Map(); world.name='World';
+world.persist = false;world.genVersion=9; world.containers = new Map(); world.name='World';
 function loadChunkEdits(cx,cz){
   const k=ckey(cx,cz); if(world.edits.has(k)) return world.edits.get(k);
   if(!world.persist) return null;
@@ -3176,7 +3216,7 @@ function matchRecipe(grid, n){
 const posKey=(x,y,z)=>x+','+y+','+z;
 function getContainer(x,y,z, type){
   const k=posKey(x,y,z); let c=world.containers.get(k);
-  if(!c){ c = type==='hopper'?{type,slots:new Array(5).fill(null)}:type==='brewing'?{type,slots:new Array(5).fill(null),burn:0,burnMax:20,cook:0}:type==='furnace' ? {type, slots:[null,null,null], burn:0, burnMax:0, cook:0} : {type, slots:new Array(27).fill(null)}; world.containers.set(k,c);
+  if(!c){ c = type==='hopper'?{type,slots:new Array(5).fill(null)}:type==='brewing'?{type,slots:new Array(5).fill(null),burn:0,burnMax:20,cook:0}:type==='furnace' ? {type, slots:[null,null,null], burn:0, burnMax:0, cook:0} : type==='enrichment' ? {type, slots:[null,null,null,null], burn:0, burnMax:0, cook:0} : {type, slots:new Array(27).fill(null)}; world.containers.set(k,c);
     const ch=world.get(x>>4,z>>4),li=(x&15)+((z&15)<<4)+(y<<8);
     if(type==='chest'&&world.genVersion>=2&&ch?.data&&world.getBlock(x,y,z)>=B.chest&&world.getBlock(x,y,z)<B.chest+4&&!world.edits.get(ckey(x>>4,z>>4))?.has(li)){
       const R=mulberry32(world.seed^Math.imul(x,73856093)^Math.imul(z,19349663)^y),loot=[[B.bread,3],[B.iron_ingot,3],[B.coal,6],[B.torch,8],[B.seeds,5],[B.apple,2],[B.gold_ingot,2],[B.carrot,3],[B.potato,3]];
@@ -3209,6 +3249,7 @@ function updateFurnaces(dt){
     if(lit!==wasLit){ const id=world.getBlock(c.x,c.y,c.z); const b=BLOCKS[id]; if(b && b.container==='furnace') world.setBlock(c.x,c.y,c.z, (lit?B.furnace_lit:B.furnace)+b.facing); }
     if(guiOpen && guiData===c) renderGui();
   }
+  tickEnrichment(step);
 }
 
 /* =========================================================================
@@ -3468,7 +3509,7 @@ function updateHud(dt){
   // low health wobble
   if(surv && p.health<=4){ const H=$('hearts').children; for(let i=0;i<10;i++) H[i].style.transform=`translateY(${(Math.random()*2-1)|0}px)`; }
   setStyle($('hurtov'),'opacity',p.hurtTime>0 ? '1' : '0');
-  setStyle($('waterov'),'display',p.eyeInWater&&CONFIG.shaders!=='ultra'?'block':'none');
+  setStyle($('waterov'),'display',p.eyeInWater&&!shadersOn()?'block':'none');
   setStyle($('clickplay'),'display',(gameState==='playing' && !locked && !noLock)?'block':'none');
 }
 let debugOn=false, dbgT=0;
@@ -3595,6 +3636,7 @@ function buildGui(){
     const af=el('div','arrowFill',{position:'absolute',left:0,top:0,height:'100%',width:'0%',overflow:'hidden'},ar);
     el('img',null,{position:'absolute',left:0,top:0,width:g(24),height:g(16)},af).src=GUI.arrowFill;
     label(panel,8,72,'Inventory'); addInvSlots(panel,8,84);
+  }else if(guiOpen==='enrichment'){panel=el('div','panel',{width:g(176),height:g(166)},wrap);buildEnrichGui(panel);
   }else if(guiOpen==='hopper'){panel=el('div','panel',{width:g(176),height:g(133)},wrap);label(panel,8,8,'Hopper');for(let i=0;i<5;i++)addSlot(panel,44+i*18,25,{arr:guiData.slots,i,kind:'normal',group:'chest'});addInvSlots(panel,8,51);
   }else if(guiOpen==='repair'){panel=el('div','panel',{width:g(240),height:g(190)},wrap);buildRepairGui(panel);
   }else if(guiOpen==='map'){panel=el('div','panel',{width:g(190),height:g(206)},wrap);buildMapGui(panel);
@@ -3674,6 +3716,7 @@ function renderGui(){
     if(fl) fl.style.height = (guiData.burnMax? guiData.burn/guiData.burnMax*100 : 0)+'%';
     if(af) af.style.width = (guiData.cook/10*100)+'%';
   }
+  if(guiOpen==='enrichment'&&guiData)updateEnrichGui();
   if(guiOpen==='brewing'&&guiData){const e=$('gui').querySelector('.brew-progress');if(e)e.textContent='Fuel: '+(guiData.burn||0)+' batches · '+Math.floor(guiData.cook||0)+' / 20 seconds';}
   const ci=$('cursorItem');
   if(cursor){ ci.classList.remove('hidden'); ci.innerHTML=`<img class="icon" src="${iconURL(cursor.id)}"><span class="count">${cursor.count>1?cursor.count:''}</span>`; }
@@ -3684,6 +3727,8 @@ function canAccept(ref, id){
   if(ref.kind==='brew_bottle')return !!ITEMS[id]?.bottle;
   if(ref.kind==='brew_ingredient')return Object.values(BREW).some(r=>r.ingredient===id);
   if(ref.kind==='brew_fuel')return id===B.blaze_powder;
+  if(ref.kind==='enrich_feed')return id===B.yellowcake;
+  if(ref.kind==='enrich_power')return !!ENRICH_POWER[id];
   if(ref.kind==='armor')return ITEMS[id]?.armor===ref.i;
   if(ref.kind==='result' || ref.kind==='output' || ref.kind==='palette') return false;
   if(ref.kind==='fuel') return !!FUEL[id];
@@ -3707,6 +3752,7 @@ function quickMove(ref){
   if(g2==='hotbar' || g2==='main'){
     if(['chest','hopper','dispenser'].includes(guiOpen)) targets=guiData.slots.map((_,i)=>({arr:guiData.slots,i,kind:'normal'}));
     else if(guiOpen==='brewing'){const indices=ITEMS[st.id]?.bottle?[0,1,2]:st.id===B.blaze_powder?[4]:Object.values(BREW).some(r=>r.ingredient===st.id)?[3]:[];targets=indices.length?indices.map(i=>({arr:guiData.slots,i,kind:i<3?'brew_bottle':i===3?'brew_ingredient':'brew_fuel'})):null;}
+    else if(guiOpen==='enrichment'){ targets = st.id===B.yellowcake ? [{arr:guiData.slots,i:0,kind:'enrich_feed'}] : ENRICH_POWER[st.id] ? [{arr:guiData.slots,i:1,kind:'enrich_power'}] : null; }
     else if(guiOpen==='furnace'){ targets = SMELT[st.id]!==undefined ? [{arr:guiData.slots,i:0,kind:'normal'}] : (FUEL[st.id]?[{arr:guiData.slots,i:1,kind:'fuel'}]:null); }
     if(!targets) targets = g2==='hotbar' ? invRefs(9,36) : invRefs(0,9);
   } else targets = [...invRefs(0,9), ...invRefs(9,36)];
@@ -3729,7 +3775,7 @@ function takeResult(ref, shift){
   worldStats.crafted++;
   if(typeof sfx==='object') sfx.click();
 }
-function furnaceXP(){ const c=guiData; if(guiOpen!=='furnace'||!c||!(c.xp>=1)) return; const n=Math.floor(c.xp); c.xp-=n; spawnXP(n,player.pos.x,player.pos.y+1,player.pos.z); }
+function furnaceXP(){ const c=guiData; if((guiOpen!=='furnace'&&guiOpen!=='enrichment')||!c||!(c.xp>=1)) return; const n=Math.floor(c.xp); c.xp-=n; spawnXP(n,player.pos.x,player.pos.y+1,player.pos.z); }
 function clickSlot(ref, btn, shift){
   if(ref.kind==='palette'){
     if(cursor){ cursor=null; }
@@ -3907,7 +3953,7 @@ function setupTitleWorld(meta){
   const seed = meta ? meta.seed : 20261018;
   world.dimension=meta?.dimension||'overworld';world.dimensionStates=meta?.dimensions||{};
   world.dimension=meta?.dimension||'overworld';
-  world.genVersion=meta?.generator||8;
+  world.genVersion=meta?.generator||9;
   world.persist = !!meta;            // read saved edits so the panorama shows your builds
   if(world.seed!==seed || !workers.length||world.builtGenVersion!==world.genVersion||world.builtDimension!==(world.dimension||'overworld')){ world.edits.clear(); world.dirtyEdits.clear(); startWorld(seed, null, false); }
   if(meta){ titleCam.x=meta.p.x; titleCam.z=meta.p.z; titleCam.y=Math.max(meta.p.y+6, SEA+12); }
@@ -3928,7 +3974,7 @@ function beginGame(seed, meta, mode){
   respawnPending=false;resetMobs();clearSigns();resetRedstone();
   if(world.builtDimension!==world.dimension){world.edits.clear();world.dirtyEdits.clear();}
   if(world.loadedSlot!==worldSlot){world.edits.clear();world.dirtyEdits.clear();world.seed=NaN;world.loadedSlot=worldSlot;}
-  world.genVersion=meta?.generator||8;
+  world.genVersion=meta?.generator||9;
   world.mp=meta?.mp&&typeof meta.mp==='object'?meta.mp:null;
   world.persist = true;
   if(!meta){ world.edits.clear(); world.containers.clear(); }
@@ -4088,13 +4134,14 @@ const prof = { chunks:0, render:0, frame:0,lastFrame:0 };
        it is never bundled with the page)
    ========================================================================= */
 const sfx = (()=>{
-  let ctx=null, master=null, noiseBuf=null;
+  let ctx=null, master=null, noiseBuf=null, muffle=null;
   const pack = { raw:new Map(), decoded:new Map(), pending:new Map(), count:0 };
   let usePack = true;
   function ensure(){
     if(ctx) return ctx;
     try{ ctx = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ return null; }
-    master = ctx.createGain(); master.gain.value = CONFIG.volume; master.connect(ctx.destination);
+    master = ctx.createGain(); master.gain.value = CONFIG.volume;
+    muffle = ctx.createBiquadFilter(); muffle.type='lowpass'; muffle.frequency.value=22000; master.connect(muffle); muffle.connect(ctx.destination);   // ducked after a close blast
     noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
     const d=noiseBuf.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
     return ctx;
@@ -4203,7 +4250,24 @@ const sfx = (()=>{
     toolBreak(){if(!ok())return;if(!playPack('random/break',.6,1))material('wood','break',1.5);},
     xp(){if(!ok())return;if(!playPack('random/orb',.3,1))tone(ctx.currentTime,.12,'sine',700,1100,.15);},
     fuse(){if(!ok())return;if(!playPack('random/fuse',.7,1))noise(ctx.currentTime,1.5,'highpass',2000,1,.2,.03);},
-    explode(){if(!ok())return;if(!playPack('random/explode',.9,1)){noise(ctx.currentTime,.8,'lowpass',500,1,.8);tone(ctx.currentTime,.5,'sine',90,25,.4);}},
+    // Layered blast: sharp crack, mid body, sub-bass thump, falling rumble, rolling echo and
+    // debris clatter. Sound arrives after the flash (343 m/s) and loses its highs with distance.
+    explode(dist=0,power=4){if(!ok())return;const t=ctx.currentTime+Math.min(.7,dist/343),s=Math.sqrt(power/4),near=s/(1+dist*.045),cut=Math.max(380,18000/(1+dist*.13));
+      const bus=ctx.createBiquadFilter();bus.type='lowpass';bus.frequency.value=cut;const comp=ctx.createDynamicsCompressor();comp.threshold.value=-14;comp.ratio.value=5;bus.connect(comp);comp.connect(master);
+      const N=(dt,dur,type,f,q,vol,a=.002,rate=1,f1=0)=>{const src=ctx.createBufferSource();src.buffer=noiseBuf;src.playbackRate.value=rate;src.loop=true;const fl=ctx.createBiquadFilter();fl.type=type;fl.frequency.setValueAtTime(f,t+dt);if(f1)fl.frequency.exponentialRampToValueAtTime(f1,t+dt+dur);fl.Q.value=q;
+        const g=ctx.createGain();env(g,t+dt,a,dur,vol);src.connect(fl);fl.connect(g);g.connect(bus);src.start(t+dt,Math.random()*.5);src.stop(t+dt+a+dur+.05);};
+      const T=(dt,dur,type,f0,f1,vol,a=.003)=>{const o=ctx.createOscillator();o.type=type;o.frequency.setValueAtTime(f0,t+dt);o.frequency.exponentialRampToValueAtTime(f1,t+dt+dur);const g=ctx.createGain();env(g,t+dt,a,dur,vol);o.connect(g);g.connect(bus);o.start(t+dt);o.stop(t+dt+a+dur+.05);};
+      if(dist<60&&playPack('random/explode',.75*near,.92+Math.random()*.12)){T(0,1.5,'sine',62,22,.9*near);N(.05,2.4,'lowpass',260,.9,.5*near,.02,.5,70);return;}
+      N(0,.08,'highpass',2400,.7,.9*near*(dist<40?1:.3));                   // crack of the shock front
+      N(0,.42,'bandpass',1100,.55,.95*near,.002,1,180);                       // blast body
+      T(0,1.6,'sine',68,20,1.1*near);T(0,.3,'triangle',150,42,.45*near);     // chest thump
+      N(.03,2.8,'lowpass',520,.8,.8*near,.012,.6,80);                         // rumble, darkening
+      N(.3+dist*.004,2.2,'lowpass',240,1.1,.38*near*(dist>25?1.5:1),.35,.5);   // echo rolling off the land
+      if(dist<35)for(let k=0;k<16;k++)N(.4+Math.random()*1.6,.05+Math.random()*.05,'bandpass',900+Math.random()*3000,2.5,(.05+Math.random()*.07)*near,.002,.8+Math.random()*.6);   // falling debris
+    },
+    // close to a blast: muffled hearing that slowly comes back, with a faint ringing
+    deafen(k){if(!ok()||k<=0||!muffle)return;const t=ctx.currentTime;muffle.frequency.cancelScheduledValues(t);muffle.frequency.setValueAtTime(Math.max(260,1800*(1-k)),t+.02);muffle.frequency.exponentialRampToValueAtTime(22000,t+1.5+k*3.5);
+      const o=ctx.createOscillator();o.type='sine';o.frequency.value=3700+Math.random()*500;const g=ctx.createGain();env(g,t+.05,.15,2.5+k*3,.035*k*CONFIG.volume);o.connect(g);g.connect(ctx.destination);o.start(t);o.stop(t+3+k*3.5);},
     shoot(){if(!ok())return;if(!playPack('random/bow',.5,1))noise(ctx.currentTime,.12,'bandpass',1200,1,.3);},
     mob(kind, hurt=false){ if(!ok()) return; if(playPack('mob/'+kind+'/'+(hurt?'hurt':'say'),.4,1))return;
       const t=ctx.currentTime,f={pig:155,cow:95,sheep:210,chicken:530}[kind]||140;
@@ -4243,13 +4307,17 @@ const SKY_COL = {
 function buildSky(){
   // gradient dome
   sky.domeU = { uTop:{value:new THREE.Color()}, uHor:{value:new THREE.Color()}, uSun:{value:new THREE.Vector3(1,0,0)}, uGlow:{value:new THREE.Color()}, uGlowAmt:{value:0},
-    uSkyLut:U.uSkyLut, uExposure:U.uExposure, uSunRad:U.uSunRad, uTrueSun:U.uTrueSun, uAtmo:U.uAtmo, uHazeK:U.uHazeK, uTime:U.uTime, uUnderwater:U.uUnderwater, uFogColor:U.uFogColor };
+    uSkyLut:U.uSkyLut, uExposure:U.uExposure, uSunRad:U.uSunRad, uTrueSun:U.uTrueSun, uAtmo:U.uAtmo, uHazeK:U.uHazeK, uTime:U.uTime, uUnderwater:U.uUnderwater, uFogColor:U.uFogColor,
+    uCloudTex:{value:null}, uCloudOn:{value:0} };
   sky.dome = new THREE.Mesh(new THREE.SphereGeometry(600, 24, 16), new THREE.ShaderMaterial({ uniforms:sky.domeU, side:THREE.BackSide, depthWrite:false, depthTest:false, fog:false,
-    vertexShader:`varying vec3 vDir; void main(){ vDir=normalize(position); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
-    fragmentShader:`uniform vec3 uTop,uHor,uSun,uGlow; uniform float uGlowAmt; varying vec3 vDir;
+    vertexShader:`varying vec3 vDir; varying vec4 vClip; void main(){ vDir=normalize(position); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); vClip=gl_Position; }`,
+    fragmentShader:`uniform vec3 uTop,uHor,uSun,uGlow; uniform float uGlowAmt; varying vec3 vDir; varying vec4 vClip;
       #ifdef ULTRA
       ${ULTRA_GLSL}
       uniform float uTime,uUnderwater; uniform vec3 uFogColor;
+      #endif
+      #ifdef VCLOUDS
+      uniform sampler2D uCloudTex; uniform float uCloudOn;
       #endif
       void main(){ vec3 d=normalize(vDir);
       #ifdef ULTRA
@@ -4261,6 +4329,12 @@ function buildSky(){
         float hor=smoothstep(-0.004,0.006,d.y);
         c+=uSunRad*hor*(disk*limb*60.0+hgPhase(mu,0.993)*0.05+hgPhase(mu,0.9)*0.02);
         c+=(hash12(gl_FragCoord.xy+fract(uTime)*91.0)-0.5)/255.0/max(uExposure,1.0);
+      #ifdef VCLOUDS
+        // volumetric clouds (ray-marched at reduced resolution in spCloudPass): in-scattered light
+        // plus transmittance; alpha lets the stars and moon drawn underneath show through clear sky
+        if(uCloudOn>0.5){ vec4 cl=texture2D(uCloudTex,vClip.xy/vClip.w*0.5+0.5); vec3 e=min(cl.rgb,vec3(0.996)); float T=clamp(cl.a,0.0,1.0);
+          gl_FragColor=vec4(enc(c*T+e/(1.0-e),1.0).rgb,pow(T,1.0/2.2)); return; }
+      #endif
         gl_FragColor=enc(c,1.0); return; }
       #endif
         float h=max(d.y,0.0); vec3 c=mix(uHor,uTop,pow(h,0.55));
@@ -4955,7 +5029,7 @@ function migrateMeta(m){
   if(m.v<13){m.pendingItems=[];m.portalLinks=[];m.v=13;}
   if(m.v<14){m.endPortals=[];m.endBoss={defeated:false};m.v=14;}
   if(m.v<15){if(m.mp&&typeof m.mp==='object')m.mp.pvp=!!m.mp.pvp;m.v=15;}   // 16-bit block ids, generator 4, friendly fire
-  if(![1,2,3].includes(m.generator))m.generator=2;
+  if(![1,2,3,4,5,6,7,8,9].includes(m.generator))m.generator=2;   // keep the generator a world was built with (4+ used to fall back to 2)
   return m;
 }
 function mobRecord(e){return {kind:e.kind,x:e.pos.x,y:e.pos.y,z:e.pos.z,hp:e.hp,yaw:e.yaw,baby:e.baby,breedCD:e.breedCD,persistent:e.persistent,tamed:!!e.tamed,sitting:!!e.sitting,saddled:!!e.saddled,shorn:e.shorn||0,size:e.size||1,stock:e.stock||null,name:e.name||''};}
@@ -5163,19 +5237,161 @@ function tickProjectiles(dt){
    e.mesh.position.copy(e.pos);if(!e.stuck)e.mesh.lookAt(e.pos.x+e.vel.x,e.pos.y+e.vel.y,e.pos.z+e.vel.z);
  }
 }
+// Explosions: rays cast from the centre lose energy to each block's blast resistance, so
+// soft ground craters wider than stone and cover (or water) protects. Entities take damage
+// and knockback scaled by distance and by how much of them the blast can see. The look and
+// sound live in boomFx / sfx.explode: flash, fireball, smoke column, dust ring, sparks,
+// flung debris, a shockwave, terrain lit by the fireball, camera shake and delayed sound.
+const blastRes=b=>b.hardness<=0?0:b.hardness<1?b.hardness:b.hardness*1.6;
+function blastSees(x0,y0,z0,x1,y1,z1){const d=Math.hypot(x1-x0,y1-y0,z1-z0),n=Math.ceil(d/.35);
+ for(let i=1;i<n;i++){const t=i/n,id=world.getBlock(Math.floor(x0+(x1-x0)*t),Math.floor(y0+(y1-y0)*t),Math.floor(z0+(z1-z0)*t));if(id>0&&BLOCKS[id].solid&&BLOCKS[id].opaque)return false;}return true;}
 function explode(x,y,z,radius){
- sfx.explode();
- for(let dy=-radius;dy<=radius;dy++)for(let dz=-radius;dz<=radius;dz++)for(let dx=-radius;dx<=radius;dx++){
-   if(dx*dx+dy*dy+dz*dz>radius*radius)continue;
-   const bx=Math.floor(x)+dx,by=Math.floor(y)+dy,bz=Math.floor(z)+dz,id=world.getBlock(bx,by,bz),b=BLOCKS[id];
-   if(id<=0||b.hardness<0||b.liquid||id===B.obsidian)continue;
-   if(id===B.tnt){primeTNT(bx,by,bz,.5+Math.random());continue;}
-   if(b.container)dropContainer(bx,by,bz);world.setBlock(bx,by,bz,0);unlinkShape(bx,by,bz,id);breakPistonLink(bx,by,bz,id);if(b.drop&&Math.random()<.2)spawnItem(b.drop,1,bx+.5,by+.4,bz+.5);
+ const power=radius,cid=world.getBlock(Math.floor(x),Math.floor(y),Math.floor(z)),wet=cid>0&&!!BLOCKS[cid].liquid,hit=new Map();
+ if(!wet)for(let i=0;i<16;i++)for(let j=0;j<16;j++)for(let k=0;k<16;k++){if(i&&i<15&&j&&j<15&&k&&k<15)continue;
+  let dx=i/15*2-1,dy=j/15*2-1,dz=k/15*2-1;const l=Math.hypot(dx,dy,dz);dx/=l;dy/=l;dz/=l;
+  let f=power*(.7+Math.random()*.6),px=x,py=y,pz=z;
+  while(f>0){const bx=Math.floor(px),by=Math.floor(py),bz=Math.floor(pz),id=world.getBlock(bx,by,bz);if(id<0)break;
+   if(id>0){const b=BLOCKS[id],res=b.hardness<0||id===B.obsidian||id===B.crying_obsidian?1e9:b.liquid?100:blastRes(b);f-=(res+.3)*.3;if(f>0&&res<100)hit.set(posKey(bx,by,bz),[bx,by,bz,id]);}
+   px+=dx*.3;py+=dy*.3;pz+=dz*.3;f-=.225;}}
+ const chips=[];let n=0;
+ for(const [bx,by,bz,id] of hit.values()){const b=BLOCKS[id];
+  if(id===B.tnt){const e=primeTNT(bx,by,bz,.5+Math.random());if(e){const dx=e.pos.x-x,dz=e.pos.z-z,l=Math.hypot(dx,dz)||1;e.vel.set(dx/l*5,6+Math.random()*3,dz/l*5);}continue;}
+  if(b.container)dropContainer(bx,by,bz);world.setBlock(bx,by,bz,0);unlinkShape(bx,by,bz,id);breakPistonLink(bx,by,bz,id);
+  if(chips.length<40&&(n++)%2===0)chips.push([bx,by,bz,id]);
+  if(b.drop&&Math.random()<.3){const it=spawnItem(b.drop,1,bx+.5,by+.4,bz+.5);if(it){const dx=bx+.5-x,dy=by+.5-y,dz=bz+.5-z,l=Math.hypot(dx,dy,dz)||1,v=6+Math.random()*6;it.vel.set(dx/l*v,Math.abs(dy/l)*v*.6+4+Math.random()*3,dz/l*v);}}
  }
- for(const e of entities){const dist=Math.hypot(e.pos.x-x,e.pos.y-y,e.pos.z-z);if(dist<radius*2)hurtMob(e,Math.ceil((1-dist/(radius*2))*18));}
- const dist=Math.hypot(player.pos.x-x,player.pos.y-y,player.pos.z-z);if(dist<radius*2)mobDamage(Math.ceil((1-dist/(radius*2))*18),'explosion');
- for(let n=0;n<80;n++)emitParticle(x+(Math.random()-.5)*radius,y+Math.random()*radius,z+(Math.random()-.5)*radius,(Math.random()-.5)*7,Math.random()*7,(Math.random()-.5)*7,TEX.smoke);
+ const push=(px,py,pz,h)=>{const dist=Math.hypot(px-x,py+h*.5-y,pz-z);if(dist>=power*2)return null;
+  const see=[0,.5,1].filter(t=>blastSees(x,y,z,px,py+h*t+.05,pz)).length/3,impact=(1-dist/(power*2))*see,l=dist||1;
+  return {impact,dmg:Math.ceil((impact*impact+impact)/2*power*6),nx:(px-x)/l,ny:(py+h*.5-y)/l,nz:(pz-z)/l};};
+ for(const e of entities){if(e.dead)continue;const d=MOB_DEFS[e.kind],r=push(e.pos.x,e.pos.y,e.pos.z,d.h*mobScale(e));if(!r||r.impact<=0)continue;
+  hurtMob(e,r.dmg);e.knockX=r.nx*r.impact*16;e.knockZ=r.nz*r.impact*16;if(e.vel)e.vel.y=Math.max(e.vel.y,r.impact*9);}
+ for(const it of itemEntities){const r=push(it.pos.x,it.pos.y,it.pos.z,.25);if(r&&r.impact>0){it.vel.x+=r.nx*r.impact*14;it.vel.y+=Math.max(.3,r.ny+.5)*r.impact*10;it.vel.z+=r.nz*r.impact*14;}}
+ for(const t of primedTNT){const r=push(t.pos.x,t.pos.y,t.pos.z,.96);if(r&&r.impact>0){t.vel.x+=r.nx*r.impact*10;t.vel.y+=r.impact*8;t.vel.z+=r.nz*r.impact*10;}}
+ blastPlayer(x,y,z,power);
+ explosionEffects(x,y,z,power,{wet,chips});
 }
+function blastPlayer(x,y,z,power){
+ const h=1.8,p=player.pos,dist=Math.hypot(p.x-x,p.y+h*.5-y,p.z-z);if(dist>=power*2)return;
+ const see=[0,.5,1].filter(t=>blastSees(x,y,z,p.x,p.y+h*t+.05,p.z)).length/3,impact=(1-dist/(power*2))*see,l=dist||1;if(impact<=0)return;
+ const dmg=Math.ceil((impact*impact+impact)/2*power*6);if(dmg>0)mobDamage(dmg,'explosion');
+ if(!(player.mode==='creative'&&player.flying)){player.vel.x+=(p.x-x)/l*impact*18;player.vel.z+=(p.z-z)/l*impact*18;player.vel.y=Math.max(player.vel.y,(Math.max((p.y+h*.5-y)/l,0)+.4)*impact*11);}
+ if(dist<power*1.6&&typeof sfx==='object')sfx.deafen?.(1-dist/(power*1.6));
+}
+// ---- explosion look & feel (also used by multiplayer guests from the 'boom' message)
+const boomFx={P:[],max:900,mesh:null,trauma:0,t:0,flashes:[]};
+const BOOM_VERT=`attribute vec3 iPos; attribute vec4 iData; attribute vec4 iExtra; varying vec2 vUv; varying vec4 vD; varying vec4 vE; varying vec3 vW;
+ void main(){ vUv=position.xy*2.0; vD=iData; vE=iExtra;
+  vec3 R=vec3(viewMatrix[0][0],viewMatrix[1][0],viewMatrix[2][0]), Up=vec3(viewMatrix[0][1],viewMatrix[1][1],viewMatrix[2][1]);
+  float c=cos(iExtra.z), s=sin(iExtra.z); vec2 p=vec2(c*position.x-s*position.y,s*position.x+c*position.y);
+  vec3 w=iPos+(R*p.x+Up*p.y)*iData.x; vW=w; gl_Position=projectionMatrix*viewMatrix*vec4(w,1.0); }`;
+const BOOM_FRAG=`uniform float uHdr,uExposure,uSky,uSoft; uniform vec3 uSunRad,uSunDir,uFogColor; uniform vec3 uAmb[6]; uniform vec2 uFog,uScreen,uNearFar; uniform sampler2D uSceneDep;
+ varying vec2 vUv; varying vec4 vD; varying vec4 vE; varying vec3 vW;
+ float bh(vec2 p){ vec3 q=fract(vec3(p.xyx)*0.1031); q+=dot(q,q.yzx+33.33); return fract((q.x+q.y)*q.z); }
+ float bn(vec2 p){ vec2 i=floor(p),f=fract(p); f=f*f*(3.0-2.0*f); return mix(mix(bh(i),bh(i+vec2(1.0,0.0)),f.x),mix(bh(i+vec2(0.0,1.0)),bh(i+vec2(1.0,1.0)),f.x),f.y); }
+ float fbm(vec2 p){ return bn(p)*0.5+bn(p*2.1+3.7)*0.28+bn(p*4.3+9.1)*0.14+bn(p*8.7+1.3)*0.08; }
+ // incandescent colour of a cooling gas (approximate blackbody, 900 K .. 3000 K), linear
+ vec3 bb(float h){ h=clamp(h,0.0,1.0); return vec3(1.0,0.18+0.72*h*h,0.02+0.6*h*h*h)*(0.05+h*h*h*3.0); }
+ float linZ(float d){ float z=d*2.0-1.0; return 2.0*uNearFar.x*uNearFar.y/(uNearFar.y+uNearFar.x-z*(uNearFar.y-uNearFar.x)); }
+ void main(){
+  float r=length(vUv); if(r>1.0) discard;
+  float kind=vD.w, age=vD.y, seed=vD.z, heat=vE.x, op=vE.y; vec3 C=vec3(0.0), E=vec3(0.0); float a=0.0;
+  vec3 V=normalize(cameraPosition-vW);
+  if(kind<1.5){   // 0 fireball/smoke puff, 1 dust or spray
+   float n=fbm(vUv*1.6+seed*17.0+vec2(0.0,age*0.6)), edge=r+(n-0.5)*0.8; a=smoothstep(1.0,0.3,edge)*op;
+   vec3 Rw=vec3(viewMatrix[0][0],viewMatrix[1][0],viewMatrix[2][0]), Uw=vec3(viewMatrix[0][1],viewMatrix[1][1],viewMatrix[2][1]);
+   vec3 N=normalize(Rw*vUv.x+Uw*vUv.y+V*sqrt(max(0.0,1.0-r*r))*0.8);
+   float sunNL=0.35+0.65*max(dot(N,uSunDir),0.0), selfSh=mix(0.55,1.0,n);
+   vec3 alb=kind<0.5?mix(vec3(0.06,0.06,0.058),vec3(0.26,0.255,0.25),n*n):(vE.w>0.5?vec3(0.85,0.9,0.95):mix(vec3(0.3,0.25,0.2),vec3(0.5,0.44,0.37),n));
+   if(uHdr<0.5) alb*=1.5;
+   vec3 lit=uHdr>0.5?(uSunRad*sunNL*0.9+uAmb[2]*0.85+uAmb[3]*0.3)*selfSh:vec3(max(uSky,0.12))*(0.55+0.45*sunNL)*selfSh;
+   C=alb*lit;
+   float core=heat*smoothstep(0.95,0.05,edge+0.35*(1.0-n));          // glowing inner gas
+   E=bb(heat*(0.55+0.6*n))*core*(uHdr>0.5?14.0:1.6)*a;
+  } else if(kind<2.5){   // 2 spark / ember
+   E=bb(heat)*(uHdr>0.5?40.0:2.5)*max(exp(-r*r*5.0)-0.0067,0.0)*op;
+  } else if(kind<3.5){   // 3 flash (falls to zero at the sprite edge)
+   E=vec3(1.0,0.82,0.55)*max(exp(-r*r*6.0)-0.0025,0.0)*op*(uHdr>0.5?45.0:2.2);
+  } else {               // 4 shockwave: thin condensation ring
+   a=smoothstep(0.78,0.94,r)*smoothstep(1.0,0.95,r)*op*0.35; C=uHdr>0.5?(uAmb[2]*1.6+uSunRad*0.4):vec3(max(uSky,0.2));
+  }
+  if(uSoft>0.5){ float zs=linZ(texture2D(uSceneDep,gl_FragCoord.xy/uScreen).r), zp=linZ(gl_FragCoord.z); float sf=clamp((zs-zp)/max(vD.x*0.35,0.2),0.0,1.0); a*=sf; E*=sf; }
+  float f=smoothstep(uFog.x,uFog.y,length(vW-cameraPosition));
+  // premultiplied alpha: lit smoke blends over the scene by its alpha, glowing gas adds on top
+  // glow is adapted like torchlight (exposure^0.4) so a night blast does not white out the screen
+  vec3 cs=uHdr>0.5?pow(max(C*uExposure,0.0),vec3(1.0/2.2)):C, ce=uHdr>0.5?pow(max(E*pow(uExposure,0.4),0.0),vec3(1.0/2.2)):E;
+  gl_FragColor=vec4(mix(cs,uFogColor,f)*a+ce*(1.0-f),a);
+ }`;
+function boomInit(){
+ if(boomFx.mesh)return;const base=new THREE.PlaneGeometry(1,1),g=new THREE.InstancedBufferGeometry();
+ g.index=base.index;g.setAttribute('position',base.attributes.position);g.instanceCount=0;
+ const M=boomFx.max;boomFx.aPos=new THREE.InstancedBufferAttribute(new Float32Array(M*3),3);boomFx.aData=new THREE.InstancedBufferAttribute(new Float32Array(M*4),4);boomFx.aExtra=new THREE.InstancedBufferAttribute(new Float32Array(M*4),4);
+ for(const a of [boomFx.aPos,boomFx.aData,boomFx.aExtra])a.setUsage(THREE.DynamicDrawUsage);
+ g.setAttribute('iPos',boomFx.aPos);g.setAttribute('iData',boomFx.aData);g.setAttribute('iExtra',boomFx.aExtra);
+ boomFx.U={uHdr:{value:0},uSoft:{value:0},uExposure:U.uExposure,uSky:U.uSky,uSunRad:U.uSunRad,uSunDir:U.uSunDir,uFogColor:U.uFogColor,uAmb:U.uAmb,uFog:U.uFog,uScreen:U.uScreen,uNearFar:U.uNearFar,uSceneDep:U.uSceneDep};
+ const mat=new THREE.ShaderMaterial({uniforms:boomFx.U,vertexShader:BOOM_VERT,fragmentShader:BOOM_FRAG,transparent:true,depthWrite:false,
+  blending:THREE.CustomBlending,blendSrc:THREE.OneFactor,blendDst:THREE.OneMinusSrcAlphaFactor,blendEquation:THREE.AddEquation});
+ boomFx.mesh=new THREE.Mesh(g,mat);boomFx.mesh.frustumCulled=false;boomFx.mesh.renderOrder=4;scene.add(boomFx.mesh);
+}
+// kind: 0 puff (heat>0 = fireball), 1 dust/spray, 2 spark, 3 flash, 4 shockwave
+function boomPart(o){if(boomFx.P.length>=boomFx.max)boomFx.P.shift();boomFx.P.push(Object.assign({vx:0,vy:0,vz:0,size:1,grow:0,growK:2,life:1,age:0,kind:0,heat:0,cool:2,drag:1,rise:0,grav:0,rot:Math.random()*6.28,spin:(Math.random()-.5)*.6,op:1,tint:0,seed:Math.random()*50},o));}
+const _bxDir=(up=0)=>{let x,y,z,l;do{x=Math.random()*2-1;y=Math.random()*2-1;z=Math.random()*2-1;l=x*x+y*y+z*z;}while(l>1||l<.05);l=Math.sqrt(l);y=y/l*(1-up)+up;return [x/l,y,z/l];};
+function explosionEffects(x,y,z,power,o={}){
+ boomInit();const s=power/4,wet=!!o.wet,P=boomPart;
+ const dist=camera.position.distanceTo(_boomV.set(x,y,z));
+ sfx.explode(dist,power);boomFx.trauma=Math.min(1.2,boomFx.trauma+Math.max(0,1-dist/(28*s+10))*1.1*Math.sqrt(s));
+ boomFx.flashes.push({x,y,z,age:0,s});
+ P({x,y,z,kind:3,size:16*s,life:.16,op:1});
+ P({x,y,z,kind:4,size:1,grow:30*s,growK:9,life:.42,drag:0});
+ // ground under the blast, for the dust ring
+ let gy=Math.floor(y);for(let k=0;k<6;k++){const id=world.getBlock(Math.floor(x),gy-1,Math.floor(z));if(id>0&&BLOCKS[id].solid)break;gy--;}
+ if(wet){ // underwater: a dome of white spray and a churning column instead of fire
+  for(let i=0;i<40*s;i++){const [dx,dy,dz]=_bxDir(.55),v=(5+Math.random()*12)*s;P({x,y,z,vx:dx*v,vy:dy*v*1.4,vz:dz*v,kind:1,tint:1,size:.8,grow:3*s,growK:2.5,life:1.4+Math.random()*1.8,drag:1.6,grav:9});}
+ }else{
+  for(let i=0;i<26*s;i++){const [dx,dy,dz]=_bxDir(.25),v=(5+Math.random()*10)*s;     // fireball
+   P({x:x+dx*.4,y:y+dy*.4,z:z+dz*.4,vx:dx*v,vy:dy*v,vz:dz*v,kind:0,heat:1,cool:1.2+Math.random()*1.3,size:(1+Math.random())*s,grow:(2.6+Math.random()*2)*s,growK:3,life:1.6+Math.random()*1.6,drag:4.5,rise:2.2});}
+ }
+ for(let i=0;i<30*s;i++){const [dx,dy,dz]=_bxDir(.6),v=(1.5+Math.random()*4)*s;            // rising smoke column, starting a moment later
+  P({x:x+dx*1.2*s,y:y+Math.random()*1.5,z:z+dz*1.2*s,vx:dx*v*.6,vy:v,vz:dz*v*.6,kind:wet?1:0,tint:wet?1:0,heat:wet?0:.12,cool:3,size:1.4*s,grow:(4.5+Math.random()*3)*s,growK:.55,life:6+Math.random()*5,age:-.1-Math.random()*.6,drag:.7,rise:wet?.3:1.2,op:.85});}
+ for(let i=0;i<22*s;i++){const a=Math.random()*6.283,v=(9+Math.random()*9)*s;              // dust ring hugging the ground
+  P({x:x+Math.cos(a)*.8,y:gy+.4+Math.random()*.4,z:z+Math.sin(a)*.8,vx:Math.cos(a)*v,vy:.6+Math.random(),vz:Math.sin(a)*v,kind:1,tint:wet?1:0,size:.9*s,grow:(3+Math.random()*2)*s,growK:1.4,life:2.5+Math.random()*2.5,drag:2.6,op:.5});}
+ if(!wet)for(let i=0;i<70*s;i++){const [dx,dy,dz]=_bxDir(.2),v=(10+Math.random()*22)*s;       // sparks and burning embers
+  P({x,y,z,vx:dx*v,vy:dy*v+3,vz:dz*v,kind:2,heat:1,cool:.7+Math.random()*1.2,size:.08+Math.random()*.1,life:.5+Math.random()*1.4,drag:.9,grav:14});}
+ // debris: chips of the destroyed blocks, flung out with the blast
+ for(const [bx,by,bz,id] of o.chips||[]){const tile=particleTile(id);for(let k=0;k<5;k++){const dx=bx+.5-x,dy=by+.5-y,dz=bz+.5-z,l=Math.hypot(dx,dy,dz)||1,v=8+Math.random()*12;
+  emitParticle(bx+Math.random(),by+Math.random(),bz+Math.random(),dx/l*v+(Math.random()-.5)*4,Math.abs(dy/l)*v*.5+5+Math.random()*7,dz/l*v+(Math.random()-.5)*4,tile);}}
+}
+const _boomV=new THREE.Vector3(),_boomR=new THREE.Vector3(),_boomUp=new THREE.Vector3();
+function updateBoomFx(dt){
+ boomFx.t+=dt;
+ // primed TNT: fuse sparks and a smoke wisp from the top, a white pulse that quickens, a swell before it blows
+ if(primedTNT.length)for(const e of primedTNT){if(Math.random()<dt*28){boomInit();boomPart({x:e.pos.x+(Math.random()-.5)*.2,y:e.pos.y+1.02,z:e.pos.z+(Math.random()-.5)*.2,vx:(Math.random()-.5)*2.5,vy:1.5+Math.random()*2.5,vz:(Math.random()-.5)*2.5,kind:2,heat:.9,cool:2.5,size:.05+Math.random()*.05,life:.35+Math.random()*.3,grav:9});}
+  if(Math.random()<dt*7){boomInit();boomPart({x:e.pos.x,y:e.pos.y+1.1,z:e.pos.z,vy:.8,vx:(Math.random()-.5)*.3,vz:(Math.random()-.5)*.3,kind:0,heat:.05,cool:4,size:.18,grow:.7,growK:1,life:1.4,drag:.6,rise:.6,op:.45});}
+  const sw=e.fuse<.35?1+(.35-e.fuse)*.25:1;e.mesh.scale.setScalar(.96*sw);}
+ if(boomFx.flashes.length){let best=null,bi=0;for(const f of boomFx.flashes){f.age+=dt;const k=Math.exp(-f.age*9)*1.2+Math.max(0,1-f.age/1.4)*.08;if(k>bi){bi=k;best=f;}}
+  boomFx.flashes=boomFx.flashes.filter(f=>f.age<1.6);U.uBoom.value.set(best?best.x:0,best?best.y:0,best?best.z:0,best?bi*best.s:0);}
+ else U.uBoom.value.w=0;
+ // camera shake (trauma model: offset ~ trauma^2, smooth noise, decays)
+ if(boomFx.trauma>0){boomFx.trauma=Math.max(0,boomFx.trauma-dt*1.3);if(gameState!=='title'){const k=boomFx.trauma*boomFx.trauma,t=boomFx.t*30;
+  const nx=Math.sin(t*1.13)+Math.sin(t*2.71+1.3)*.5,ny=Math.sin(t*1.37+2.1)+Math.sin(t*3.07)*.5,nr=Math.sin(t*.91+4.2);
+  _boomR.setFromMatrixColumn(camera.matrixWorld,0);_boomUp.setFromMatrixColumn(camera.matrixWorld,1);
+  camera.position.addScaledVector(_boomR,nx*k*.12).addScaledVector(_boomUp,ny*k*.12);camera.rotation.z+=nr*k*.035;camera.rotation.x+=ny*k*.012;}}
+ const P=boomFx.P;if(!P.length&&!boomFx.mesh)return;
+ let w=0;const ap=boomFx.aPos.array,ad=boomFx.aData.array,ae=boomFx.aExtra.array;
+ for(let i=0;i<P.length;i++){const p=P[i];p.age+=dt;if(p.age>=p.life)continue;
+  if(p.age>=0){const dr=Math.exp(-p.drag*dt);p.vx*=dr;p.vz*=dr;p.vy=p.vy*dr+(p.rise*(p.kind===0?Math.max(.25,p.heat):1)-p.grav)*dt;
+   const nx=p.x+p.vx*dt,ny=p.y+p.vy*dt,nz=p.z+p.vz*dt;
+   if(p.kind===2||p.kind===1){const id=world.getBlock(Math.floor(nx),Math.floor(ny),Math.floor(nz));if(id>0&&BLOCKS[id].solid){p.vy=p.kind===2?-p.vy*.35:0;p.vx*=.5;p.vz*=.5;}else{p.x=nx;p.y=ny;p.z=nz;}}
+   else{p.x=nx;p.y=ny;p.z=nz;}
+   p.heat*=Math.exp(-p.cool*dt);p.rot+=p.spin*dt;}
+  P[w++]=p;}
+ P.length=w;
+ boomFx.U.uHdr.value=shadersOn()?1:0;boomFx.U.uSoft.value=shadersOn()&&U.uRefract.value>.5?1:0;
+ let n=0;for(let i=P.length-1;i>=0&&n<boomFx.max;i--){const p=P[i];if(p.age<0)continue;const t=p.age/p.life;
+  const size=p.size+p.grow*(1-Math.exp(-p.age*p.growK)),fade=Math.min(1,p.age/.06+(p.kind>=2?1:0))*(p.kind===3?1-t:p.kind===4?1-t:1-Math.max(0,(t-.45)/.55)**1.5);
+  ap[n*3]=p.x;ap[n*3+1]=p.y;ap[n*3+2]=p.z;ad[n*4]=size;ad[n*4+1]=p.age;ad[n*4+2]=p.seed;ad[n*4+3]=p.kind;ae[n*4]=p.heat;ae[n*4+1]=p.op*fade;ae[n*4+2]=p.rot;ae[n*4+3]=p.tint;n++;}
+ if(boomFx.mesh){boomFx.mesh.geometry.instanceCount=n;boomFx.mesh.visible=n>0;for(const a of [boomFx.aPos,boomFx.aData,boomFx.aExtra])a.needsUpdate=true;}
+}
+{const _uc=updateCamera;updateCamera=function(dt){_uc(dt);updateBoomFx(dt);};}
 /* =========================================================================
    28. EQUIPMENT & EXPERIENCE — per-stack durability survives every storage
        path; armor is equipped by slot, drawn over the original preview doll.
@@ -6409,6 +6625,7 @@ function buildEndItems(){
 function xTile(rec){
  const [k,a,b,c,d,e]=rec,C=(col,v)=>[col[0]+v,col[1]+v,col[2]+v],clear=P=>{for(let i=0;i<256;i++)P(i&15,i>>4,[0,0,0],0);};
  switch(k){
+  case 'sore':return oreFill(a,b,c,d);   // ore on plain stone: [cluster, highlight, shadow, clusters]
   case 'speck':return (P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++)P(x,y,vary(a,R,b||16));if(c)for(let n=0;n<22;n++)P((R()*16)|0,(R()*16)|0,vary(pick(R,c),R,10));};
   case 'stone':return (P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++)P(x,y,vary(a,R,18));
    for(let n=0;n<16;n++){let x=(R()*16)|0,y=(R()*16)|0;const dark=R()<.55,len=2+((R()*3)|0);for(let j=0;j<len;j++){P((x+j)&15,y,vary(C(a,dark?-20:18),R,6));if(R()<.3)y=(y+1)&15;}}};
@@ -6571,18 +6788,26 @@ function caveItemInteract(){
  return false;
 }
 /* =========================================================================
-   45. SHADER PACK — optional (Options → Shaders). Fancy: directional sun and
-       moon light, swaying plants and leaves, moving fresnel water with sky
-       reflections and sun glints, god rays and a filmic colour grade.
-       Ultra is a physically based pipeline: linear HDR lighting, a Rayleigh +
+   45. SHADER PACK — optional (pause-menu slider or Options → Shaders).
+       Fancy and Ultra are one pipeline; Fancy is the performant tier (see
+       SP_TIER: smaller shadow map, sky-only water reflections, no refraction
+       pass, SSAO or volumetric light, block clouds, slower sky refresh).
+       Ultra adds ray-marched volumetric clouds (CLOUD_GLSL, spCloudPass).
+       The pipeline is physically based: linear HDR lighting, a Rayleigh +
        Mie + ozone scattering sky (sky-view LUT) that also drives sun colour,
        ambient light and aerial perspective; soft PCF sun shadows; refractive
        water with depth absorption, shore foam, world reflections and glints;
        then SSAO, shadow-mapped volumetric light, bloom, auto exposure and ACES.
        Off keeps the original renderer untouched.
    ========================================================================= */
-const shaderPack={rt:null,post:null,postCam:null,shadowRT:null,shadowCam:null,depthMat:null,reflRT:null,reflCam:null,mode:null,ultra:null};
+const shaderPack={shadowRT:null,shadowCam:null,depthMat:null,reflRT:null,reflCam:null,mode:null,ultra:null};
 const shadersOn=()=>CONFIG.shaders==='fancy'||CONFIG.shaders==='ultra';
+// Fancy and Ultra share one pipeline (same sky, light, water and grade); Fancy is the
+// cheaper tier: 1024² shadows with fewer taps, sky-only water reflections, no refraction
+// pass, SSAO or volumetric light, slower sky/ambient refresh and the block clouds.
+const SP_TIER={fancy:{shadow:1024,refl:false,split:false,ssao:0,vol:0,lutEvery:6,ambEvery:12,clouds:false},
+ ultra:{shadow:2048,refl:true,split:true,ssao:.85,vol:1,lutEvery:3,ambEvery:6,clouds:true}};
+const spTier=()=>SP_TIER[CONFIG.shaders]||SP_TIER.ultra;
 function buildWaveMap(){
  const d=new Uint8Array(16*64*4),flag=(name,ch)=>{const t=TEX[name];if(t!==undefined)d[t*4+ch]=255;};
  for(const b of BLOCKS){if(!b||!b.tex)continue;const name=b.tex.all||b.tex.side;
@@ -6594,55 +6819,20 @@ function buildWaveMap(){
 function applyShaderMode(){
  const mode=shadersOn()?CONFIG.shaders:'off';if(mode===shaderPack.mode)return;shaderPack.mode=mode;
  for(const [m,extra] of [[MAT_SOLID,{}],[MAT_CUT,{WAVE:''}],[MAT_WATER,{}]]){const d={};
-  if(mode!=='off'){d.SHADERS='';Object.assign(d,extra);if(mode==='ultra'){d.SHADOWS='';d.REFLECT='';d.ULTRA='';}}m.defines=d;m.needsUpdate=true;}
- for(const m of [sky.dome.material,sky.clouds[0].material]){m.defines=mode==='ultra'?{ULTRA:''}:{};m.needsUpdate=true;}
+  if(mode!=='off'){d.SHADERS='';Object.assign(d,extra);d.SHADOWS='';d.ULTRA='';if(mode==='ultra')d.REFLECT='';else d.LITE='';}m.defines=d;m.needsUpdate=true;}
+ const vc=mode==='ultra',dm=sky.dome.material;dm.defines=mode==='off'?{}:vc?{ULTRA:'',VCLOUDS:''}:{ULTRA:''};dm.needsUpdate=true;
+ // with volumetric clouds the dome is drawn after the stars and moon and lets them through by
+ // its alpha (dst*T), so clouds hide stars; it then needs the depth test to stay behind terrain
+ dm.transparent=vc;dm.depthTest=vc;dm.blending=vc?THREE.CustomBlending:THREE.NormalBlending;dm.blendSrc=THREE.OneFactor;dm.blendDst=THREE.SrcAlphaFactor;dm.blendEquation=THREE.AddEquation;
+ sky.dome.renderOrder=vc?-9:-10;sky.moon.renderOrder=vc?-9.8:-9;sky.stars.renderOrder=-9.5;
+ sky.clouds[0].material.defines=mode==='off'?{}:{ULTRA:''};sky.clouds[0].material.needsUpdate=true;
  MAT_WATER.depthWrite=false;
  if(shaderPack.reflRT){shaderPack.reflRT.dispose();shaderPack.reflRT=null;}
- if(mode!=='ultra')spUltraDispose();else if(shaderPack.rt){shaderPack.rt.dispose();shaderPack.rt=null;}
- if(mode==='off'){for(const k of ['rt','shadowRT','reflRT'])if(shaderPack[k]){shaderPack[k].dispose();shaderPack[k]=null;}}
- if(mode!=='ultra'){U.uShadowAmt.value=0;U.uReflY.value=-1e9;}
+ if(shaderPack.shadowRT){shaderPack.shadowRT.dispose();shaderPack.shadowRT=null;}
+ if(mode==='off'){spUltraDispose();U.uShadowAmt.value=0;}
+ U.uReflY.value=-1e9;if(shaderPack.ultra)shaderPack.ultra.lutDirty=true;
 }
-function spTargets(){
- const size=renderer.getDrawingBufferSize(new THREE.Vector2()),gl2=renderer.capabilities.isWebGL2;
- if(!shaderPack.rt||shaderPack.rt.width!==size.x||shaderPack.rt.height!==size.y){
-  if(shaderPack.rt)shaderPack.rt.dispose();
-  const half=spHalf();
-  const rt=new THREE.WebGLRenderTarget(size.x,size.y,{type:half?THREE.HalfFloatType:THREE.UnsignedByteType,minFilter:THREE.LinearFilter,magFilter:THREE.LinearFilter});
-  rt.depthTexture=new THREE.DepthTexture(size.x,size.y);rt.depthTexture.type=gl2?THREE.UnsignedIntType:THREE.UnsignedShortType;shaderPack.rt=rt;
-  if(shaderPack.reflRT){shaderPack.reflRT.dispose();shaderPack.reflRT=null;}
- }
- if(!shaderPack.post){
-  const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute([-1,-1,0,3,-1,0,-1,3,0],3));
-  shaderPack.postU={tColor:{value:null},tDepth:{value:null},uSunUv:{value:new THREE.Vector2()},uSunVis:{value:0},uSunCol:{value:new THREE.Color()},uWarm:{value:0},uUnder:{value:0},uAspect:{value:1},uNear:{value:.05},uFar:{value:1200},uHaze:{value:new THREE.Color()},uHazeAmt:{value:0}};
-  const mat=new THREE.ShaderMaterial({uniforms:shaderPack.postU,depthTest:false,depthWrite:false,
-   vertexShader:`varying vec2 vUv; void main(){ vUv=position.xy*0.5+0.5; gl_Position=vec4(position.xy,0.0,1.0); }`,
-   fragmentShader:`uniform sampler2D tColor,tDepth; uniform vec2 uSunUv; uniform float uSunVis,uWarm,uUnder,uAspect,uNear,uFar,uHazeAmt; uniform vec3 uSunCol,uHaze; varying vec2 vUv;
-    // Natural "complementary"-style grade: soft filmic highlights, gently muted colour,
-    // aerial haze that tints distance toward the sky (warmer toward the sun), subtle shafts.
-    vec3 filmic(vec3 x){ return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14),0.0,1.0); }
-    float lin(float d){ float z=d*2.0-1.0; return 2.0*uNear*uFar/(uFar+uNear-z*(uFar-uNear)); }
-    void main(){
-     vec3 c=texture2D(tColor,vUv).rgb; float dep=texture2D(tDepth,vUv).r; bool sky=dep>=0.99999;
-     vec2 o=(vUv-uSunUv)*vec2(uAspect,1.0); float r=length(o), toSun=exp(-r*1.6)*uSunVis;
-     if(!sky&&uHazeAmt>0.0){ float dist=lin(dep), h=(1.0-exp(-dist*0.003))*uHazeAmt; vec3 hc=mix(uHaze,uHaze*0.6+uSunCol*0.7,toSun); c=mix(c,hc,h); }
-     if(uSunVis>0.001){
-      vec2 d=(uSunUv-vUv)/36.0, uv=vUv; float acc=0.0, w=1.0;
-      for(int i=0;i<36;i++){ uv+=d; if(uv.x<0.0||uv.y<0.0||uv.x>1.0||uv.y>1.0) break; acc+=step(0.99999,texture2D(tDepth,uv).r)*w; w*=0.95; }
-      c+=uSunCol*(acc/20.0*0.22*exp(-r*1.8)+exp(-r*9.0)*0.18)*uSunVis;
-     }
-     c*=0.97;
-     float L=dot(c,vec3(0.2126,0.7152,0.0722)); vec3 lp=c*(filmic(vec3(L)).r/max(L,1e-4));
-     c=mix(lp,filmic(c),sky?0.0:0.3);                            // per-channel rolloff softens bright colours
-     float l=dot(c,vec3(0.2126,0.7152,0.0722)); c=mix(vec3(l),c,sky?1.12:1.02);
-     c=mix(c,c*c*(3.0-2.0*c),0.18);                              // mild S-curve for depth
-     c*=mix(vec3(1.0),vec3(1.05,0.99,0.92),uWarm); c=mix(c,c*vec3(0.8,0.95,1.08),uUnder);
-     vec2 q=vUv-0.5; c*=1.0-dot(q,q)*0.3;
-     gl_FragColor=vec4(c,1.0);
-    }`});
-  shaderPack.post=new THREE.Scene();const m=new THREE.Mesh(geo,mat);m.frustumCulled=false;shaderPack.post.add(m);shaderPack.postCam=new THREE.Camera();
- }
-}
-const _spV=new THREE.Vector3(),_spV2=new THREE.Vector3(),_spDir=new THREE.Vector3(),_spCol=new THREE.Color();
+const _spBlack=new THREE.Color(0,0,0),_spV=new THREE.Vector3(),_spV2=new THREE.Vector3(),_spDir=new THREE.Vector3(),_spCol=new THREE.Color();
 function spUniforms(){
  U.uUnderwater.value=player.eyeInWater?1:0;
  const over=(world.dimension||'overworld')==='overworld',a=dayTime*Math.PI*2,sunY=Math.sin(a),wet=weather.strength||0;
@@ -6653,19 +6843,19 @@ function spUniforms(){
  if(sunY>-0.04){U.uSunDir.value.copy(sun);U.uSunCol.value.setRGB(1,.56,.3).lerp(_spCol.setRGB(1,.92,.8),THREE.MathUtils.smoothstep(sunY,.04,.45)).multiplyScalar(.9*THREE.MathUtils.smoothstep(sunY,-.04,.12)*(1-wet*.85));}
  else{U.uSunDir.value.copy(sun).negate();U.uSunCol.value.setRGB(.09,.12,.22).multiplyScalar(THREE.MathUtils.smoothstep(-sunY,.04,.2)*(1-wet*.8));}
  _spCol.copy(sky.domeU.uHor.value).lerp(sky.domeU.uTop.value,.55);U.uSkyCol.value.setRGB(1,1,1).lerp(_spCol,.7).multiplyScalar(U.uSky.value*.55);
- U.uShadowAmt.value=CONFIG.shaders==='ultra'?THREE.MathUtils.smoothstep(Math.abs(U.uSunDir.value.y),.005,.05)*(1-wet*.85):0;
+ U.uShadowAmt.value=shadersOn()?THREE.MathUtils.smoothstep(Math.abs(U.uSunDir.value.y),.005,.05)*(1-wet*.85):0;
  return {sun,vis:THREE.MathUtils.smoothstep(sunY,-.06,.06)*(1-wet)*(player.eyeInWater?.25:1),day};
 }
 function spShadowPass(){
  if(!(U.uShadowAmt.value>0))return;
- if(!shaderPack.shadowRT){shaderPack.shadowRT=new THREE.WebGLRenderTarget(2048,2048,{minFilter:THREE.NearestFilter,magFilter:THREE.NearestFilter});
+ const res=spTier().shadow;if(!shaderPack.shadowRT){shaderPack.shadowRT=new THREE.WebGLRenderTarget(res,res,{minFilter:THREE.NearestFilter,magFilter:THREE.NearestFilter});
   shaderPack.shadowCam=new THREE.OrthographicCamera(-80,80,80,-80,1,500);shaderPack.shadowCam.layers.set(1);
   shaderPack.depthMat=new THREE.MeshDepthMaterial({depthPacking:THREE.RGBADepthPacking,map:atlasTex,alphaTest:.5});}
  const cam=shaderPack.shadowCam,c=camera.position,L=U.uSunDir.value;
  cam.up.set(0,1,0);if(Math.abs(L.y)>.98)cam.up.set(0,0,1);
  cam.position.copy(c).addScaledVector(L,220);cam.lookAt(c);cam.updateMatrixWorld();
  // snap to whole shadow texels so edges don't shimmer as the player moves
- const p=_spV.copy(c).applyMatrix4(cam.matrixWorldInverse),texel=160/2048,dx=p.x-Math.round(p.x/texel)*texel,dy=p.y-Math.round(p.y/texel)*texel;
+ const p=_spV.copy(c).applyMatrix4(cam.matrixWorldInverse),texel=160/res,dx=p.x-Math.round(p.x/texel)*texel,dy=p.y-Math.round(p.y/texel)*texel;
  _spV2.setFromMatrixColumn(cam.matrixWorld,0);cam.position.addScaledVector(_spV2,dx);_spV2.setFromMatrixColumn(cam.matrixWorld,1);cam.position.addScaledVector(_spV2,dy);cam.updateMatrixWorld();
  U.uShadowVP.value.multiplyMatrices(cam.projectionMatrix,cam.matrixWorldInverse);
  shaderPack.depthMat.map=atlasTex;const bg=scene.background;scene.background=null;scene.overrideMaterial=shaderPack.depthMat;
@@ -6674,7 +6864,7 @@ function spShadowPass(){
 }
 function spReflectionPass(){
  const y=SEA+.875;U.uReflY.value=-1e9;
- if(CONFIG.shaders!=='ultra'||(world.dimension||'overworld')!=='overworld'||camera.position.y<y+.05||gameState==='title')return;
+ if(!shadersOn()||!spTier().refl||(world.dimension||'overworld')!=='overworld'||camera.position.y<y+.05||gameState==='title')return;
  const size=renderer.getDrawingBufferSize(_spV2.set(0,0,0)),w=Math.max(2,size.x>>1),h=Math.max(2,size.y>>1);
  if(!shaderPack.reflRT||shaderPack.reflRT.width!==w||shaderPack.reflRT.height!==h){if(shaderPack.reflRT)shaderPack.reflRT.dispose();shaderPack.reflRT=new THREE.WebGLRenderTarget(w,h,{minFilter:THREE.LinearFilter,magFilter:THREE.LinearFilter,type:spHalf()?THREE.HalfFloatType:THREE.UnsignedByteType});}
  const rc=shaderPack.reflCam||(shaderPack.reflCam=new THREE.PerspectiveCamera());
@@ -6684,7 +6874,9 @@ function spReflectionPass(){
  rc.up.set(0,1,0).applyQuaternion(camera.quaternion);rc.up.y=-rc.up.y;rc.lookAt(_spV2);rc.updateMatrixWorld();
  const hidden=[];for(const ch of world.chunks.values())if(ch.water&&ch.water.visible){ch.water.visible=false;hidden.push(ch.water);}
  const held=pPoints?.visible;if(pPoints)pPoints.visible=false;
+ if(spTier().clouds)spCloudPass(null,rc,'clR',2);
  U.uClipY.value=y-.02;renderer.setRenderTarget(shaderPack.reflRT);renderer.render(scene,rc);renderer.setRenderTarget(null);U.uClipY.value=-1e9;
+ if(shaderPack.ultra?.cl)sky.domeU.uCloudTex.value=shaderPack.ultra.cl.texture;
  for(const m of hidden)m.visible=true;if(pPoints)pPoints.visible=held;
  U.uReflVP.value.multiplyMatrices(rc.projectionMatrix,rc.matrixWorldInverse);U.uReflMap.value=shaderPack.reflRT.texture;U.uReflY.value=y;
 }
@@ -6753,7 +6945,7 @@ function spUltraUniforms(info){
  // clouds sit ~1.5 km up, so they keep catching (redder) sunlight a little after sunset
  const cL=info.sun.y>-.2?sun:sun.map(v=>-v);atmSunT([0,ATM.Re+1.5,0],cL,8,_atV);const ck=ATM.SUN*(info.sun.y>-.2?1:ATM.MOON);
  sky.cloudU.uCloudSun.value.set(_atV[0]*ck,_atV[1]*ck,_atV[2]*ck);sky.cloudU.uWet.value=wet;
- if(S.frame%6===1||!S.amb||Math.abs(dayTime-S.ambT)>.002){S.ambT=dayTime; // ambient cube: cosine-weighted sky radiance per face + ground bounce
+ if(S.frame%spTier().ambEvery===1||!S.amb||Math.abs(dayTime-S.ambT)>.002){S.ambT=dayTime; // ambient cube: cosine-weighted sky radiance per face + ground bounce
   const A=S.amb||(S.amb=[0,1,2,3,4,5].map(()=>[0,0,0]));
   const fill=[0,1,2].map(c=>A[2][c]*ATM.FILL);for(const a of A)a[0]=a[1]=a[2]=0;
   for(const d of AMB_DIRS){atmSkyRad(o,d,sun,wet,_atO,fill);const w=[Math.max(d[0],0),Math.max(-d[0],0),d[1],0,Math.max(d[2],0),Math.max(-d[2],0)];
@@ -6776,7 +6968,7 @@ function spUltraUniforms(info){
 function spSkyLut(){
  const S=spU();if((world.dimension||'overworld')!=='overworld')return;
  if(!S.lut){S.lut=new THREE.WebGLRenderTarget(256,128,{type:spHalf()?THREE.HalfFloatType:THREE.UnsignedByteType,minFilter:THREE.LinearFilter,magFilter:THREE.LinearFilter,depthBuffer:false,wrapS:THREE.RepeatWrapping,wrapT:THREE.ClampToEdgeWrapping});S.lutDirty=true;}
- if(!S.lutDirty&&S.frame%3)return;S.lutDirty=false;
+ if(!S.lutDirty&&S.frame%spTier().lutEvery)return;S.lutDirty=false;
  if(!S.lutMat)S.lutMat=new THREE.ShaderMaterial({uniforms:{uTrueSun:U.uTrueSun,uMsFill:{value:new THREE.Vector3()},uCamH:{value:.2},uWet:{value:0},uSkyE:{value:ATM.SKY},uMoonE:{value:ATM.SKY*ATM.MOON}},depthTest:false,depthWrite:false,
   vertexShader:`varying vec2 vUv; void main(){ vUv=position.xy*0.5+0.5; gl_Position=vec4(position.xy,0.0,1.0); }`,
   fragmentShader:`uniform vec3 uTrueSun,uMsFill; uniform float uCamH,uWet,uSkyE,uMoonE; varying vec2 vUv;
@@ -6791,12 +6983,99 @@ function spSkyLut(){
  const m=spFullscreen();m.material=S.lutMat;S.lutMat.uniforms.uCamH.value=Math.max(.01,.2+(camera.position.y-62)*.001);S.lutMat.uniforms.uWet.value=weather.strength||0;S.lutMat.uniforms.uMsFill.value.copy(U.uAmb.value[2]).multiplyScalar(ATM.FILL);
  renderer.setRenderTarget(S.lut);renderer.render(shaderPack.fs,shaderPack.postCam);renderer.setRenderTarget(null);U.uSkyLut.value=S.lut.texture;
 }
+// ---- Ultra volumetric clouds: a cumulus layer 900–2600 m up on the curved Earth, ray-marched at
+// a third of the screen resolution. Density = weather-map coverage x height profile x billowy
+// fbm, eroded by fine noise; sunlight is marched toward the sun with a multiple-scattering
+// approximation (several attenuated, broadening phase octaves) and a "powder" term that darkens
+// sun-facing edges, plus sky ambient that brightens with height. Distant clouds fade into the
+// aerial haze of the sky behind them. The dome composites the result (spCloudPass -> uCloudTex).
+const CLOUD_GLSL=`
+const float ER=6360000.0, CB=900.0, CT=2600.0;
+uniform mat4 uProjInv,uViewInv; uniform vec3 uCamPos,uWind,uCloudSun; uniform vec3 uAmb[6]; uniform float uCover,uWet,uTime,uSkip; uniform sampler2D tPrevDepth; uniform vec2 uPrevTexel;
+varying vec2 vUv;
+vec2 shell(vec3 o,vec3 d,float r){ float b=dot(o,d),c=dot(o,o)-r*r,h=b*b-c; if(h<0.0) return vec2(-1.0); h=sqrt(h); return vec2(-b-h,-b+h); }
+float h3(vec3 p){ p=fract(p*0.3183099+vec3(0.71,0.113,0.419)); p*=17.0; return fract(p.x*p.y*p.z*(p.x+p.y+p.z)); }
+float n3(vec3 x){ vec3 i=floor(x),f=fract(x); f=f*f*(3.0-2.0*f);
+  return mix(mix(mix(h3(i),h3(i+vec3(1.0,0.0,0.0)),f.x),mix(h3(i+vec3(0.0,1.0,0.0)),h3(i+vec3(1.0,1.0,0.0)),f.x),f.y),
+             mix(mix(h3(i+vec3(0.0,0.0,1.0)),h3(i+vec3(1.0,0.0,1.0)),f.x),mix(h3(i+vec3(0.0,1.0,1.0)),h3(i+vec3(1.0,1.0,1.0)),f.x),f.y),f.z); }
+const mat3 RT=mat3(0.00,0.80,0.60,-0.80,0.36,-0.48,-0.60,-0.48,0.64);
+float density(vec3 p,float hf,bool fine){
+  vec3 q=p+uWind;
+  float wm=n3(vec3(q.xz*0.00011,0.37))*0.65+n3(vec3(q.xz*0.00031,5.1))*0.35;          // weather map
+  float cov=clamp(uCover*(0.55+0.9*wm),0.0,0.98);
+  float top=mix(0.3,1.0,smoothstep(0.4,0.85,wm));                                       // towers where it is dense
+  float prof=smoothstep(0.0,0.07,hf)*(1.0-smoothstep(top*0.45,top,hf));
+  vec3 s=q*0.00085+vec3(0.0,-uTime*0.002,0.0);
+  float n=n3(s)*0.55; s=RT*s*2.03; n+=n3(s)*0.28; s=RT*s*2.01; n+=n3(s)*0.17;
+  float d=clamp((n*prof-(1.0-cov))/max(cov,0.05),0.0,1.0);
+  if(fine&&d>0.0){ vec3 e=RT*q*0.0075+vec3(uTime*0.01); float er=n3(e)*0.55+n3(RT*e*2.4)*0.3+n3(RT*e*5.1)*0.15;
+    er=mix(er,1.0-er,clamp(hf*3.0,0.0,1.0));                                   // wispy bases, cauliflower tops
+    d=clamp((d-er*0.5*(1.0-d*0.6))/(1.0-er*0.3),0.0,1.0); }
+  return d*(0.7+0.6*hf);
+}
+float hgP(float mu,float g){ float gg=g*g; return 0.0795775*(1.0-gg)/pow(1.0+gg-2.0*g*mu,1.5); }
+void main(){
+  vec4 vp=uProjInv*vec4(vUv*2.0-1.0,1.0,1.0); vec3 rd=normalize((uViewInv*vec4(vp.xyz/vp.w,0.0)).xyz);
+  vec3 o=vec3(0.0,ER+max(uCamPos.y-62.0,1.0),0.0);
+  float jit=fract(52.9829189*fract(dot(gl_FragCoord.xy,vec2(0.06711056,0.00583715))));
+  if(shell(o,rd,ER).x>0.0||uCover<=0.0){ gl_FragColor=vec4(0.0,0.0,0.0,1.0); return; }
+  // skip pixels that last frame's depth says are covered by terrain (with a margin for motion)
+  if(uSkip>0.5){ float sky=0.0; for(int i=0;i<9;i++){ vec2 o2=vec2(float(i-(i/3)*3)-1.0,float(i/3)-1.0)*uPrevTexel*5.0; sky+=step(0.99999,texture2D(tPrevDepth,vUv+o2).r); }
+    if(sky<0.5){ gl_FragColor=vec4(0.0,0.0,0.0,1.0); return; } }
+  float t0=shell(o,rd,ER+CB).y, t1=shell(o,rd,ER+CT).y;
+  if(t0>60000.0){ gl_FragColor=vec4(0.0,0.0,0.0,1.0); return; }
+  t1=min(t1,t0+9000.0);
+  vec3 L=uTrueSun.y>-0.2?uTrueSun:-uTrueSun; float mu=dot(rd,L);
+  // dual-lobe phase: strong forward silver lining + soft back scatter
+  float ph[4]; ph[0]=mix(hgP(mu,0.82),hgP(mu,-0.2),0.28);
+  float muc=mu; for(int k=1;k<4;k++){ muc*=0.7; ph[k]=mix(hgP(muc,0.82*pow(0.6,float(k))),0.0795775,0.3); }
+  const int N=56; float st=(t1-t0)/float(N), t=t0+st*jit, T=1.0, wsum=0.0, tw=0.0; vec3 scat=vec3(0.0);
+  vec3 sunC=uCloudSun*(1.0-uWet*0.8), ambTop=uAmb[2], ambBot=(uAmb[0]+uAmb[1]+uAmb[4]+uAmb[5])*0.25*0.6;
+  for(int i=0;i<N;i++){
+    vec3 p=o+rd*t; float h=length(p)-ER, hf=clamp((h-CB)/(CT-CB),0.0,1.0); vec3 pw=vec3(uCamPos.x,0.0,uCamPos.z)+vec3(p.x,h,p.z);
+    float d=density(pw,hf,true);
+    if(d>0.003){
+      float sig=d*0.055;
+      // light march toward the sun (coarse, growing steps)
+      float od=0.0, ls=30.0; vec3 lp=pw;
+      for(int j=0;j<6;j++){ lp+=L*ls; float lh=clamp((lp.y-CB)/(CT-CB),0.0,1.0); od+=density(lp,lh,j<2)*ls; ls*=1.75; }
+      od*=0.055;
+      float ms=0.0, a=1.0, b=1.0; for(int k=0;k<4;k++){ ms+=a*exp(-od*b)*ph[k]; a*=0.55; b*=0.35; }
+      float powder=1.0-exp(-sig*90.0); powder=mix(powder,1.0,0.5+0.5*mu);
+      vec3 S=sunC*ms*powder*14.0+mix(ambBot*0.7,ambTop,hf*hf)*(0.4+0.6*hf)*0.9;
+      float tr=exp(-sig*st); vec3 Sint=S*(1.0-tr);
+      scat+=T*Sint; float w=T*(1.0-tr); wsum+=w; tw+=w*t; T*=tr;
+      if(T<0.015) break;
+    }
+    t+=st;
+  }
+  if(wsum>0.0){ float dAvg=tw/wsum, ap=exp(-dAvg*0.000055); vec3 sk=skyL(vec3(rd.x,max(rd.y,0.02),rd.z));
+    scat=scat*ap+sk*(1.0-ap)*(1.0-T); }
+  scat=max(scat,0.0);
+  gl_FragColor=vec4(scat/(1.0+scat),T);
+}`;
+function spCloudPass(info,cam=camera,key='cl',scale=2){
+ const S=spU(),over=(world.dimension||'overworld')==='overworld';sky.domeU.uCloudOn.value=over&&CONFIG.clouds?1:0;if(!sky.domeU.uCloudOn.value)return;
+ const size=renderer.getDrawingBufferSize(_spSize),src=key==='cl'?size:{x:shaderPack.reflRT?.width||size.x>>1,y:shaderPack.reflRT?.height||size.y>>1};
+ const w=Math.max(2,Math.ceil(src.x/scale)),h=Math.max(2,Math.ceil(src.y/scale));
+ if(!S[key]||S[key].width!==w||S[key].height!==h){if(S[key])S[key].dispose();S[key]=new THREE.WebGLRenderTarget(w,h,{type:spHalf()?THREE.HalfFloatType:THREE.UnsignedByteType,minFilter:THREE.LinearFilter,magFilter:THREE.LinearFilter,depthBuffer:false});}
+ if(!S.clMat)S.clMat=new THREE.ShaderMaterial({depthTest:false,depthWrite:false,vertexShader:FS_VERT,
+  uniforms:{uProjInv:{value:new THREE.Matrix4()},uViewInv:{value:new THREE.Matrix4()},uCamPos:{value:new THREE.Vector3()},uWind:{value:new THREE.Vector3()},uCloudSun:sky.cloudU.uCloudSun,uAmb:U.uAmb,
+   uCover:{value:.5},uWet:{value:0},uTime:U.uTime,uSkip:{value:0},tPrevDepth:{value:null},uPrevTexel:{value:new THREE.Vector2()},uSkyLut:U.uSkyLut,uExposure:U.uExposure,uTrueSun:U.uTrueSun,uSunRad:U.uSunRad,uAtmo:U.uAtmo,uHazeK:U.uHazeK},
+  fragmentShader:ULTRA_GLSL+CLOUD_GLSL});
+ const u=S.clMat.uniforms,wet=weather.strength||0,t=U.uTime.value;
+ u.uProjInv.value.copy(cam.projectionMatrixInverse);u.uViewInv.value.copy(cam.matrixWorld);u.uCamPos.value.copy(cam.position);
+ u.uWind.value.set(t*7+(world.seed%997)*31,0,t*2.5+(world.seed%613)*47);
+ const prev=key==='cl'&&S.b&&S.b.width===size.x&&S.b.height===size.y;u.uSkip.value=prev?1:0;u.tPrevDepth.value=prev?S.b.depthTexture:null;if(prev)u.uPrevTexel.value.set(1/size.x,1/size.y);u.uWet.value=wet;u.uCover.value=.52+wet*.48;
+ const m=spFullscreen();m.material=S.clMat;renderer.setRenderTarget(S[key]);renderer.render(shaderPack.fs,shaderPack.postCam);renderer.setRenderTarget(null);
+ sky.domeU.uCloudTex.value=S[key].texture;
+}
 function spFullscreen(){
  if(!shaderPack.fs){const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute([-1,-1,0,3,-1,0,-1,3,0],3));
   shaderPack.fs=new THREE.Scene();shaderPack.fsMesh=new THREE.Mesh(geo);shaderPack.fsMesh.frustumCulled=false;shaderPack.fs.add(shaderPack.fsMesh);if(!shaderPack.postCam)shaderPack.postCam=new THREE.Camera();}
  return shaderPack.fsMesh;
 }
-function spUltraDispose(){const S=shaderPack.ultra;if(!S)return;for(const k of ['a','b','lut'])if(S[k]){S[k].dispose();S[k]=null;}for(const t of S.bl)t.dispose();S.bl=[];S.exp=0;}
+function spUltraDispose(){const S=shaderPack.ultra;if(!S)return;for(const k of ['a','b','lut','cl','clR'])if(S[k]){S[k].dispose();S[k]=null;}for(const t of S.bl)t.dispose();S.bl=[];S.exp=0;}
 const FS_VERT=`varying vec2 vUv; void main(){ vUv=position.xy*0.5+0.5; gl_Position=vec4(position.xy,0.0,1.0); }`;
 function spUltraTargets(){
  const S=spU(),size=renderer.getDrawingBufferSize(_spSize),w=size.x,h=size.y,half=spHalf(),gl2=renderer.capabilities.isWebGL2;
@@ -6871,10 +7150,11 @@ function spUltraTargets(){
 function spUltraRender(info){
  const S=spUltraTargets(),m=spFullscreen(),over=(world.dimension||'overworld')==='overworld',ac=renderer.autoClear;
  U.uScreen.value.set(S.a.width,S.a.height);
- if(S.split){
+ const tier=spTier();
+ if(S.split&&tier.split){
   // pass 1: everything except water and late transparents; then copy colour+depth so the
   // water pass can sample the scene behind it (refraction, depth absorption, shore foam)
-  const hidden=[],late=[pPoints,weather.points,...sky.clouds].filter(Boolean);
+  const hidden=[],late=[pPoints,weather.points,boomFx.mesh,...sky.clouds].filter(Boolean);
   for(const ch of world.chunks.values())if(ch.water){ch.water.layers.enable(2);if(ch.water.visible){ch.water.visible=false;hidden.push(ch.water);}}
   for(const o of late){o.layers.enable(2);if(o.visible){o.visible=false;hidden.push(o);}}
   U.uRefract.value=1;renderer.setRenderTarget(S.a);renderer.render(scene,camera);for(const o of hidden)o.visible=true;
@@ -6896,7 +7176,7 @@ function spUltraRender(info){
  F.tColor.value=S.b.texture;F.tDepth.value=S.b.depthTexture;F.tBloom.value=S.bl[0].texture;
  F.uProjInv.value.copy(camera.projectionMatrixInverse);F.uViewInv.value.copy(camera.matrixWorld);F.uCamPos.value.copy(camera.position);
  F.uRes.value.set(S.b.width,S.b.height);F.uProjY.value=camera.projectionMatrix.elements[5];F.uAspect.value=camera.aspect;
- F.uFogDens.value=S.fogDens||0;F.uVol.value=over&&!under&&U.uShadowAmt.value>0?U.uShadowAmt.value:0;F.uUnder.value=under?1:0;
+ F.uFogDens.value=S.fogDens||0;F.uVol.value=over&&!under&&U.uShadowAmt.value>0?U.uShadowAmt.value*tier.vol:0;F.uSSAO.value=tier.ssao;F.uUnder.value=under?1:0;
  F.uNight.value=over?THREE.MathUtils.smoothstep(U.uExposure.value,2.5,9):0;
  camera.getWorldDirection(_spV);_spV2.copy(info.sun).multiplyScalar(500).add(camera.position).project(camera);
  const front=_spV.dot(info.sun)>0&&Math.abs(_spV2.x)<1.6&&Math.abs(_spV2.y)<1.6;F.uSunUv.value.set(_spV2.x*.5+.5,_spV2.y*.5+.5);F.uSunVis.value=front&&over&&!under?info.vis:0;
@@ -6906,17 +7186,12 @@ function renderScene(){
  applyShaderMode();
  if(!shadersOn()){renderer.render(scene,camera);return;}
  const info=spUniforms();if(!player.eyeInWater&&(world.dimension||'overworld')!=='nether')U.uFog.value.x=Math.max(U.uFog.value.x,U.uFog.value.y*.86);
- if(CONFIG.shaders==='ultra'){spFullscreen();spUltraUniforms(info);spSkyLut();spShadowPass();
-  const sv=sky.sun.visible;sky.sun.visible=false;spReflectionPass();spUltraRender(info);sky.sun.visible=sv;return;}   // the Ultra dome draws a real sun disk
- spTargets();
- renderer.setRenderTarget(shaderPack.rt);renderer.render(scene,camera);renderer.setRenderTarget(null);
- const P=shaderPack.postU;P.tColor.value=shaderPack.rt.texture;P.tDepth.value=shaderPack.rt.depthTexture;P.uAspect.value=camera.aspect;
- camera.getWorldDirection(_spV);_spV2.copy(info.sun).multiplyScalar(500).add(camera.position).project(camera);
- const front=_spV.dot(info.sun)>0&&Math.abs(_spV2.x)<1.6&&Math.abs(_spV2.y)<1.6;
- P.uSunUv.value.set(_spV2.x*.5+.5,_spV2.y*.5+.5);P.uSunVis.value=front?info.vis*((world.dimension||'overworld')==='overworld'?1:0):0;
- P.uNear.value=camera.near;P.uFar.value=camera.far;P.uHaze.value.copy(U.uFogColor.value);P.uHazeAmt.value=player.eyeInWater?0:(world.dimension||'overworld')==='overworld'?.35*(1-(weather.strength||0)*.4):.3;
- P.uSunCol.value.copy(U.uSunCol.value);P.uWarm.value=(world.dimension||'overworld')==='overworld'?.05+.55*(1-THREE.MathUtils.smoothstep(Math.sin(dayTime*Math.PI*2),.05,.5))*info.day:.2;P.uUnder.value=player.eyeInWater?1:0;
- renderer.render(shaderPack.post,shaderPack.postCam);
+ spFullscreen();spUltraUniforms(info);spSkyLut();spShadowPass();
+ // Ultra swaps the block clouds for ray-marched volumetric ones drawn by the sky dome
+ const vc=spTier().clouds,cv=sky.clouds.map(c=>c.visible),bg=scene.background;
+ if(vc){spCloudPass(info);for(const c of sky.clouds)c.visible=false;if(sky.group.visible)scene.background=_spBlack;}   // the dome adds itself over the black clear
+ const sv=sky.sun.visible;sky.sun.visible=false;spReflectionPass();spUltraRender(info);sky.sun.visible=sv;   // the dome draws a real sun disk
+ if(vc){sky.clouds.forEach((c,i)=>c.visible=cv[i]);scene.background=bg;}
 }
 /* =========================================================================
    46. BOATS — a boat is an entity that floats at the water surface. Right-click
@@ -6985,9 +7260,95 @@ function placeBoat(){
  if(mob?.kind==='boat'&&!riding){if(net.role==='client'){toast('Only the host can ride for now');return true;}riding=mob;toast('W/S to row, A/D to turn, Shift to get out');return true;}
  if(placeBoat())return true;return _living();};}
 /* =========================================================================
+   47. URANIUM & ENRICHMENT — groundwork for the coming nuclear update.
+       Uranium ore (generator 9+, y 4-52, a little rarer than iron; iron pickaxe)
+       drops raw uranium. A furnace mills it into yellowcake (U3O8). The
+       Enrichment Table is a gas-centrifuge cascade: powered by redstone, every
+       12 s it splits 3 yellowcake into 1 enriched uranium (~3.5% U-235) and 2
+       depleted uranium. Its state is an ordinary container (slots, burn =
+       power cycles left, cook = seconds), so saving and multiplayer sync come
+       for free; the host runs the cascade from updateFurnaces.
+   ========================================================================= */
+const ENRICH_POWER={[B.redstone]:1,[B.redstone_block]:9},ENRICH_TIME=12,ENRICH_FEED=3,ENRICH_DEPLETED=2;
+function tickEnrichment(step){
+ for(const c of world.containers.values()){
+  if(c.type!=='enrichment'||world.getBlock(c.x,c.y,c.z)<0)continue;
+  const [feed,pow,out,dep]=c.slots,was=c.cook||0;
+  const room=(!out||out.id===B.enriched_uranium&&out.count<64)&&(!dep||dep.id===B.depleted_uranium&&dep.count<=64-ENRICH_DEPLETED);
+  const can=feed?.id===B.yellowcake&&feed.count>=ENRICH_FEED&&room;
+  if(can&&c.burn<=0&&pow&&ENRICH_POWER[pow.id]){c.burn=c.burnMax=ENRICH_POWER[pow.id];if(--pow.count<=0)c.slots[1]=null;}
+  if(!can||c.burn<=0)c.cook=Math.max(0,was-step*2);   // the rotors spin down
+  else{c.cook=was+step;
+   if(c.cook>=ENRICH_TIME){c.cook=0;c.burn--;feed.count-=ENRICH_FEED;if(feed.count<=0)c.slots[0]=null;
+    if(out)out.count++;else c.slots[2]=makeStack(B.enriched_uranium,1);if(dep)dep.count+=ENRICH_DEPLETED;else c.slots[3]=makeStack(B.depleted_uranium,ENRICH_DEPLETED);c.xp=(c.xp||0)+1.2;}}
+  if(guiOpen&&guiData===c&&(c.cook||was))renderGui();
+ }
+}
+function buildEnrichGui(panel){
+ if(!$('enrichCss')){const st=document.createElement('style');st.id='enrichCss';st.textContent=`
+  .cascade{position:absolute;background:#16191c;border:var(--g) solid #000;box-shadow:inset var(--g) var(--g) 0 #2c3136,inset calc(var(--g)*-1) calc(var(--g)*-1) 0 #0b0c0e;overflow:hidden}
+  .cent{position:absolute;width:calc(var(--g)*7);background:linear-gradient(90deg,#3d4247,#cfd6dc 32%,#9aa2a9 55%,#4a5056 85%,#2e3236);box-shadow:0 0 0 var(--g) #0e1012}
+  .cent::before{content:'';position:absolute;left:0;right:0;top:0;height:calc(var(--g)*3);background:#596068;border-bottom:var(--g) solid #22262a}
+  .cent.run::after{content:'';position:absolute;inset:calc(var(--g)*3) 0 0 0;background:repeating-linear-gradient(90deg,transparent 0 calc(var(--g)*2),rgba(255,255,255,.38) calc(var(--g)*2) calc(var(--g)*3),transparent calc(var(--g)*3) calc(var(--g)*7));background-size:calc(var(--g)*7) 100%;animation:centSpin .18s linear infinite}
+  @keyframes centSpin{to{background-position:calc(var(--g)*7) 0}}
+  .cpipe{position:absolute;height:var(--g);background:#7d858c}
+  .cled{position:absolute;width:calc(var(--g)*3);height:calc(var(--g)*3);background:#3a1010;border:var(--g) solid #000}
+  .cled.on{background:#7cff5a;box-shadow:0 0 calc(var(--g)*3) #7cff5a}
+  .cbar{position:absolute;background:#000;border:var(--g) solid #555}
+  .cbar>div{position:absolute;left:0;bottom:0;top:0;width:0;background:linear-gradient(90deg,#b8e23a,#e6ff7a)}
+  .cpow{position:absolute;width:calc(var(--g)*4);background:#200;border:var(--g) solid #000}
+  .cpow>div{position:absolute;left:0;right:0;bottom:0;height:0;background:linear-gradient(0deg,#a01010,#ff4a2a)}
+  .cread{position:absolute;color:#d8f07a;font-size:calc(var(--g)*8);white-space:nowrap;text-shadow:var(--g) var(--g) 0 #1a2200}`;document.head.appendChild(st);}
+ label(panel,8,7,'Enrichment Table');
+ addSlot(panel,16,20,{arr:guiData.slots,i:0,kind:'enrich_feed',group:'enrich'},false,iconURL(B.yellowcake));
+ addSlot(panel,16,56,{arr:guiData.slots,i:1,kind:'enrich_power',group:'enrich'},false,iconURL(B.redstone));
+ el('div','cpow',{left:g(37),top:g(20),height:g(52)},panel,'<div></div>');
+ const box=el('div','cascade',{left:g(46),top:g(16),width:g(80),height:g(46)},panel);
+ for(let i=0;i<8;i++){const top=i%2?6:3;el('div','cent',{left:g(4+i*9.4),top:g(top),height:g(32+3-top+3)},box);}
+ el('div','cpipe',{left:g(2),top:g(2),width:g(76)},box);el('div','cpipe',{left:g(2),top:g(43),width:g(76)},box);
+ el('div','cled',{left:g(71),top:g(-1)},box);
+ el('div','cbar',{left:g(46),top:g(64),width:g(80),height:g(5)},panel,'<div></div>');
+ el('div','cread',{left:g(46),top:g(71)},panel,'');
+ addSlot(panel,140,22,{arr:guiData.slots,i:2,kind:'output',group:'enrich'},true);
+ addSlot(panel,144,56,{arr:guiData.slots,i:3,kind:'output',group:'enrich'});
+ addInvSlots(panel,8,84);
+}
+function updateEnrichGui(){
+ const c=guiData,root=$('gui');if(!c)return;const run=c.burn>0&&c.cook>0,f=Math.min(1,(c.cook||0)/ENRICH_TIME);
+ for(const e of root.querySelectorAll('.cent'))e.classList.toggle('run',run);
+ root.querySelector('.cled')?.classList.toggle('on',run);
+ const bar=root.querySelector('.cbar>div');if(bar)bar.style.width=(f*100)+'%';
+ const pw=root.querySelector('.cpow>div');if(pw)pw.style.height=(c.burnMax?Math.min(1,c.burn/c.burnMax)*100:0)+'%';
+ const rd=root.querySelector('.cread');if(rd)rd.textContent=run?`U-235  ${(0.72+f*(3.5-0.72)).toFixed(2)}% → 3.50%`:c.slots[0]?.id===B.yellowcake&&c.slots[0].count<ENRICH_FEED?`Needs ${ENRICH_FEED} yellowcake`:!c.burn&&!c.slots[1]?'Needs redstone power':'Idle';
+}
+function buildUraniumTextures(){
+ const steel=(P,R,base)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++)P(x,y,x===0||y===0?[base[0]+28,base[1]+28,base[2]+28]:x===15||y===15?[base[0]-30,base[1]-30,base[2]-30]:vary(base,R,6));};
+ makeTile('enrich_side',(P,R)=>{steel(P,R,[132,138,144]);
+  for(let y=3;y<14;y++)for(let x=2;x<14;x++)P(x,y,vary([24,27,30],R,4));                            // viewing window
+  for(const x0 of [3,7,11]){for(let y=4;y<13;y++){P(x0,y,vary([88,94,100],R,6));P(x0+1,y,vary([214,220,226],R,8));}P(x0,4,[150,156,162]);P(x0+1,4,[176,182,188]);}
+  for(let x=1;x<15;x++){P(x,1,(x>>1)%2?[230,190,40]:[30,28,24]);}                                   // hazard stripe
+  P(13,1,[124,255,90]);P(2,14,[60,64,68]);P(13,14,[60,64,68]);});
+ makeTile('enrich_top',(P,R)=>{steel(P,R,[120,126,132]);
+  for(let i=0;i<16;i++){const c=((i>>1)%2)?[226,186,36]:[28,26,22];P(i,0,c);P(i,15,c);P(0,i,c);P(15,i,c);}
+  for(const [cx,cy] of [[5,5],[10.5,5],[5,10.5],[10.5,10.5]])for(let y=0;y<16;y++)for(let x=0;x<16;x++){const d=Math.hypot(x+.5-cx,y+.5-cy);if(d<2.6)P(x,y,d>1.8?[40,44,48]:d<.9?[220,226,232]:vary([168,174,180],R,8));}});
+ makeTile('enrich_bottom',(P,R)=>steel(P,R,[86,90,96]));
+ const lump=(P,R,base,speck,n)=>{blob(P,R,base,8,9,5.2,4.6,22);for(let k=0;k<n;k++){const x=4+((R()*9)|0),y=6+((R()*7)|0);if(((x-8)/5.2)**2+((y-9)/4.6)**2<.7)P(x,y,vary(speck,R,20));}};
+ itemArt('raw_uranium',(P,R)=>lump(P,R,[58,62,50],[206,224,70],9));
+ itemArt('yellowcake',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++){const h=12-Math.abs(x-7.5)*.9;if(y>=16-h*.75&&y<14)P(x,y,vary(y<16-h*.75+1.5?[250,224,90]:[226,190,46],R,26));}});
+ itemArt('enriched_uranium',(P,R)=>{for(let y=2;y<14;y++)for(let x=5;x<11;x++){const edge=x===5||x===10||y===2||y===13;P(x,y,edge?[40,92,28]:vary(x<7?[176,255,120]:[110,220,70],R,16));}
+  for(const y of [5,9])for(let x=5;x<11;x++)P(x,y,[60,130,40]);});
+ itemArt('depleted_uranium',(P,R)=>{for(let y=5;y<12;y++)for(let x=2+(y-5)*.4|0;x<14-(y-5)*.4;x++)P(x,y,vary(y===5?[150,152,140]:y>9?[70,72,66]:[108,110,100],R,12));});
+ // recipes, smelting and the creative inventory
+ SMELT[B.raw_uranium]=B.yellowcake;SMELT[B.uranium_ore]=B.yellowcake;SMELT[B.deepslate_uranium_ore]=B.yellowcake;
+ Object.assign(SMELT_XP,{[B.raw_uranium]:.9,[B.uranium_ore]:.9,[B.deepslate_uranium_ore]:.9});
+ shaped(['RRR','RRR','RRR'],{R:[B.raw_uranium]},B.raw_uranium_block);shapeless([B.raw_uranium_block],B.raw_uranium,9);
+ shaped(['IGI','RDR','III'],{I:[B.iron_ingot],G:[B.glass],R:[B.redstone],D:[B.diamond]},B.enrichment_table);
+ CREATIVE_TABS[3].items.push(B.raw_uranium,B.yellowcake,B.enriched_uranium,B.depleted_uranium);
+}
+/* =========================================================================
    20. BOOT
    ========================================================================= */
-buildTextures(); buildEntityTextures(); buildEquipmentTextures(); buildFarmTextures(); buildShapeTextures(); buildFluidTextures();buildBiomeTextures();buildRedstoneTextures();buildMagicTextures();buildNetherTextures();buildLivingTextures();buildEngineeringTextures();buildItemArt();buildEndItems();buildCavesCliffsTextures();
+buildTextures(); buildEntityTextures(); buildEquipmentTextures(); buildFarmTextures(); buildShapeTextures(); buildFluidTextures();buildBiomeTextures();buildRedstoneTextures();buildMagicTextures();buildNetherTextures();buildLivingTextures();buildEngineeringTextures();buildItemArt();buildEndItems();buildCavesCliffsTextures();buildUraniumTextures();
 for(const n in TEX) TEX_NAME[TEX[n]]=n;
 buildWaveMap();
 buildShapeCache(); buildBlockTables(); makeMaterials(); initFluidMaterial(); makeCrackMats(); makeParticles();
@@ -7001,7 +7362,7 @@ window.__bc = { checkEndPortalAt, get endPortals(){return world.endPortals;}, ge
        list and the connection handshake (encrypted with ECDH + AES-GCM);
        no gameplay goes through them.
    ========================================================================= */
-const NET_V=2, NET_NS='minercraft-jupixels/v1', NET_MAX=8, NET_STALE=150000;
+const NET_V=3, NET_NS='minercraft-jupixels/v1', NET_MAX=8, NET_STALE=150000;
 const NET_QS=new URLSearchParams(location.search);
 const NET_BROKERS=(NET_QS.get('relay')||'wss://broker.emqx.io:8084/mqtt,wss://broker.hivemq.com:8884/mqtt,wss://test.mosquitto.org:8081/mqtt').split(',').map(s=>s.trim()).filter(Boolean);
 const NET_RTC={iceServers:[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']},{urls:'stun:stun.cloudflare.com:3478'}]};
@@ -7240,10 +7601,11 @@ function netProjectileHit(e,p){
  const e=_prime(x,y,z,fuse,restoring);if(e&&net.role==='host')netBroadcast({t:'tntp',p:[r2(e.pos.x),r2(e.pos.y),r2(e.pos.z)],f:fuse});return e;};}
 function netTntVisual(m){if(!Array.isArray(m.p)||!m.p.every(Number.isFinite))return;const src=heldMeshFor(B.tnt).mesh,mesh=new THREE.Mesh(src.geometry,src.material.clone());
  mesh.scale.setScalar(.96);mesh.position.set(m.p[0],m.p[1]+.5,m.p[2]);scene.add(mesh);sfx.fuse();const end=performance.now()+Math.min(8,Math.max(.3,+m.f||4))*1000;
- const tick=()=>{const left=end-performance.now();if(left<=0||net.role!=='client'){scene.remove(mesh);mesh.material.dispose();return;}mesh.material.color.setScalar(Math.floor(left/150)%2?1.6:1);requestAnimationFrame(tick);};tick();}
-function netBoom(m){if(!Array.isArray(m.p)||!m.p.every(Number.isFinite))return;const [x,y,z]=m.p,r=Math.min(4,Math.max(1,+m.r||3));sfx.explode();
- for(let n=0;n<80;n++)emitParticle(x+(Math.random()-.5)*r,y+Math.random()*r,z+(Math.random()-.5)*r,(Math.random()-.5)*7,Math.random()*7,(Math.random()-.5)*7,TEX.smoke);
- const dist=Math.hypot(player.pos.x-x,player.pos.y-y,player.pos.z-z);if(dist<r*2)mobDamage(Math.ceil((1-dist/(r*2))*18),'explosion');}
+ const tick=()=>{const left=end-performance.now();if(left<=0||net.role!=='client'){scene.remove(mesh);mesh.material.dispose();return;}mesh.material.color.setScalar(Math.floor(left/150)%2?1.6:1);
+  if(Math.random()<.45){boomInit();boomPart({x:m.p[0]+(Math.random()-.5)*.2,y:m.p[1]+1.02,z:m.p[2]+(Math.random()-.5)*.2,vx:(Math.random()-.5)*2.5,vy:1.5+Math.random()*2.5,vz:(Math.random()-.5)*2.5,kind:2,heat:.9,cool:2.5,size:.06,life:.4,grav:9});}
+  requestAnimationFrame(tick);};tick();}
+function netBoom(m){if(!Array.isArray(m.p)||!m.p.every(Number.isFinite))return;const [x,y,z]=m.p,r=Math.min(4,Math.max(1,+m.r||3));
+ const id=world.getBlock(Math.floor(x),Math.floor(y),Math.floor(z));explosionEffects(x,y,z,r,{wet:id>0&&!!BLOCKS[id].liquid});blastPlayer(x,y,z,r);}
 
 /* ---- guest-side gameplay: the host simulates the world, guests see puppets ---- */
 {const _tick=tickEntities;tickEntities=function(dt){return net.role==='client'?netClientTick(dt):_tick(dt);};}
@@ -7360,7 +7722,7 @@ function netHostOnMsg(peer,m){
   case 'take':{const e=itemEntities.find(x=>x.nid===m.n);if(!e||e.fly||e.pos.distanceToSquared(peer.v)>16)return;const st=packStack(e);
    net.applying=true;try{removeItem(e);}finally{net.applying=false;}netBroadcast({t:'it-',n:m.n,by:peer.name});linkSend(peer,{t:'give',st});break;}
   case 'copen':{if(typeof m.k!=='string'||!/^-?\d+,-?\d+,-?\d+$/.test(m.k))return;const [x,y,z]=m.k.split(',').map(Number);if(Math.abs(x-peer.v.x)>12||Math.abs(z-peer.v.z)>12)return;
-   const id=world.getBlock(x,y,z),type=id>0?BLOCKS[id].container:(['chest','furnace','hopper','brewing','dispenser'].includes(m.type)?m.type:null);if(!type)return;
+   const id=world.getBlock(x,y,z),type=id>0?BLOCKS[id].container:(['chest','furnace','hopper','brewing','dispenser','enrichment'].includes(m.type)?m.type:null);if(!type)return;
    getContainer(x,y,z,type);peer.viewing=m.k;peer.viewJSON=null;net.timers.cont=1;break;}
   case 'cset':{if(peer.viewing!==m.k||!Array.isArray(m.s))return;const c=world.containers.get(m.k);if(!c||m.s.length!==c.slots.length)return;
    c.slots=m.s.map(s=>{try{const st=unpackStack(s);return st&&itemDef(st.id)&&st.count>0&&st.count<=64?st:null;}catch(e){return null;}});
@@ -7459,7 +7821,7 @@ function netEnterWorld(w,dimChange){
  net.me=w.you||net.me;net.dim=w.dim;net.inWorld=true;netClearAvatars();
  const spawn=Array.isArray(w.spawn)&&w.spawn.every(Number.isFinite)?w.spawn:null,at=Array.isArray(w.at)&&w.at.every(Number.isFinite)?w.at:[.5,80,.5];
  const pos=dimChange?at:s?.p&&s.p.every(Number.isFinite)?s.p:spawn||at;
- const meta={v:15,name:String(w.name||'World').slice(0,32),seed:w.seed|0,mode:w.mode==='creative'?'creative':'survival',generator:[1,2,3,4,5,6,7,8].includes(w.gen)?w.gen:8,dimension:['overworld','nether','end'].includes(w.dim)?w.dim:'overworld',
+ const meta={v:15,name:String(w.name||'World').slice(0,32),seed:w.seed|0,mode:w.mode==='creative'?'creative':'survival',generator:[1,2,3,4,5,6,7,8,9].includes(w.gen)?w.gen:9,dimension:['overworld','nether','end'].includes(w.dim)?w.dim:'overworld',
   spawn:dimChange?at:spawn,time:+w.day||0,days:w.days|0,weather:{type:Array.isArray(w.w)?w.w[0]:'clear',remaining:1e9},
   p:{x:pos[0],y:pos[1],z:pos[2],yaw:pos[3]||0,pitch:pos[4]||0,fire:0,hp:s?.hp??20,food:s?.food??20,sat:s?.sat??5,xp:s?.xp??0,fly:false},
   inv:s?.inv||[],armor:s?.armor||[],offhand:s?.off||null,sel:s?.sel||0,effects:s?.fx||{},signs:Array.isArray(w.signs)?w.signs:[],pistons:Array.isArray(w.pistons)?w.pistons:[],
@@ -7625,10 +7987,17 @@ $('bMpPvp').onclick=()=>{clickSound();if(net.role==='host'){netSetPvp(!world.mp.
  fs.onclick=e=>{e.stopPropagation();const on=document.fullscreenElement||document.webkitFullscreenElement;
   if(on)(document.exitFullscreen||document.webkitExitFullscreen).call(document);else{const r=(root.requestFullscreen||root.webkitRequestFullscreen).call(root);if(r?.then)r.then(()=>{if(gameState==='playing')requestLock(true);},()=>{});}};
  fs.onmousedown=e=>e.stopPropagation();}
-// Pause-menu shader button: cycles Off → Fancy → Ultra and keeps the Options label in step.
-const SHADER_NAMES={off:'Off',fancy:'Fancy',ultra:'Ultra'};
-function updateShaderButton(){const m=CONFIG.shaders||'off',b=$('bShaders');b.textContent='Shaders: '+SHADER_NAMES[m];b.className='btn '+m;const o=$('tShaders');if(o)o.textContent='Shaders: '+SHADER_NAMES[m];}
-$('bShaders').onclick=()=>{const o=['off','fancy','ultra'];CONFIG.shaders=o[(o.indexOf(CONFIG.shaders||'off')+1)%3];saveSettings();updateShaderButton();clickSound();};
+// Pause-menu shader slider: Off / Fancy / Ultra are all visible; click or drag to a stop
+// (arrow keys work too). Keeps the Options-screen button label in step.
+const SHADER_NAMES={off:'Off',fancy:'Fancy',ultra:'Ultra'},SHADER_ORDER=['off','fancy','ultra'];
+function updateShaderButton(){const m=CONFIG.shaders||'off',b=$('bShaders'),i=SHADER_ORDER.indexOf(m);b.className='btn '+m;
+ b.querySelector('.sKnob').style.left=`calc(var(--g)*2 + ${i} * (100% - var(--g)*4) / 3)`;for(const sp of b.querySelectorAll('span'))sp.classList.toggle('on',sp.dataset.m===m);
+ b.setAttribute('aria-valuenow',i);b.setAttribute('aria-valuetext',SHADER_NAMES[m]);const o=$('tShaders');if(o)o.textContent='Shaders: '+SHADER_NAMES[m];}
+function setShaderMode(m){if((CONFIG.shaders||'off')===m)return;CONFIG.shaders=m;saveSettings();updateShaderButton();clickSound();}
+{const b=$('bShaders');let drag=false;const pick=e=>{const r=b.getBoundingClientRect();setShaderMode(SHADER_ORDER[Math.max(0,Math.min(2,Math.floor((e.clientX-r.left)/r.width*3)))]);};
+ b.onpointerdown=e=>{drag=true;b.setPointerCapture?.(e.pointerId);pick(e);e.stopPropagation();};b.onpointermove=e=>{if(drag)pick(e);};b.onpointerup=b.onpointercancel=()=>drag=false;
+ b.onkeydown=e=>{const i=SHADER_ORDER.indexOf(CONFIG.shaders||'off'),d=e.key==='ArrowRight'||e.key==='ArrowUp'?1:e.key==='ArrowLeft'||e.key==='ArrowDown'?-1:0;if(d){setShaderMode(SHADER_ORDER[Math.max(0,Math.min(2,i+d))]);e.preventDefault();}};
+ updateShaderButton();}
 {const _osc3=onStateChange;onStateChange=function(s){_osc3(s);if(s==='paused')updateShaderButton();};}
 // Switch this world between Survival and Creative from the pause menu (saved with the world).
 function updateModeButton(){const b=$('bGameMode');b.textContent='Mode: '+(player.mode==='creative'?'Creative':'Survival');b.disabled=net.role==='client';}
