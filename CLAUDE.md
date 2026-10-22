@@ -3,6 +3,19 @@
 A Minecraft-style voxel game that runs entirely in the browser. It is hosted on
 GitHub Pages straight from `main`, with no build step and no server.
 
+## Creative freedom
+
+The owner gives Claude creative freedom on this project. Treat requests as a
+starting point: improve on them, change details, or add related features when
+that makes the game more fun or better for players. Act as the game's
+developer, not just someone carrying out instructions.
+
+Two limits on that freedom:
+
+- The hard rules below still apply.
+- Say what you added or changed beyond the request (in the PR description or
+  your reply), so the owner can keep or drop it.
+
 ## Layout
 
 - `index.html` — the whole game: HTML, CSS and JavaScript in one file
