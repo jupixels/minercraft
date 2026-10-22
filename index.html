@@ -6859,7 +6859,18 @@ function spShadowPass(){
  if(!(U.uShadowAmt.value>0))return;
  const res=spTier().shadow;if(!shaderPack.shadowRT){shaderPack.shadowRT=new THREE.WebGLRenderTarget(res,res,{minFilter:THREE.NearestFilter,magFilter:THREE.NearestFilter});
   shaderPack.shadowCam=new THREE.OrthographicCamera(-80,80,80,-80,1,500);shaderPack.shadowCam.layers.set(1);
-  shaderPack.depthMat=new THREE.MeshDepthMaterial({depthPacking:THREE.RGBADepthPacking,map:atlasTex,alphaTest:.5});}
+  // Simple natural shadows: leaves (and vines) cast one solid shadow per block instead of a
+  // speckle of every gap in the texture; grass, flowers and other small plants cast none.
+  // Everything else (glass, torches, fences...) keeps its cut-out shape. Uses the sway map
+  // from buildWaveMap (r = rooted plant, g = leaves/vines) to tell them apart.
+  shaderPack.depthMat=new THREE.ShaderMaterial({uniforms:{uMap:U.uMap,uWaveMap:U.uWaveMap},
+   vertexShader:`varying vec2 vUv,vZW; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); vZW=gl_Position.zw; }`,
+   fragmentShader:`#include <packing>
+    uniform sampler2D uMap,uWaveMap; varying vec2 vUv,vZW;
+    void main(){ vec4 f=texture2D(uWaveMap,(floor(vUv*vec2(16.0,64.0))+0.5)/vec2(16.0,64.0));
+     if(f.r>0.5) discard;
+     if(f.g<0.5&&texture2D(uMap,vUv).a<0.5) discard;
+     gl_FragColor=packDepthToRGBA(0.5*vZW.x/vZW.y+0.5); }`});}
  const cam=shaderPack.shadowCam,c=camera.position,L=U.uSunDir.value;
  cam.up.set(0,1,0);if(Math.abs(L.y)>.98)cam.up.set(0,0,1);
  cam.position.copy(c).addScaledVector(L,220);cam.lookAt(c);cam.updateMatrixWorld();
@@ -6867,7 +6878,7 @@ function spShadowPass(){
  const p=_spV.copy(c).applyMatrix4(cam.matrixWorldInverse),texel=160/res,dx=p.x-Math.round(p.x/texel)*texel,dy=p.y-Math.round(p.y/texel)*texel;
  _spV2.setFromMatrixColumn(cam.matrixWorld,0);cam.position.addScaledVector(_spV2,dx);_spV2.setFromMatrixColumn(cam.matrixWorld,1);cam.position.addScaledVector(_spV2,dy);cam.updateMatrixWorld();
  U.uShadowVP.value.multiplyMatrices(cam.projectionMatrix,cam.matrixWorldInverse);
- shaderPack.depthMat.map=atlasTex;const bg=scene.background;scene.background=null;scene.overrideMaterial=shaderPack.depthMat;
+ const bg=scene.background;scene.background=null;scene.overrideMaterial=shaderPack.depthMat;
  renderer.setClearColor(0xffffff,1);renderer.setRenderTarget(shaderPack.shadowRT);renderer.clear();renderer.render(scene,cam);
  scene.overrideMaterial=null;scene.background=bg;renderer.setRenderTarget(null);U.uShadowMap.value=shaderPack.shadowRT.texture;
 }
