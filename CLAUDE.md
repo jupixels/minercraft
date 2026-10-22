@@ -51,16 +51,18 @@ Two limits on that freedom:
     `BLOCK_ID_LIMIT` (1024) is the ceiling for the mesher's lookup tables.
 - **Chunks store 16-bit ids** (`Uint16Array`; the mesher's padded volume too).
   Generators 1–3 still emit `Uint8Array` (their hashes depend on it) and
-  `onChunkData()` widens them; generator 4 emits `Uint16Array`. Test whether
+  `onChunkData()` widens them; generators 4+ emit `Uint16Array`. Test whether
   an id is a block with `BLOCKS[id]` / `isBlockId(id)`, never `id < 256`.
   `BLOCKS` has holes at 256–511, so loops over it must skip empty entries.
-- **World generation is frozen per generator version.** Generators 1 and 2
-  must keep producing byte-identical chunks (the test checks 48 chunk
-  hashes). Generator 3 is live in players' worlds too, so treat it as frozen
-  as well (check it against `main` when you touch worldgen). Generator 4
-  (Caves & Cliffs) is the default for new worlds. Change terrain only by
-  adding a new generator version (guard new code with `version>=5` and keep
-  `R()` call order unchanged for older versions).
+- **World generation is frozen per generator version.** Every shipped
+  generator must keep producing byte-identical chunks: the test pins chunk
+  hashes for generators 1–4 (96 chunks). Generator 5 (Caves & Cliffs plus
+  cave openings and wide river valleys) is the default for new worlds; once
+  it ships, pin it in the test too. Change terrain only by adding a new
+  generator version: guard new code with `version>=6`, keep `R()` call order
+  unchanged for older versions, give new features their own `mulberry32`
+  stream, and bump the default in the three `genVersion` spots and the
+  guest-meta check (`[1,2,3,4,5].includes(w.gen)`).
 - **Saves migrate forward.** World metadata carries a version `v` (currently
   15). When you change the save shape, bump it and add a step to
   `migrateMeta()` so old saves load. Saves live in `localStorage`
