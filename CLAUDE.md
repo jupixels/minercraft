@@ -77,7 +77,9 @@ Two limits on that freedom:
   `'photo'`; depth of field is `uDof`/`uFocus` in the shader-pack composite),
   53 pathfinding (`navYaw`/`navSearch`, budgeted by `NAV`; drops are capped at 3
   blocks so paths agree with `unsafeStep`), 54 living villages (`villagerAI`,
-  village growth via `gen.buildPiece`, `world.villages`) and 55 UI extras.
+  village growth via `gen.buildPiece`, `world.villages`), 55 UI extras and 56
+  key hints (context key line `keyHintsNow()`, the getting-started `TUTORIAL`,
+  Options → Controls…; `CONFIG.keyHints`, `CONFIG.tutorial`).
 - Mob interactions go through `mobUse(actor, mob)` (section 40). An actor is
   `localActor()` or, on the host, `peerActor()` for a guest; add new animal
   interactions there, using `a.held`, `a.consume()`, `a.give()`, `a.ride()`, so

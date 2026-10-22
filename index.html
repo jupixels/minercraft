@@ -219,7 +219,14 @@ body.touch input{font-size:max(16px,1em)}
     <div class="row"><button class="btn half" id="tDifficulty"></button><button class="btn half" id="tShaders"></button></div>
     <div class="row"><button class="btn half" id="tCoords"></button><button class="btn half" id="tTouch"></button></div>
     <div class="btn slider" id="sTouchLook"></div>
-    <button class="btn" id="bOptDone" style="margin-top:calc(var(--g)*14)">Done</button>
+    <div class="row"><button class="btn half" id="tHints"></button><button class="btn half" id="bControls">Controls…</button></div>
+    <button class="btn" id="bOptDone" style="margin-top:calc(var(--g)*8)">Done</button>
+  </div>
+  <!-- controls reference (Options → Controls…) -->
+  <div id="controls" class="screen dim hidden">
+    <div class="sh title-h" style="margin-bottom:calc(var(--g)*6)">Controls</div>
+    <div id="controlsList" style="width:calc(var(--g)*280);max-height:calc(var(--g)*170);overflow-y:auto;background:rgba(0,0,0,.5);border:var(--g) solid #000;padding:calc(var(--g)*4) calc(var(--g)*6);font-size:calc(var(--g)*9);line-height:1.5"></div>
+    <button class="btn" id="bControlsDone" style="margin-top:calc(var(--g)*6)">Done</button>
   </div>
   <!-- pause -->
   <div id="pause" class="screen dim hidden">
@@ -4164,7 +4171,7 @@ $('gui').addEventListener('contextmenu',(e)=>e.preventDefault());
    ========================================================================= */
 const SPLASHES=['Infinite blocks!','100% procedural!','Now with caves!','Punch a tree!','Blossoms!','Made of cubes!','Also try sleeping!','Synthesized!','Diggy diggy!','Watch for cacti!','Greedy for blocks!','Voxels!'];
 let menuReturn='title', newMode='survival';
-function showScreen(id){ for(const s of ['title','worlds','newworld','options','pause','death','loading','multiplayer','mphost','mpconnect','worldtools']) $(s).classList.toggle('hidden', s!==id); }
+function showScreen(id){ for(const s of ['title','worlds','newworld','options','pause','death','loading','multiplayer','mphost','mpconnect','worldtools','controls']) $(s).classList.toggle('hidden', s!==id); }
 function onStateChange(s){
   $('hud').classList.toggle('hidden', !(s==='playing'||s==='inventory'||s==='paused'||s==='dead'||s==='chat'));
   if(s==='title'){ showScreen('title'); refreshTitle(); }
@@ -4351,7 +4358,7 @@ function checkLoading(){
     if(!world.spawn) world.spawn=[player.pos.x, player.pos.y, player.pos.z];
     if(player.health<=0){deathMessage.textContent=deathText(world.deathCause);$('deathScore').textContent='Score: '+player.xp;}
     if(world.quitAfterLoad){ world.quitAfterLoad=false; saveWorld(); toTitle(); return; }
-    setState(player.health<=0?'dead':'playing');if(player.health>0)requestLock();saveWorld();if(world.showIntro){world.showIntro=false;toast('E: inventory & recipes · J: guide · Esc: pause');}
+    setState(player.health<=0?'dead':'playing');if(player.health>0)requestLock();saveWorld();if(world.showIntro){world.showIntro=false;toast(touchUI.on?'The pause button (top right) opens the menu · the chest opens your inventory':'E: inventory · J: guide · Esc: menu · Options → Controls lists every key');}
   }
 }
 
@@ -9032,6 +9039,87 @@ const coordsEl=el('div','sh hud-extra',{position:'fixed',left:g(4),top:g(4),font
  for(const e of itemEntities)if(e.delay<=0&&!e.fly&&Math.abs(e.pos.x-pp.x)<PW+1&&Math.abs(e.pos.z-pp.z)<PW+1&&e.pos.y>pp.y-.75&&e.pos.y<pp.y+PH+.5&&!inventoryRoomFor(e.id)){fullT=performance.now();toast('Your inventory is full');break;}};}
 // field guide: controls for the new features
 {const _bj=buildJournal;buildJournal=function(panel){_bj(panel);const t=panel.lastChild;if(t)t.textContent+='\n\nNEW: P photo mode (free camera, F2 saves a picture; blur needs shaders). M opens the Explorer Map: drag to look around, “Pin here” or “+ Pin” to add waypoints, tap one to track it on screen; /wp add|list|track|remove also works. Dying in Survival leaves a gravestone with everything you carried; follow the purple marker and press Take All. A Grave Compass (compass + bone) points to it. Villagers work by day, meet at the well in the afternoon and sleep at night; villages slowly grow when you are nearby. In multiplayer every player can feed, breed, tame, saddle and ride animals, use boats and striders, and barter.\nTOUCH: left thumb moves (push to the edge to sprint), drag on the right to look, tap to use or place, hold to mine or attack. Buttons: jump (double-tap to fly in Creative), sneak, attack, use; pause, inventory, chat, camera and map at the top. In menus, hold a slot for half a stack and turn on Quick move for shift-click.';};}
+
+/* =========================================================================
+   56. KEY HINTS — make the controls obvious. A hint line above the hotbar names
+       the keys for what you're doing right now (break, place, open, trade, eat,
+       ride, swim…); a short getting-started checklist teaches the basics once
+       per browser (each step ticks off when you do it); Options → Controls…
+       lists every key. Touch devices get the touch wording. Options → Key hints
+       turns the hint line and checklist off.
+   ========================================================================= */
+if(CONFIG.keyHints===undefined)CONFIG.keyHints=true;if(!Number.isInteger(CONFIG.tutorial))CONFIG.tutorial=0;
+const hintEl=el('div','sh',{position:'absolute',left:'50%',bottom:g(60),transform:'translateX(-50%)',fontSize:g(9),whiteSpace:'nowrap',pointerEvents:'none',display:'flex',gap:g(8)},$('hud'));hintEl.id='keyHints';
+const tutEl=el('div','sh hud-extra',{position:'fixed',left:g(4),top:g(20),fontSize:g(9),lineHeight:1.5,background:'rgba(0,0,0,.45)',padding:`${g(3)} ${g(6)}`,pointerEvents:'none',display:'none',zIndex:3,maxWidth:g(170)},document.body);
+const kc=k=>`<span style="display:inline-block;min-width:calc(var(--g)*9);padding:0 calc(var(--g)*2);margin-right:calc(var(--g)*3);background:rgba(0,0,0,.55);border:var(--g) solid #bbb;color:#ffff8a;text-align:center">${k}</span>`;
+// [key, action] pairs for the current moment; touch wording when playing by touch
+function keyHintsNow(){
+ const T=touchUI.on,L=T?'Hold':'Left click',R=T?'Tap':'Right click',H=[],id=inv.heldId(),it=ITEMS[id];
+ if(riding){const boat=MOB_DEFS[riding.kind]?.boat;if(boat)H.push([T?'Stick':'W / S','Row'],[T?'Stick':'A / D','Turn']);else H.push([T?'Stick':'W A S D','Ride'],[T?'Jump':'Space','Jump']);H.push([T?'Sneak':'Shift','Get off']);return H;}
+ if(player.inWater&&!player.onGround)H.push([T?'Jump':'Space','Swim up']);
+ const mob=raycastMob();
+ if(mob){const k=mob.kind;
+  if(k==='villager')H.push([R,'Trade']);else if(k==='boat')H.push([R,'Get in'],[L,'Break']);
+  else{if(!MOB_DEFS[k].hostile){const food=B[MOB_DEFS[k].food];if(id&&id===food)H.push([R,'Feed']);else if(['wolf','cat'].includes(k)&&!mob.tamed&&id===(k==='wolf'?B.bone:B.raw_fish))H.push([R,'Tame']);
+    else if((k==='horse'||k==='strider')&&mob.saddled)H.push([R,'Ride']);else if((k==='horse'&&mob.tamed||k==='strider')&&id===B.saddle)H.push([R,'Saddle']);else if(k==='horse'&&!mob.tamed)H.push([R,'Tame']);
+    else if(k==='sheep'&&id===B.shears)H.push([R,'Shear']);else if(k==='cow'&&id===B.bucket)H.push([R,'Milk']);else if(food&&!id)H.push(['',`Likes ${itemLabel(food).toLowerCase()}`]);}
+   if(k==='piglin'&&id===B.gold_ingot)H.push([R,'Barter']);H.push([T?'Tap':'Left click','Attack']);}
+  return H;}
+ if(it?.food&&player.food<20&&player.mode==='survival')H.push([T?'Hold Use':'Hold right click','Eat']);
+ else if(id===B.bow)H.push([T?'Hold Use':'Hold right click','Draw, release to shoot']);
+ else if(id===B.spyglass)H.push([T?'Hold Use':'Hold right click','Zoom']);
+ if(offhand[0]?.id===B.shield&&!it?.food&&id!==B.bow)H.push([T?'Hold Use':'Hold right click','Block']);
+ if(target){const b=BLOCKS[target.id];
+  if(b.container||target.id===B.crafting_table||target.id===B.enchanting_table)H.push([R,isGraveId(target.id)?'Open grave':'Open']);
+  else if(['door','door_open','gate','gate_open','trapdoor','trapdoor_open'].includes(b.model))H.push([R,'Open / close']);
+  else if(b.model==='bed')H.push([R,'Sleep']);else if(['lever','button'].includes(b.model))H.push([R,'Use']);
+  if(b.hardness>=0)H.push([L,player.mode==='creative'?'Break':'Hold to break']);
+  if((isBlockId(id)||ITEMS[id]?.places)&&!b.container)H.push([R,'Place']);}
+ if(player.mode==='creative'&&!player.flying&&!target&&!mob)H.push([T?'Double-tap Jump':'Double Space','Fly']);
+ return H.slice(0,4);
+}
+const TUTORIAL=[
+ {t:()=>touchUI.on?'Move with the stick on the left':'Move with W A S D',done:s=>s.moved>4},
+ {t:()=>touchUI.on?'Drag on the right side to look around':'Move the mouse to look around (click the game first)',done:s=>s.turned>1.2},
+ {t:()=>touchUI.on?'Press the jump button':'Jump with Space',done:s=>s.jumped},
+ {t:()=>touchUI.on?'Hold your finger on a block to break it (try a tree)':'Hold the left mouse button on a block to break it (try a tree)',done:s=>worldStats.broken>s.broken0},
+ {t:()=>touchUI.on?'Open your inventory with the chest button':'Open your inventory with E',done:s=>s.inv},
+ {t:()=>touchUI.on?'Tap a block face to place the block you hold':'Right-click to place the block you hold',done:s=>worldStats.placed>s.placed0},
+ {t:()=>touchUI.on?'All set! The pause button (top right) opens the menu.':'All set! J opens the guide, Esc the menu, Options → Controls lists every key.',done:s=>s.lastT>7},
+];
+const tut={moved:0,turned:0,jumped:false,inv:false,broken0:0,placed0:0,lastT:0,px:null,yaw:null,started:false};
+{const _j=events.onJump;events.onJump=()=>{tut.jumped=true;_j?.();};}
+{const _og=openGui;openGui=function(k,d){if(k==='inventory'||k==='creative')tut.inv=true;return _og(k,d);};}
+let hintT=0,hintKey='';
+{const _uh=updateHud;updateHud=function(dt){_uh(dt);
+ const playing=gameState==='playing'&&CONFIG.keyHints&&$('hud').style.opacity!=='0';
+ hintT-=dt;if(hintT<=0){hintT=.2;const H=playing?keyHintsNow():[],k=JSON.stringify(H);if(k!==hintKey){hintKey=k;hintEl.innerHTML=H.map(([key,act])=>`<span>${key?kc(key):''}${act}</span>`).join('');}}
+ hintEl.style.display=playing?'flex':'none';
+ // getting-started checklist (once per browser)
+ const step=TUTORIAL[CONFIG.tutorial];if(!step||!playing){tutEl.style.display='none';return;}
+ if(!tut.started){tut.started=true;tut.broken0=worldStats.broken;tut.placed0=worldStats.placed;}
+ const p=player.pos;if(tut.px)tut.moved+=Math.hypot(p.x-tut.px[0],p.z-tut.px[1]);tut.px=[p.x,p.z];if(tut.yaw!==null)tut.turned+=Math.abs(wrapAngle(player.yaw-tut.yaw))+Math.abs(player.pitch-(tut.pitch??player.pitch));tut.yaw=player.yaw;tut.pitch=player.pitch;
+ if(CONFIG.tutorial===TUTORIAL.length-1)tut.lastT+=dt;
+ if(step.done(tut)){CONFIG.tutorial++;saveSettings();sfx.click();tut.broken0=worldStats.broken;tut.placed0=worldStats.placed;}
+ const cur=TUTORIAL[CONFIG.tutorial];if(!cur){tutEl.style.display='none';return;}
+ tutEl.style.display='block';const html=`<span style="color:#ffff55">Getting started ${Math.min(CONFIG.tutorial+1,TUTORIAL.length-1)}/${TUTORIAL.length-1}</span><br>${cur.t()}`;if(tutEl.innerHTML!==html)tutEl.innerHTML=html;};}
+// Options: hint toggle and the full controls list
+function renderControls(){
+ const T=touchUI.on,rows=T?[
+  ['Move','Left stick (push to the edge to sprint)'],['Look','Drag on the right side'],['Use / place / open','Tap the screen, or the hand button'],['Break / attack','Hold on the screen, or the sword button'],
+  ['Jump · Fly (Creative)','Jump button · double-tap it'],['Sneak','Sneak button (toggle)'],['Hotbar','Tap a slot · hold to drop'],['Inventory · Chat · Map','Chest · speech bubble · map buttons at the top'],
+  ['Menu','Pause button (top right)'],['In menus','Tap to pick up / put down · hold for half · Quick move = shift-click']]:[
+  ['Move','W A S D'],['Look','Mouse (click the game to capture it)'],['Jump · Fly (Creative)','Space · double Space'],['Sneak · Get off a mount','Shift'],['Sprint','Ctrl, or double-tap W'],
+  ['Break / attack','Left mouse'],['Use / place / open','Right mouse (hold to eat, draw a bow, block)'],['Pick block','Middle mouse'],['Hotbar','1–9 or mouse wheel'],['Drop item','Q (Ctrl+Q whole stack)'],
+  ['Swap offhand','F'],['Inventory','E'],['Chat · command','T · /  (Up/Down for history)'],['Map (with a map)','M'],['Field guide & stats','J'],['Camera view','V or F5'],
+  ['Photo mode','P'],['Hide HUD','F1'],['Debug info','F3'],['Player list (online)','Tab'],['Menu','Esc'],
+  ['In menus','Shift-click moves a stack · right-click takes half · 1–9 swaps with the hotbar · Q drops']];
+ $('controlsList').innerHTML=rows.map(([a,k])=>`<div style="display:flex;justify-content:space-between;gap:calc(var(--g)*8);padding:calc(var(--g)*1) 0;border-bottom:var(--g) solid rgba(255,255,255,.08)"><span style="color:#ddd">${a}</span><span style="color:#ffff8a;text-align:right">${k}</span></div>`).join('');
+}
+$('bControls').onclick=()=>{clickSound();renderControls();showScreen('controls');};
+$('bControlsDone').onclick=()=>{clickSound();showScreen('options');};
+{const _oo=openOptions;openOptions=function(){_oo();toggleBtn('tHints',()=>'Key hints: '+(CONFIG.keyHints?'ON':'OFF'),()=>{CONFIG.keyHints=!CONFIG.keyHints;if(CONFIG.keyHints&&CONFIG.tutorial>=TUTORIAL.length)CONFIG.tutorial=0;saveSettings();});};}
+document.addEventListener('keydown',e=>{if(e.code==='Escape'&&!$('controls').classList.contains('hidden')){e.stopImmediatePropagation();$('bControlsDone').onclick();}},true);
 
 /* =========================================================================
    20. BOOT
