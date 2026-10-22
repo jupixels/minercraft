@@ -48,7 +48,7 @@ Two limits on that freedom:
 - Time of day: `setWorldTime(d,lock)` (pause-menu slider, Freeze/Resume
   button, `/time set|add|lock|unlock|query`); `world.dayLock` stops the cycle
   in `updateSky`, is saved in meta (v16) and travels to guests as `lk`.
-- Section 47 is uranium: ore (generator 9), yellowcake, and the Enrichment
+- Section 47 is uranium: ore (veins from generator 9, cave-wall patches from 10), yellowcake, and the Enrichment
   Table (container type `enrichment`, ticked by the host from
   `updateFurnaces`). It is groundwork for a bigger nuclear update.
 - Explosions (section 27): `explode()` casts blast rays against block blast
@@ -92,9 +92,9 @@ Two limits on that freedom:
   `BLOCKS` has holes at 256–511, so loops over it must skip empty entries.
 - **World generation is frozen per generator version.** Every shipped
   generator must keep producing byte-identical chunks: the test pins chunk
-  hashes for generators 1–8. Generator 9 (generator 8 plus uranium veins)
-  is the default for new worlds; once it ships, pin it too. Change terrain
-  only by adding a version: guard new code with `version>=10`, keep `R()` call order unchanged for older versions,
+  hashes for generators 1–9. Generator 10 (generator 9 plus uranium patches
+  on cave walls) is the default for new worlds; once it ships, pin it too.
+  Change terrain only by adding a version: guard new code with `version>=11`, keep `R()` call order unchanged for older versions,
   give new features their own `mulberry32` stream or a position hash, and
   bump the default in the three `genVersion` spots and the guest-meta check.
   Features that span chunks (tunnels, villages) are planned from world

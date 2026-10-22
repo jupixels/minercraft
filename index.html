@@ -908,6 +908,16 @@ function makeGen(seed, B, version=1,dimension='overworld'){
           if(x>=0&&x<16&&z>=0&&z<16&&y>0&&y<CH){const i=I(x,y,z);if(d[i]===B.stone)d[i]=B.uranium_ore;else if(d[i]===B.deepslate)d[i]=B.deepslate_uranium_ore;}
           const dir=(U9()*6)|0;if(dir===0)x++;else if(dir===1)x--;else if(dir===2)y++;else if(dir===3)y--;else if(dir===4)z++;else z--;}}
     }
+    if(version>=10){
+      // Generator 10: uranium also lines cave walls (like the iron there), in its own stream:
+      // probe random spots below y 52 and grow a small patch where stone touches cave air.
+      const U10=mulberry32((seed^Math.imul(cx,0x51ed27a3)^Math.imul(cz,0x1b873593)^0x10ca)>>>0),UR=[B.uranium_ore,B.deepslate_uranium_ore];
+      const host=i=>d[i]===B.stone||d[i]===B.deepslate,open=(x,y,z)=>d[I(x+1,y,z)]===0||d[I(x-1,y,z)]===0||d[I(x,y+1,z)]===0||d[I(x,y-1,z)]===0||d[I(x,y,z+1)]===0||d[I(x,y,z-1)]===0;
+      for(let n=0;n<16;n++){let x=1+((U10()*14)|0),y=5+((U10()*47)|0),z=1+((U10()*14)|0);const len=2+((U10()*3)|0);
+        if(!host(I(x,y,z))||!open(x,y,z))continue;
+        for(let k=0;k<len;k++){const i=I(x,y,z);if(host(i))d[i]=UR[d[i]===B.deepslate?1:0];
+          const dir=(U10()*6)|0;if(dir===0)x=Math.min(14,x+1);else if(dir===1)x=Math.max(1,x-1);else if(dir===2)y++;else if(dir===3)y=Math.max(2,y-1);else if(dir===4)z=Math.min(14,z+1);else z=Math.max(1,z-1);}}
+    }
     if(version>=7)drawVillages(d,ox,oz,I);
     return d;
   }
@@ -1544,8 +1554,8 @@ for(const [mat,label,tile,full] of [['spruce','Spruce','spruce_planks',B.spruce_
   xShapes(mat,label,{all:tile},full,XWOOD);
 // Uranium (section 47): pitchblende ore with yellow-green autunite crusts, its deepslate
 // variant, a raw block and the enrichment table (a centrifuge cascade; container 'enrichment').
-xb('uranium_ore','Uranium Ore',{...XSTONE,hardness:3.5,minTier:3},['sore',[44,46,40],[214,222,64],[120,150,40],6]);
-xb('deepslate_uranium_ore','Deepslate Uranium Ore',{...XSTONE,hardness:5,minTier:3},['ore',[64,64,70],[44,46,40],[226,232,78],[130,160,44]]);
+xb('uranium_ore','Uranium Ore',{...XSTONE,hardness:3.5,minTier:3},['sore',[176,204,58],[240,255,128],[48,54,40],8]);   // bright autunite crusts so it reads on cave walls
+xb('deepslate_uranium_ore','Deepslate Uranium Ore',{...XSTONE,hardness:5,minTier:3},['ore',[64,64,70],[176,204,58],[240,255,128],[48,54,40]]);
 xb('raw_uranium_block','Block of Raw Uranium',{...XSTONE,hardness:5,minTier:3},['raw',[92,98,64]]);
 xb('enrichment_table','Enrichment Table',{...XSTONE,hardness:3.5,minTier:1,container:'enrichment'},{top:'enrich_top',bottom:'enrich_bottom',side:'enrich_side'});
 if(extId>BLOCK_ID_LIMIT)throw Error('Block id space exhausted');
@@ -3023,7 +3033,7 @@ const store = {
   del(k){ try{ localStorage.removeItem(k); }catch(e){} },
   keys(){ try{ return Object.keys(localStorage); }catch(e){ return []; } },
 };
-world.persist = false;world.genVersion=9; world.containers = new Map(); world.name='World';
+world.persist = false;world.genVersion=10; world.containers = new Map(); world.name='World';
 function loadChunkEdits(cx,cz){
   const k=ckey(cx,cz); if(world.edits.has(k)) return world.edits.get(k);
   if(!world.persist) return null;
@@ -3955,7 +3965,7 @@ function setupTitleWorld(meta){
   const seed = meta ? meta.seed : 20261018;
   world.dimension=meta?.dimension||'overworld';world.dimensionStates=meta?.dimensions||{};
   world.dimension=meta?.dimension||'overworld';
-  world.genVersion=meta?.generator||9;
+  world.genVersion=meta?.generator||10;
   world.persist = !!meta;            // read saved edits so the panorama shows your builds
   if(world.seed!==seed || !workers.length||world.builtGenVersion!==world.genVersion||world.builtDimension!==(world.dimension||'overworld')){ world.edits.clear(); world.dirtyEdits.clear(); startWorld(seed, null, false); }
   if(meta){ titleCam.x=meta.p.x; titleCam.z=meta.p.z; titleCam.y=Math.max(meta.p.y+6, SEA+12); }
@@ -3976,7 +3986,7 @@ function beginGame(seed, meta, mode){
   respawnPending=false;resetMobs();clearSigns();resetRedstone();
   if(world.builtDimension!==world.dimension){world.edits.clear();world.dirtyEdits.clear();}
   if(world.loadedSlot!==worldSlot){world.edits.clear();world.dirtyEdits.clear();world.seed=NaN;world.loadedSlot=worldSlot;}
-  world.genVersion=meta?.generator||9;
+  world.genVersion=meta?.generator||10;
   world.mp=meta?.mp&&typeof meta.mp==='object'?meta.mp:null;
   world.persist = true;
   if(!meta){ world.edits.clear(); world.containers.clear(); }
@@ -5032,7 +5042,7 @@ function migrateMeta(m){
   if(m.v<14){m.endPortals=[];m.endBoss={defeated:false};m.v=14;}
   if(m.v<15){if(m.mp&&typeof m.mp==='object')m.mp.pvp=!!m.mp.pvp;m.v=15;}   // 16-bit block ids, generator 4, friendly fire
   if(m.v<16){m.dayLock=false;m.v=16;}   // time of day can be frozen
-  if(![1,2,3,4,5,6,7,8,9].includes(m.generator))m.generator=2;   // keep the generator a world was built with (4+ used to fall back to 2)
+  if(![1,2,3,4,5,6,7,8,9,10].includes(m.generator))m.generator=2;   // keep the generator a world was built with (4+ used to fall back to 2)
   return m;
 }
 function mobRecord(e){return {kind:e.kind,x:e.pos.x,y:e.pos.y,z:e.pos.z,hp:e.hp,yaw:e.yaw,baby:e.baby,breedCD:e.breedCD,persistent:e.persistent,tamed:!!e.tamed,sitting:!!e.sitting,saddled:!!e.saddled,shorn:e.shorn||0,size:e.size||1,stock:e.stock||null,name:e.name||''};}
@@ -7841,7 +7851,7 @@ function netEnterWorld(w,dimChange){
  net.me=w.you||net.me;net.dim=w.dim;net.inWorld=true;netClearAvatars();
  const spawn=Array.isArray(w.spawn)&&w.spawn.every(Number.isFinite)?w.spawn:null,at=Array.isArray(w.at)&&w.at.every(Number.isFinite)?w.at:[.5,80,.5];
  const pos=dimChange?at:s?.p&&s.p.every(Number.isFinite)?s.p:spawn||at;
- const meta={v:16,dayLock:!!w.lk,name:String(w.name||'World').slice(0,32),seed:w.seed|0,mode:w.mode==='creative'?'creative':'survival',generator:[1,2,3,4,5,6,7,8,9].includes(w.gen)?w.gen:9,dimension:['overworld','nether','end'].includes(w.dim)?w.dim:'overworld',
+ const meta={v:16,dayLock:!!w.lk,name:String(w.name||'World').slice(0,32),seed:w.seed|0,mode:w.mode==='creative'?'creative':'survival',generator:[1,2,3,4,5,6,7,8,9,10].includes(w.gen)?w.gen:10,dimension:['overworld','nether','end'].includes(w.dim)?w.dim:'overworld',
   spawn:dimChange?at:spawn,time:+w.day||0,days:w.days|0,weather:{type:Array.isArray(w.w)?w.w[0]:'clear',remaining:1e9},
   p:{x:pos[0],y:pos[1],z:pos[2],yaw:pos[3]||0,pitch:pos[4]||0,fire:0,hp:s?.hp??20,food:s?.food??20,sat:s?.sat??5,xp:s?.xp??0,fly:false},
   inv:s?.inv||[],armor:s?.armor||[],offhand:s?.off||null,sel:s?.sel||0,effects:s?.fx||{},signs:Array.isArray(w.signs)?w.signs:[],pistons:Array.isArray(w.pistons)?w.pistons:[],

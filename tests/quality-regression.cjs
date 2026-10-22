@@ -112,12 +112,23 @@ for(const seed of [42,-98765]){
 {let c7=0,c8=0;const g7=make(12345,B,7),g8=make(12345,B,8);
  for(let cz=-8;cz<8;cz++)for(let cx=-8;cx<8;cx++){const a=g7.genChunk(cx,cz),b=g8.genChunk(cx,cz);for(let i=0;i<a.length;i++){if(a[i]===B.coal_ore)c7++;if(b[i]===B.coal_ore)c8++;}}
  if(process.env.DEBUG_GEN)console.log({c7,c8});assert(c8<c7,'generator 8 should have less cave-mouth coal');}
+// Generator 9 shipped (uranium veins), so it is pinned too.
+LEGACY.hashes.push([9,42,"overworld",0,0,"e6929bff97b706532b165fbee6bbcae0d8194dfe25cef5575d2ea563fc8f527a"],[9,42,"overworld",-1,2,"5f43ea6405577d243c329d11435db6d82f7b0cebbd0ddfb2891189961878e498"],[9,42,"overworld",15,-31,"0c91801bcc59fa267a289b7f966785d10bc658e2f346d3b7fbbafba7079186e9"],[9,12345,"overworld",100,100,"eb89145efbb715b55ac174ade69d02189fd1f6b144d40eede0def53fad6dc1c2"],[9,-98765,"overworld",-7,3,"09f252387cbb958f6f31b6f3ce16f3816318fe4f43500e6127683915aa393af0"]);
+for(const [version,seed,dimension,x,z,expected] of LEGACY.hashes.slice(-5))assert.equal(digest(make(seed,B,version,dimension).genChunk(x,z)),expected,`legacy ${version}/${seed}/${dimension}/${x},${z}`);
 // Generator 9: generator 8 plus uranium veins, a little rarer than iron, and nothing else.
 {let iron=0,ur=0,other=0;const g8=make(12345,B,8),g9=make(12345,B,9);
  for(let cz=-5;cz<5;cz++)for(let cx=-5;cx<5;cx++){const a=g8.genChunk(cx,cz),b=g9.genChunk(cx,cz);for(let i=0;i<a.length;i++){
   if(b[i]===B.iron_ore||b[i]===B.deepslate_iron_ore)iron++;if(b[i]===B.uranium_ore||b[i]===B.deepslate_uranium_ore)ur++;
   else if(a[i]!==b[i])other++;}}
  if(process.env.DEBUG_GEN)console.log({iron,ur,other});assert(other===0,'generator 9 changed more than uranium');assert(ur>iron*.6&&ur<iron,'uranium should be a little rarer than iron');}
+// Generator 10: generator 9 plus uranium patches on cave walls, so caves show about as much
+// uranium as iron; nothing else changes.
+{let iron=0,ur=0,other=0;const g9=make(42,B,9),g10=make(42,B,10),touch=(d,x,y,z)=>[[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]].some(([a,b,c])=>d[(x+a)+((z+c)<<4)+((y+b)<<8)]===0);
+ for(let cz=-4;cz<4;cz++)for(let cx=-4;cx<4;cx++){const a=g9.genChunk(cx,cz),b=g10.genChunk(cx,cz);
+  for(let i=0;i<a.length;i++)if(a[i]!==b[i]&&!(b[i]===B.uranium_ore&&a[i]===B.stone)&&!(b[i]===B.deepslate_uranium_ore&&a[i]===B.deepslate))other++;
+  for(let y=1;y<127;y++)for(let z=1;z<15;z++)for(let x=1;x<15;x++){const id=b[x+(z<<4)+(y<<8)];if(!touch(b,x,y,z))continue;
+   if(id===B.iron_ore||id===B.deepslate_iron_ore)iron++;if(id===B.uranium_ore||id===B.deepslate_uranium_ore)ur++;}}
+ if(process.env.DEBUG_GEN)console.log({iron,ur,other});assert(other===0,'generator 10 changed more than uranium');assert(ur>iron*.6,'uranium should show on cave walls about as often as iron');}
 // Legacy metadata must retain generator and equipment, including offhand enchants.
 vm.runInContext(source.slice(source.indexOf('function migrateMeta('),source.indexOf('function mobRecord('))+';globalThis.migrate=migrateMeta;',context);
 const equipment=[315,1,123,{fortune:2}],old={v:12,generator:2,inv:[equipment],offhand:[384,1,200,null],p:{x:1,y:70,z:2}};
@@ -137,4 +148,4 @@ for(const axis of [0,1]){
  world.setBlock(x,y+2,z,0);context.portals.invalidatePortal(x,y+2,z);
  assert(![...cells.values()].includes(B.portal));assert.equal(world.getBlock(20,35,20),B.bricks,'frame maintenance changed a neighbouring build');
 }
-console.log(`PASS: syntax, soundpack, 256 stable IDs + ${BLOCKS.length-512} appended, ${LEGACY.hashes.length} legacy chunks, v3-v9 determinism/resources/villages/uranium, migration and both portal frames.`);
+console.log(`PASS: syntax, soundpack, 256 stable IDs + ${BLOCKS.length-512} appended, ${LEGACY.hashes.length} legacy chunks, v3-v10 determinism/resources/villages/uranium, migration and both portal frames.`);
