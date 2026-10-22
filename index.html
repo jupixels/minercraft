@@ -38,6 +38,18 @@ img,canvas.px{image-rendering:pixelated;image-rendering:crisp-edges}
 .btn:hover{color:#ffffa0}
 .btn[disabled]{color:#a0a0a0;cursor:default;filter:brightness(.55)}
 .btn.half{width:calc(var(--g)*98)}
+/* Shader pack button: sunset-gradient glass with a sweeping reflection; each mode has its own glow */
+#bShaders{overflow:hidden;color:#fff;text-shadow:var(--g) var(--g) 0 #2a0f3a;border-color:#140820;
+  background-image:linear-gradient(180deg,rgba(255,255,255,.42) 0,rgba(255,255,255,.12) 45%,rgba(0,0,0,0) 50%,rgba(0,0,0,.22) 100%),linear-gradient(90deg,#4a3bb8,#9b48c8 30%,#e0628f 62%,#f5a04a 85%,#f8d36a);
+  box-shadow:inset 0 var(--g) 0 rgba(255,255,255,.6),inset 0 calc(var(--g)*-2) 0 rgba(40,0,60,.35),0 0 calc(var(--g)*5) rgba(230,120,255,.55)}
+#bShaders::before{content:'';position:absolute;inset:0;background:repeating-linear-gradient(90deg,rgba(255,255,255,.07) 0 var(--g),transparent var(--g) calc(var(--g)*3));pointer-events:none}
+#bShaders::after{content:'';position:absolute;top:0;left:-50%;width:30%;height:100%;background:linear-gradient(100deg,transparent,rgba(255,255,255,.75),transparent);transform:skewX(-22deg);animation:shaderShine 2.6s ease-in-out infinite;pointer-events:none}
+#bShaders:hover{color:#fff;filter:brightness(1.18) saturate(1.15)}
+#bShaders.off{filter:saturate(.45) brightness(.85);box-shadow:inset 0 var(--g) 0 rgba(255,255,255,.4),inset 0 calc(var(--g)*-2) 0 rgba(0,0,0,.3)}
+#bShaders.off:hover{filter:saturate(.8)}
+#bShaders.ultra{box-shadow:inset 0 var(--g) 0 rgba(255,255,255,.7),inset 0 calc(var(--g)*-2) 0 rgba(40,0,60,.35),0 0 calc(var(--g)*8) rgba(255,190,120,.85);animation:shaderPulse 1.8s ease-in-out infinite}
+@keyframes shaderShine{0%{left:-50%}55%,100%{left:130%}}
+@keyframes shaderPulse{50%{filter:brightness(1.12)}}
 .row{display:flex;gap:calc(var(--g)*4)}
 .slider{position:relative}
 .slider input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;margin:0}
@@ -184,7 +196,8 @@ img,canvas.px{image-rendering:pixelated;image-rendering:crisp-edges}
   <div id="pause" class="screen dim hidden">
     <div class="sh title-h">Game Menu</div>
     <button class="btn" id="bResume">Back to Game</button>
-    <div class="row" style="margin-top:calc(var(--g)*8)"><button class="btn half" id="bOptP">Options...</button><button class="btn half" id="bSoundP"></button></div>
+    <button class="btn" id="bShaders" style="margin-top:calc(var(--g)*6)">Shaders: Off</button>
+    <div class="row"><button class="btn half" id="bOptP">Options...</button><button class="btn half" id="bSoundP"></button></div>
     <div class="row"><button class="btn half" id="bExport">Export World</button><button class="btn half" id="bImport">Import World</button></div>
     <div class="row"><button class="btn half" id="bBackup">Create Backup</button><button class="btn half" id="bRestore">Restore Backup</button></div>
     <div class="row"><button class="btn half" id="bJournal">Guide &amp; Stats</button><button class="btn half" id="bGameMode">Mode: Survival</button></div>
@@ -7040,6 +7053,11 @@ $('bMpPvp').onclick=()=>{clickSound();if(net.role==='host'){netSetPvp(!world.mp.
  fs.onclick=e=>{e.stopPropagation();const on=document.fullscreenElement||document.webkitFullscreenElement;
   if(on)(document.exitFullscreen||document.webkitExitFullscreen).call(document);else{const r=(root.requestFullscreen||root.webkitRequestFullscreen).call(root);if(r?.then)r.then(()=>{if(gameState==='playing')requestLock(true);},()=>{});}};
  fs.onmousedown=e=>e.stopPropagation();}
+// Pause-menu shader button: cycles Off → Fancy → Ultra and keeps the Options label in step.
+const SHADER_NAMES={off:'Off',fancy:'Fancy',ultra:'Ultra'};
+function updateShaderButton(){const m=CONFIG.shaders||'off',b=$('bShaders');b.textContent='Shaders: '+SHADER_NAMES[m];b.className='btn '+m;const o=$('tShaders');if(o)o.textContent='Shaders: '+SHADER_NAMES[m];}
+$('bShaders').onclick=()=>{const o=['off','fancy','ultra'];CONFIG.shaders=o[(o.indexOf(CONFIG.shaders||'off')+1)%3];saveSettings();updateShaderButton();clickSound();};
+{const _osc3=onStateChange;onStateChange=function(s){_osc3(s);if(s==='paused')updateShaderButton();};}
 // Switch this world between Survival and Creative from the pause menu (saved with the world).
 function updateModeButton(){const b=$('bGameMode');b.textContent='Mode: '+(player.mode==='creative'?'Creative':'Survival');b.disabled=net.role==='client';}
 $('bGameMode').onclick=()=>{if(net.role==='client')return;clickSound();player.mode=player.mode==='creative'?'survival':'creative';if(player.mode==='survival'){player.flying=false;}else{player.health=20;player.food=20;}
