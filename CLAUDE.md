@@ -19,13 +19,22 @@ Two limits on that freedom:
 ## Layout
 
 - `index.html` — the whole game: HTML, CSS and JavaScript in one file
-  (~6,600 lines). The code is split into numbered sections with banner
-  comments (`1. CONFIG & SMALL HELPERS` … `44. CAVES & CLIFFS`); grep for the
+  (~7,100 lines). The code is split into numbered sections with banner
+  comments (`1. CONFIG & SMALL HELPERS` … `46. BOATS`); grep for the
   banner to find a system. Numbers are labels, not file order.
 - Section 2 defines every block and item. Section 44 draws the textures for
   the blocks and items added in the Caves & Cliffs update (from the
   `EXT_TEX` recipes set in section 2) and holds their recipes, creative-tab
   placement, daylight burning, the spyglass and the clock.
+- Section 45 is the optional shader pack (Options → Shaders: Off / Fancy /
+  Ultra). Off must stay the original renderer. The chunk materials compile
+  shader-pack code only under `#ifdef SHADERS` (plus `WAVE`, `SHADOWS`,
+  `REFLECT`), toggled through `material.defines` in `applyShaderMode()`;
+  `renderScene()` replaces the plain `renderer.render(scene, camera)`.
+  Solid and cut chunk meshes are on layer 1 so the shadow pass sees them.
+- Section 46 is boats (an entity kind with its own float/row physics).
+- `world.dimension` can be unset for the overworld; compare with
+  `(world.dimension||'overworld')`.
 - `<script type="text/plain" id="worldgen-src">` — terrain generation. It runs
   both on the main thread and in Web Workers (built from this text at
   runtime), so it must stay self-contained: no references to anything outside
@@ -56,13 +65,13 @@ Two limits on that freedom:
   `BLOCKS` has holes at 256–511, so loops over it must skip empty entries.
 - **World generation is frozen per generator version.** Every shipped
   generator must keep producing byte-identical chunks: the test pins chunk
-  hashes for generators 1–4 (96 chunks). Generator 5 (Caves & Cliffs plus
-  cave openings and wide river valleys) is the default for new worlds; once
-  it ships, pin it in the test too. Change terrain only by adding a new
-  generator version: guard new code with `version>=6`, keep `R()` call order
-  unchanged for older versions, give new features their own `mulberry32`
-  stream, and bump the default in the three `genVersion` spots and the
-  guest-meta check (`[1,2,3,4,5].includes(w.gen)`).
+  hashes for generators 1–5 (120 chunks). Generator 6 (Caves & Cliffs, cave
+  openings, wide river valleys, big coal-lined cave mouths) is the default for
+  new worlds; once it ships, pin it in the test too. Change terrain only by
+  adding a new generator version: guard new code with `version>=7`, keep
+  `R()` call order unchanged for older versions, give new features their own
+  `mulberry32` stream or a position hash, and bump the default in the three
+  `genVersion` spots and the guest-meta check (`[1,…,6].includes(w.gen)`).
 - **Saves migrate forward.** World metadata carries a version `v` (currently
   15). When you change the save shape, bump it and add a step to
   `migrateMeta()` so old saves load. Saves live in `localStorage`
