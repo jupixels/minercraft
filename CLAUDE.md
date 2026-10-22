@@ -19,9 +19,13 @@ Two limits on that freedom:
 ## Layout
 
 - `index.html` — the whole game: HTML, CSS and JavaScript in one file
-  (~6,000 lines). The code is split into numbered sections with banner
-  comments (`1. CONFIG & SMALL HELPERS` … `43. MULTIPLAYER`); grep for the
+  (~6,600 lines). The code is split into numbered sections with banner
+  comments (`1. CONFIG & SMALL HELPERS` … `44. CAVES & CLIFFS`); grep for the
   banner to find a system. Numbers are labels, not file order.
+- Section 2 defines every block and item. Section 44 draws the textures for
+  the blocks and items added in the Caves & Cliffs update (from the
+  `EXT_TEX` recipes set in section 2) and holds their recipes, creative-tab
+  placement, daylight burning, the spyglass and the clock.
 - `<script type="text/plain" id="worldgen-src">` — terrain generation. It runs
   both on the main thread and in Web Workers (built from this text at
   runtime), so it must stay self-contained: no references to anything outside
@@ -36,17 +40,33 @@ Two limits on that freedom:
   The only external script is three.js r128 from cdnjs, and the test asserts
   that list exactly. Don't add another `<script src>` without updating the
   test on purpose.
-- **Block IDs are permanent.** `BLOCKS` must stay 256 entries with the same
-  id → name mapping; saves store raw IDs. Add new blocks only in unused
-  slots. The test hashes the registry.
+- **Block IDs are permanent.** Saves store raw IDs, so an id → name pair
+  never changes. The id space is split three ways:
+  - `0–255`: the original blocks. Frozen; the test hashes them.
+  - `256–511`: items only (`defItem`). Never put a block here.
+  - `512–1023`: newer blocks, appended in order with `xb()` / `xFacing()` /
+    `xShapes()` at the end of the section 2 block list. Append only — never
+    reorder, rename or remove one. The test pins a hash of the existing
+    range; after appending, extend that pinned range on purpose.
+    `BLOCK_ID_LIMIT` (1024) is the ceiling for the mesher's lookup tables.
+- **Chunks store 16-bit ids** (`Uint16Array`; the mesher's padded volume too).
+  Generators 1–3 still emit `Uint8Array` (their hashes depend on it) and
+  `onChunkData()` widens them; generator 4 emits `Uint16Array`. Test whether
+  an id is a block with `BLOCKS[id]` / `isBlockId(id)`, never `id < 256`.
+  `BLOCKS` has holes at 256–511, so loops over it must skip empty entries.
 - **World generation is frozen per generator version.** Generators 1 and 2
   must keep producing byte-identical chunks (the test checks 48 chunk
-  hashes). Change terrain only by adding a new generator version that new
-  worlds opt into.
+  hashes). Generator 3 is live in players' worlds too, so treat it as frozen
+  as well (check it against `main` when you touch worldgen). Generator 4
+  (Caves & Cliffs) is the default for new worlds. Change terrain only by
+  adding a new generator version (guard new code with `version>=5` and keep
+  `R()` call order unchanged for older versions).
 - **Saves migrate forward.** World metadata carries a version `v` (currently
-  14). When you change the save shape, bump it and add a step to
+  15). When you change the save shape, bump it and add a step to
   `migrateMeta()` so old saves load. Saves live in `localStorage`
   (`bc.*` keys; per-world `bc.w<slot>.*`).
+- **The texture atlas is 16 × 64 tiles** (`ATLAS_ROWS`); about 600 are used.
+  Every `makeTile` that isn't a `mob_` tile takes an atlas slot.
 - **Sound pack changes need the test updated.** The test checks the manifest
   count and a hash of every sound file.
 
@@ -95,9 +115,13 @@ How syncing works, so new features stay multiplayer-safe:
 - New kinds of shared state that don't go through the functions above need a
   message: add a case to `netHostOnMsg` (guest → host; validate everything,
   guests are untrusted) and to `netClientOnMsg` (host → guest).
-- `NET_V` is the protocol version. Bump it whenever messages change in an
-  incompatible way, so mismatched players get a "refresh to update" message
-  instead of a broken game.
+- `NET_V` is the protocol version (currently 2). Bump it whenever messages
+  or block ids change in an incompatible way, so mismatched players get a
+  "refresh to update" message instead of a broken game.
+- Friendly fire is the host's setting `world.mp.pvp` (pause-menu button or
+  `/friendlyfire on|off`). It travels to guests in the welcome snapshot and
+  the `time` broadcast. Guests send `pvp` hits to the host, which checks the
+  setting, range and rate before passing them on as `hurt`.
 - Wrapped functions are reassigned globals (`spawnItem = function…`), so
   always call them by name rather than keeping your own reference.
 
