@@ -21,8 +21,7 @@ Two limits on that freedom:
 - `index.html` — the whole game: HTML, CSS and JavaScript in one file
   (~13,800 lines, ~1.34 MB; many lines are very long, so read by line ranges
   or grep rather than opening it whole). The code is split into numbered
-  sections with banner comments (`1. CONFIG & SMALL HELPERS` … `66. ENGINE &
-  ACCESSIBILITY`); grep for the banner to find a system. Numbers are labels,
+  sections with banner comments (`1. CONFIG & SMALL HELPERS` … `67. CATACLYSMS`); grep for the banner to find a system. Numbers are labels,
   not file order: 1-42 run roughly in order, then 44-59, then the newest
   sections 60+ just before `20. BOOT`, and `43. MULTIPLAYER` comes last,
   after BOOT (its `const net`/`NET_V` are not initialised while earlier
@@ -114,7 +113,7 @@ Two limits on that freedom:
   function name twice in the main script). Flames are boomFx kind 7 (upright
   noisy tongues, `fireFlames`); `blastFires` lights the ground after
   explosions and nuke shock fronts (`carveChunkLive` wrapper).
-- Sections 60-66 (newest, just before BOOT):
+- Sections 60-67 (newest, just before BOOT):
   - 60 Roadmap & Achievements: `buildJournal` (J, Pause → Roadmap; L opens
     the Achievements tab). `ROADMAP` stages tick off by advancement name;
     `ADVANCEMENTS` + `ADV_EXTRA` (later sections push to it) list every
@@ -154,6 +153,25 @@ Two limits on that freedom:
     `/storage`, `/greedy`, subtitles (`subtitle(text,x,y,z)`; call it from
     new sounds), the colourblind palette (body class `cvd`) and reduce motion
     (body class `rm`, `CONFIG.reduceMotion`), Options → Accessibility.
+  - 67 Cataclysms (`/singularity [seconds|stop]`, `/tornado [1-5] [seconds|stop]`,
+    host only, any mode, not saved). Events live in `CX.evs` (`k:'bh'|'tor'`),
+    ticked by `cxFrame` from an `updateHeld` wrapper; the host owns them and
+    sends `'wx'` messages (`e`: event rows at 2 Hz via `cxRows`, `d`: ripped
+    blocks at 5 Hz) that `cxClientMsg` applies. The black hole is a post pass:
+    a `renderScene` wrapper calls `cxLensPass`, which copies the finished
+    frame (`copyFramebufferToTexture`), renders a half-res depth pre-pass with
+    a `MeshDepthMaterial` override (sky, block clouds, points, lines, SP_LATE
+    and transparent no-depth-write objects hidden) and draws `LENS_FRAG`
+    full-screen: geodesic ray march through the disk (`bhAxes` sets its
+    precessing normal), jets, photon ring, weak lensing everywhere else, and
+    pixels in front of the hole left untouched. The tornado is a ray-marched
+    box (`TOR_FRAG`, in SP_LATE); `torAxis`/`torField` in JS mirror the
+    shader's `axisAt` so the wind matches the funnel you see. Blocks are
+    eaten/ripped with `world.setBlock` (`cxEdible`, `torAct` by EF strength;
+    containers, liquids, portals and unbreakables are spared) and fly as
+    instanced atlas-textured debris (`CX.deb`, `cxDebTick`). Mobs are dragged
+    with section 59's `e.fling` (`cxGrab`). Wind on the player goes through
+    `player.kbx/kbz` plus `vel.y`.
 - Greedy meshing (section 6): `cornerData`/`greedyPut`/`greedyEmit` merge
   full-cube faces only where per-vertex AO and light stay identical. Merged
   quads put the tile origin in `uv` and per-block repeat counts in the
@@ -317,7 +335,7 @@ How syncing works, so new features stay multiplayer-safe:
 - New kinds of shared state that don't go through the functions above need a
   message: add a case to `netHostOnMsg` (guest → host; validate everything,
   guests are untrusted) and to `netClientOnMsg` (host → guest).
-- `NET_V` is the protocol version (currently 10). Bump it whenever messages
+- `NET_V` is the protocol version (currently 11). Bump it whenever messages
   or block ids change in an incompatible way, so mismatched players get a
   "refresh to update" message instead of a broken game.
 - Friendly fire is the host's setting `world.mp.pvp` (pause-menu button or
