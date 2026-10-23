@@ -33,6 +33,8 @@ assert.equal(digest(JSON.stringify(BLOCKS.slice(512,951).map(b=>[b.id,b.name])))
 assert.equal(digest(JSON.stringify(BLOCKS.slice(512,955).map(b=>[b.id,b.name]))),'c440a903bb5562eaf3079ac51c52f583f0f62e15398a0fefa80ecdfd56eac3ba','gravestone block IDs/names changed');
 // The Atomic Age appended 955-984 (armory, silo and test-site blocks, the bomb, blast scars, the Fission Gate).
 assert.equal(digest(JSON.stringify(BLOCKS.slice(512,985).map(b=>[b.id,b.name]))),'85f22a4d78a39c7cec7649c19f02f024f604f0aaf174cf9e648b1e5c167b62af','Atomic Age block IDs/names changed');
+// Fire appended 985.
+assert.equal(digest(JSON.stringify(BLOCKS.slice(512,986).map(b=>[b.id,b.name]))),'10cb8d79105bb50214acdf16499379886733a8834a8d3b2eea72963e39b86d38','fire block ID/name changed');
 for(const id of Object.keys(ITEMS).map(Number))assert(id>=256&&id<512&&!BLOCKS[id],'item ids live in 256-511');
 // Items defined outside section 2 (boats, spawn eggs) must not reuse a section-2 item id.
 {const reg=source.slice(source.indexOf('const B = {};'),source.indexOf('const isBlockId =')),rest=source.replace(reg,''),later=[...rest.matchAll(/defItem\((\d+),/g)].map(m=>+m[1]);
@@ -52,6 +54,8 @@ LEGACY.hashes.push([10,42,"overworld",0,0,"e6929bff97b706532b165fbee6bbcae0d8194
 // Generator 11 shipped as the default before generator 12 (new tree shapes, rarer badlands and savanna,
 // fewer cave mouths, uranium exposed on cave walls), so it is pinned too.
 LEGACY.hashes.push([11,42,"overworld",0,0,"e6929bff97b706532b165fbee6bbcae0d8194dfe25cef5575d2ea563fc8f527a"],[11,42,"overworld",15,-31,"0c91801bcc59fa267a289b7f966785d10bc658e2f346d3b7fbbafba7079186e9"],[11,12345,"overworld",100,100,"eb89145efbb715b55ac174ade69d02189fd1f6b144d40eede0def53fad6dc1c2"],[11,42,"overworld",-1,2,"5f43ea6405577d243c329d11435db6d82f7b0cebbd0ddfb2891189961878e498"]);
+// Generator 12 shipped as the default before generator 13 (the bigger silo Juggernaut hall), so it is pinned too.
+LEGACY.hashes.push([12,42,"overworld",0,0,"79af567b49af17b61e70bbf669e802305910db2c73c0b7e6ad7039e0b32ac8b8"],[12,42,"overworld",15,-31,"cc805581937122020aa5784a8b018eb96f988de1490d6af6c11403394f9e2795"],[12,12345,"overworld",100,100,"eb89145efbb715b55ac174ade69d02189fd1f6b144d40eede0def53fad6dc1c2"],[12,42,"overworld",-1,2,"5f43ea6405577d243c329d11435db6d82f7b0cebbd0ddfb2891189961878e498"],[12,42,"overworld",-17,-9,"dde96da7aea66f1799f021717aa38aed873f53c468d557820922147a129414d6"],[12,42,"overworld",-16,-9,"72fb9f5d249246073db9de2aaedd090c4cb818ba39edac89b448e8c4310faa8a"],[12,42,"overworld",-16,-10,"b13fa790884073ffa1bd752e0727623211d0160894de358b65c8dd772869d0fd"]);
 for(const [version,seed,dimension,x,z,expected] of LEGACY.hashes)assert.equal(digest(make(seed,B,version,dimension).genChunk(x,z)),expected,`legacy ${version}/${seed}/${dimension}/${x},${z}`);
 for(const seed of [42,12345,-98765]){
  const a=make(seed,B,3),b=make(seed,B,3);let underground=0;
@@ -156,6 +160,14 @@ for(const seed of [42,-98765]){
  for(let cz=-3;cz<3;cz++)for(let cx=-3;cx<3;cx++){const x=cx*16+8,z=cz*16+8;if(Math.abs(x-s.x)<40&&Math.abs(z-s.z)<40)continue;assert.equal(digest(g10.genChunk(cx,cz)),digest(g11.genChunk(cx,cz)),'generator 11 changed terrain away from silos');}
  const z=make(42,B,11,'groundzero'),z2=make(42,B,11,'groundzero'),seen=new Set();for(const [cx,cz] of [[0,0],[-1,-1],[1,0],[0,9],[-1,9]]){const d=z.genChunk(cx,cz);assert(d instanceof Uint16Array);assert.equal(digest(d),digest(z2.genChunk(cx,cz)),'Ground Zero depends on request order');for(const id of d)seen.add(id);}
  for(const name of ['reinforced_concrete','hazard_block','lead_block','fission_gate','verdant_froglight','cracked_concrete'])assert(seen.has(B[name]),name+' missing from Ground Zero');}
+// Generator 13: generator 12 plus the bigger silo control room; same pieces, more room, nothing else changes.
+{const g12=make(42,B,12),g13=make(42,B,13),s=g13.nearestStructure(0,0,'silo'),p=g13.siloAt(s.x,s.z);assert(p&&p.big,'generator 13 silo plan missing');
+ const sx=Math.floor(s.x/16),sz=Math.floor(s.z/16);let pad=0,hatch=0,consoles=0;
+ for(let cz=sz-1;cz<=sz+1;cz++)for(let cx=sx-1;cx<=sx+2;cx++){const d=g13.genChunk(cx,cz);for(const id of d){if(id===B.launch_pad)pad++;if(id===B.silo_hatch)hatch++;if(id>=B.launch_console&&id<B.launch_console+4)consoles++;}}
+ assert(pad===1&&hatch===49&&consoles===1,'generator 13 silo pieces missing');
+ const blk=(x,y,z)=>g13.genChunk(x>>4,z>>4)[(x&15)+((z&15)<<4)+(y<<8)];let air=0;for(let x=p.x+6;x<=p.x+25;x++)for(let z=p.z-14;z<=p.z+6;z++)if(blk(x,p.ctrl,z)===0&&blk(x,p.ctrl+1,z)===0)air++;
+ assert(air>300,'generator 13 Juggernaut hall too small: '+air);assert(blk(p.x+14,p.ctrl,p.z-5)===0&&blk(p.x+14,p.ctrl+1,p.z-5)===0,'Juggernaut spawn blocked');
+ for(let cz=-3;cz<3;cz++)for(let cx=-3;cx<3;cx++)assert.equal(digest(g12.genChunk(cx,cz)),digest(g13.genChunk(cx,cz)),'generator 13 changed terrain away from silos');}
 // Legacy metadata must retain generator and equipment, including offhand enchants.
 vm.runInContext(source.slice(source.indexOf('function migrateMeta('),source.indexOf('function mobRecord('))+';globalThis.migrate=migrateMeta;',context);
 const equipment=[315,1,123,{fortune:2}],old={v:12,generator:2,inv:[equipment],offhand:[384,1,200,null],p:{x:1,y:70,z:2}};
@@ -175,4 +187,4 @@ for(const axis of [0,1]){
  world.setBlock(x,y+2,z,0);context.portals.invalidatePortal(x,y+2,z);
  assert(![...cells.values()].includes(B.portal));assert.equal(world.getBlock(20,35,20),B.bricks,'frame maintenance changed a neighbouring build');
 }
-console.log(`PASS: syntax, soundpack, 256 stable IDs + ${BLOCKS.length-512} appended, ${LEGACY.hashes.length} legacy chunks, v3-v12 determinism/resources/villages/uranium/Nether Update/silos/Ground Zero, migration and both portal frames.`);
+console.log(`PASS: syntax, soundpack, 256 stable IDs + ${BLOCKS.length-512} appended, ${LEGACY.hashes.length} legacy chunks, v3-v13 determinism/resources/villages/uranium/Nether Update/silos/Ground Zero, migration and both portal frames.`);
