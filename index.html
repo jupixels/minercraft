@@ -11475,6 +11475,72 @@ function updateMinimap(dt){
  if(c==='/minimap')return set('minimap','Minimap');
  return _cmd(line);};}
 
+/* ---- command browser: every command, its usage and what it does, above the chat box while
+   you type a "/" (filtered as you type; Tab or click completes it). /help opens it. ---- */
+const COMMANDS=[
+ ['/help','','Show this list of every command'],
+ ['/gamemode','<survival|creative|0|1>','Switch game mode'],
+ ['/time','set <sunrise|day|noon|sunset|night|midnight|hh:mm>','Set the time of day'],
+ ['/time','add <ticks|h:mm>','Skip time forward'],
+ ['/time','lock | unlock | query','Freeze or resume the day cycle, or show the time'],
+ ['/tp','<x> <y> <z>','Teleport (~ for relative, e.g. ~ ~10 ~)'],
+ ['/give','<item> [count]','Give yourself an item'],
+ ['/weather','<clear|rain|thunder> [seconds]','Change the weather'],
+ ['/seed','','Show the world seed'],
+ ['/kill','','Kill yourself'],
+ ['/spawnpoint','','Set your spawn point here'],
+ ['/difficulty','<peaceful|easy|normal|hard>','Change the difficulty'],
+ ['/dimension','<overworld|nether|end|groundzero>','Travel to a dimension'],
+ ['/power','','Toggle redstone power on the block you look at'],
+ ['/friendlyfire','<on|off>','Let players hurt each other (host)'],
+ ['/locate','<fortress|bastion|ruined_portal|silo>','Find the nearest structure'],
+ ['/netherupdate','','Upgrade an older world\'s Nether to the new generator'],
+ ['/wp','add|remove|track <name>','Add, remove or track a waypoint'],
+ ['/wp','list | clear','List or clear waypoints in this dimension'],
+ ['/rads','','Show your radiation level'],
+ ['/nuke','[bomb|icbm|tactical]','Detonate a nuke where you are looking'],
+ ['/hezmas','reset','Reset the Hezmas boss fight'],
+ ['/gore','[on|off]','Blood effects'],
+ ['/dmgnumbers','[on|off]','Floating damage numbers and mob health bars'],
+ ['/minimap','[on|off]','The corner minimap'],
+ ['/list','','List players online',()=>!!net.role],
+ ['/kick','<name>','Kick a player (host)',()=>net.role==='host'],
+ ['/ban','<name>','Ban a player (host)',()=>net.role==='host'],
+];
+const cmdUI={el:null,sel:0,rows:[]};
+function cmdPanel(){
+ if(cmdUI.el)return cmdUI.el;const st=document.createElement('style');st.textContent=`
+ #cmdList{position:fixed;left:calc(var(--g)*4);bottom:calc(var(--g)*64);max-height:calc(var(--g)*150);overflow-y:auto;min-width:calc(var(--g)*200);max-width:calc(100% - var(--g)*8);
+  background:rgba(0,0,0,.78);box-shadow:0 0 0 calc(var(--g)*1) #555;z-index:21;display:none;font-size:calc(var(--g)*8);scrollbar-width:thin}
+ #cmdList .h{padding:calc(var(--g)*2) calc(var(--g)*3);color:#aaa;font-size:calc(var(--g)*7);border-bottom:calc(var(--g)*.5) solid #444}
+ #cmdList .r{padding:calc(var(--g)*1.5) calc(var(--g)*3);cursor:pointer;white-space:nowrap;display:flex;gap:calc(var(--g)*4)}
+ #cmdList .r.on,#cmdList .r:hover{background:rgba(255,255,255,.14)}
+ #cmdList .r b{color:#ffff55;font-weight:normal}#cmdList .r i{color:#9fd8ff;font-style:normal}#cmdList .r span{color:#bbb;margin-left:auto;padding-left:calc(var(--g)*6)}`;
+ document.head.appendChild(st);cmdUI.el=el('div',null,null,document.body);cmdUI.el.id='cmdList';
+ cmdUI.el.addEventListener('mousedown',e=>{const r=e.target.closest('.r');if(!r)return;e.preventDefault();cmdComplete(+r.dataset.i);});
+ return cmdUI.el;}
+function cmdRefresh(){
+ const p=cmdPanel(),v=chatInput.value;if(!chatOpen||!v.startsWith('/')){p.style.display='none';return;}
+ const word=v.split(/\s+/)[0].toLowerCase(),typingArgs=/\s/.test(v);
+ const list=COMMANDS.filter(c=>!c[3]||c[3]()).filter(c=>typingArgs?c[0]===word:c[0].startsWith(word));
+ cmdUI.rows=list;cmdUI.sel=clamp(cmdUI.sel,0,Math.max(0,list.length-1));
+ if(!list.length){p.style.display='none';return;}
+ const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;');
+ p.innerHTML=`<div class="h">${word==='/'?'All commands':list.length+' command'+(list.length>1?'s':'')} · Tab to complete · ↑↓ history</div>`+
+  list.map((c,i)=>`<div class="r${i===cmdUI.sel&&!typingArgs?' on':''}" data-i="${i}"><b>${c[0]}</b><i>${esc(c[1])}</i><span>${esc(c[2])}</span></div>`).join('');
+ p.style.display='block';}
+function cmdComplete(i){const c=cmdUI.rows[i];if(!c)return;chatInput.value=c[0]+' ';chatInput.focus();cmdRefresh();}
+chatInput.addEventListener('input',()=>{cmdUI.sel=0;cmdRefresh();});
+document.addEventListener('keydown',e=>{if(!chatOpen)return;
+ if(e.code==='Tab'){e.preventDefault();e.stopImmediatePropagation();if(!/\s/.test(chatInput.value)&&cmdUI.rows.length){const n=cmdUI.rows.length,k=e.shiftKey?-1:1,first=chatInput.value===cmdUI.rows[cmdUI.sel]?.[0]+' ';cmdComplete(cmdUI.sel);if(first){cmdUI.sel=(cmdUI.sel+k+n)%n;}}return;}
+ setTimeout(cmdRefresh,0);},true);
+{const _oc=openChat;openChat=function(){_oc();cmdUI.sel=0;setTimeout(cmdRefresh,0);};}
+{const _cc=closeChat;closeChat=function(){_cc();if(cmdUI.el)cmdUI.el.style.display='none';};}
+// /help opens the browser (and still prints the short summary in chat)
+{const _cmd=command;command=function(line){const c=line.trim().split(/\s+/)[0].toLowerCase();
+ if(c==='/help'||c==='/?'||c==='/commands'){const r=_cmd('/help');setTimeout(()=>{if(['playing','chat'].includes(gameState)){openChat();chatInput.value='/';cmdRefresh();}},0);return r;}
+ return _cmd(line);};}
+
 /* =========================================================================
    20. BOOT
    ========================================================================= */
