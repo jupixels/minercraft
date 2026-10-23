@@ -13335,7 +13335,6 @@ function cxGrab(e,w,lf,dt,spin=1){   // drag a mob along a velocity field, tumbl
  f.t=Math.min(f.t,.05);f.bounces=2;const k=Math.min(1,dt*3);f.vx+=(w.x-f.vx)*k;f.vz+=(w.z-f.vz)*k;
  if(lf>0){e.vel.y+=28*lf*dt+(w.y-e.vel.y)*Math.min(1,dt*2.5)*lf;e.onGround=false;}
 }
-function cxConsume(x,y,z){boomInit();for(let i=0;i<6;i++)boomPart({x,y,z,vx:(Math.random()-.5)*6,vy:(Math.random()-.5)*6,vz:(Math.random()-.5)*6,kind:2,heat:1,cool:.8,size:.12,life:.5+Math.random()*.4,drag:1});}
 function bhTick(ev,dt,host,here){
  bhAxes(ev);const form=bhForm(ev),grow=1+.35*Math.min(1,ev.eaten/6000);ev.rsNow=ev.rs*form*grow;
  if(!here)return;
@@ -13360,12 +13359,12 @@ function bhTick(ev,dt,host,here){
    bhField(ev,x+.5,y+1,z+.5,Rp,_cxW);boomInit();boomPart({x:x+.5,y:y+1,z:z+.5,vx:_cxW.x*.5,vy:4+Math.random()*5+_cxW.y*.4,vz:_cxW.z*.5,kind:1,tint:1,size:.8,grow:2.5+Math.random()*2,growK:1.2,life:1.8+Math.random()*1.5,drag:.6,rise:2,op:.45});}
   // items (everyone moves them; the host decides what it swallows)
   for(let i=itemEntities.length-1;i>=0;i--){const it=itemEntities[i];if(it.fly)continue;const u=bhField(ev,it.pos.x,it.pos.y,it.pos.z,Rp,_cxW);if(u>=1)continue;
-   if(u*Rp<rs*2.4){if(host){cxConsume(it.pos.x,it.pos.y,it.pos.z);removeItem(it);}continue;}
+   if(u*Rp<rs*2.4){if(host)removeItem(it);continue;}
    const k=Math.min(1,dt*2),lf=cxSm(.62,.3,u);it.vel.x+=(_cxW.x-it.vel.x)*k;it.vel.z+=(_cxW.z-it.vel.z)*k;if(lf>0){it.vel.y+=24*lf*dt+(_cxW.y-it.vel.y)*k*lf;it.onGround=false;}}
   if(host){
    for(let i=entities.length-1;i>=0;i--){const e=entities[i],d=MOB_DEFS[e.kind];if(e.dead||!d||d.boss||e===riding||e.rider)continue;
     const u=bhField(ev,e.pos.x,e.pos.y+d.h*.5,e.pos.z,Rp,_cxW);if(u>=1)continue;
-    if(u*Rp<rs*2.4){cxConsume(e.pos.x,e.pos.y,e.pos.z);removeMob(e);continue;}
+    if(u*Rp<rs*2.4){removeMob(e);continue;}
     cxGrab(e,_cxW,cxSm(.62,.32,u),dt);}
    // the ground: columns under it are eaten from the top down, nearest first
    if(form>.3){ev.eatA+=dt*(10+34*cxSm(8,60,ev.age))*form;const re=Rp*.62;
@@ -13583,7 +13582,7 @@ function cxDebTick(dt){
    const vin=6+260/(r+6),tx=n.y*rz-n.z*ry,ty=n.z*rx-n.x*rz,tz=n.x*ry-n.y*rx,tl=Math.hypot(tx,ty,tz)||1,sw=.95*cxSm(48,8,r),pl=(rx*n.x+ry*n.y+rz*n.z)/r*.7*cxSm(30,6,r);
    const wx=-rx/r*vin+tx/tl*vin*sw-n.x*vin*pl,wy=-ry/r*vin+ty/tl*vin*sw-n.y*vin*pl,wz=-rz/r*vin+tz/tl*vin*sw-n.z*vin*pl,k=Math.min(1,dt*1.6);
    d.vx+=(wx-d.vx)*k;d.vy+=(wy-d.vy)*k;d.vz+=(wz-d.vz)*k;d.heat=cxSm(rs*9,rs*3.5,r);d.st=cxSm(rs*8,rs*3.2,r);d.r=r;
-   if(r<rs*3.1){kill=true;if(Math.random()<.5)cxConsume(d.x,d.y,d.z);}
+   if(r<rs*3.1)kill=true;   // no spark here: the lens would magnify it into big flashing circles
   }else if(d.mode==='tor'){
    const P=torParams(ev),h=d.y-ev.by,E=TOR_EF[ev.ef];
    if(torField(ev,P,d.x,d.y,d.z,_cxW)>1e8||h>d.rel||P.k<.2){d.mode='fall';const ax=torAxis(ev,P,h,_cxA),ox=d.x-(ev.x+ax.x),oz=d.z-(ev.z+ax.y),l=Math.hypot(ox,oz)||1,s=10+Math.random()*14;d.vx+=ox/l*s;d.vz+=oz/l*s;}
