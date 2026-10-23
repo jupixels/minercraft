@@ -19,9 +19,14 @@ Two limits on that freedom:
 ## Layout
 
 - `index.html` — the whole game: HTML, CSS and JavaScript in one file
-  (~8,700 lines). The code is split into numbered sections with banner
-  comments (`1. CONFIG & SMALL HELPERS` … `46. BOATS`); grep for the
-  banner to find a system. Numbers are labels, not file order.
+  (~13,800 lines, ~1.34 MB; many lines are very long, so read by line ranges
+  or grep rather than opening it whole). The code is split into numbered
+  sections with banner comments (`1. CONFIG & SMALL HELPERS` … `66. ENGINE &
+  ACCESSIBILITY`); grep for the banner to find a system. Numbers are labels,
+  not file order: 1-42 run roughly in order, then 44-59, then the newest
+  sections 60+ just before `20. BOOT`, and `43. MULTIPLAYER` comes last,
+  after BOOT (its `const net`/`NET_V` are not initialised while earlier
+  sections load, so only touch `net` inside functions).
 - Section 2 defines every block and item. Section 44 draws the textures for
   the blocks and items added in the Caves & Cliffs update (from the
   `EXT_TEX` recipes set in section 2) and holds their recipes, creative-tab
@@ -104,6 +109,59 @@ Two limits on that freedom:
   either hand acts as a moving block light, `vHand` in `VERT`; Fancy/Ultra add a
   warm point light), and `flingMob` (explosions launch and tumble mobs; corpses
   fly before they despawn). Player blast knockback is `player.kbx/kbz`.
+- Section 59's block fire ticks in `tickBlockFire` (it used to be a second
+  `tickFire`, which silently replaced the player-burning one: never declare a
+  function name twice in the main script). Flames are boomFx kind 7 (upright
+  noisy tongues, `fireFlames`); `blastFires` lights the ground after
+  explosions and nuke shock fronts (`carveChunkLive` wrapper).
+- Sections 60-66 (newest, just before BOOT):
+  - 60 Roadmap & Achievements: `buildJournal` (J, Pause → Roadmap; L opens
+    the Achievements tab). `ROADMAP` stages tick off by advancement name;
+    `ADVANCEMENTS` + `ADV_EXTRA` (later sections push to it) list every
+    advancement for the locked/unlocked view. `awardAdvancement` is unchanged.
+  - 61 Workshop & village blocks (986-989): the anvil GUI (`computeAnvil`;
+    custom names in `stack.en.nm`, prior work in `en.rw`; `stackName()`),
+    the campfire (container `campfire`, `ck` timers, cooked on the host in an
+    `updateFurnaces` wrapper, flames/smoke/food meshes from chunk emitters),
+    the lectern (opens the Roadmap) and the bell (`BELL`, wraps `villagerAI`).
+    Repair kits can no longer be crafted but still work.
+  - 62 Hardcore (`world.hardcore`, meta `hardcore`; New World Mode cycles
+    Survival → Hardcore → Creative) and spectator mode (`player.mode
+    'spectator'`, `spectatorMove`, body class `spectator`).
+  - 63 Controls: `KEY_ACTIONS` + `CONFIG.keymap` (changes only). A capture
+    listener (`keyTranslate`) re-dispatches the pressed key as the action's
+    default `code`, so handlers keep testing default codes; keep new key
+    handlers on `e.code` and add them to `KEY_ACTIONS`. Gamepad polling runs
+    in its own rAF loop (`padFrame`) so Start works while paused.
+  - 64 Decorations: armor stands, item frames, paintings, banners are records
+    in `world.decor[dimension]` (meta `decor`), not blocks or mobs. Edit them
+    with `decorEdit(op, arg)` (host-authoritative: guests send `decq`, the host
+    validates and broadcasts `dec`; the welcome snapshot carries `dc`).
+    `decorValid` gates every record; `DECOR.sup` indexes supporting blocks.
+    Paintings come from `ARTS` (original art drawn per canvas, no atlas
+    slots); banner patterns are `BANNER_PATTERNS` masks.
+  - 65 The Ocean Update: swimming (`player.swimming`, `swimMove`, 0.6-high
+    body), aquatic mobs (`MOB_DEFS[k].aquatic`; physics in a `mobPhysics`
+    wrapper, passive AI `aquaticAI` via `petAndGuardianAI`, hostile AI in
+    `OCEAN_AI`), the Tidecaller spear (`throwSpear`, `tickSpears`), treasure
+    maps (`stack.en.tx/tz`), shipwreck/treasure loot (a `chestLoot` wrapper),
+    temple guards and the Elder (`world.ocean.elders`, meta `ocean`), sponges.
+    Blocks with `aquatic:true` (kelp, seagrass, coral fans) always sit in
+    water: they count as water for water faces (`T_LIQ`), swimming and mob
+    buoyancy, water flows around them, and breaking one leaves water.
+  - 66 Engine & accessibility: `BIGSTORE` (IndexedDB write-behind cache for
+    chunk edits and backups; see Hard rules), `/bench`, `/atlas`,
+    `/storage`, `/greedy`, subtitles (`subtitle(text,x,y,z)`; call it from
+    new sounds), the colourblind palette (body class `cvd`) and reduce motion
+    (body class `rm`, `CONFIG.reduceMotion`), Options → Accessibility.
+- Greedy meshing (section 6): `cornerData`/`greedyPut`/`greedyEmit` merge
+  full-cube faces only where per-vertex AO and light stay identical. Merged
+  quads put the tile origin in `uv` and per-block repeat counts in the
+  `aRep` attribute (-1 for ordinary quads); `MAT_SOLID` samples through
+  `atlasUv()`. Anything new that renders chunk geometry with the atlas must
+  do the same. Off while mipmaps are on.
+- Water dims sky light by 1 every 2 blocks (`computeLight`), so oceans have
+  dim but visible floors.
 - Redstone wire is drawn by `pushWire` in the mesher from its links (dot, line,
   corner, wall climb) and links diagonally up/down (`redstoneCell`,
   `wakeRedstone`).
@@ -161,7 +219,9 @@ Two limits on that freedom:
   that list exactly. Don't add another `<script src>` without updating the
   test on purpose.
 - **Item ids are global.** Items are also defined outside section 2 (boats at
-  452, spawn eggs from 400); the test fails if an id is defined twice.
+  452, spawn eggs from 400, and 1024+ in sections 64-65); the test fails if an
+  id is defined twice. 256-511 is nearly full, so new items go in 1024-2047
+  (above every block id; the test allows both ranges). Next free: 1039.
 - **Block IDs are permanent.** Saves store raw IDs, so an id → name pair
   never changes. The id space is split three ways:
   - `0–255`: the original blocks. Frozen; the test hashes them.
@@ -171,6 +231,9 @@ Two limits on that freedom:
     reorder, rename or remove one. The test pins a hash of the existing
     range; after appending, extend that pinned range on purpose.
     `BLOCK_ID_LIMIT` (1024) is the ceiling for the mesher's lookup tables.
+    Blocks now run to 1001 (anvil/campfire/lectern/bell 986-989, ocean
+    990-1001): only 22 block ids are left, so prefer records (like decor),
+    items or block metadata over new block ids.
 - **Chunks store 16-bit ids** (`Uint16Array`; the mesher's padded volume too).
   Generators 1–3 still emit `Uint8Array` (their hashes depend on it) and
   `onChunkData()` widens them; generators 4+ emit `Uint16Array`. Test whether
@@ -178,20 +241,31 @@ Two limits on that freedom:
   `BLOCKS` has holes at 256–511, so loops over it must skip empty entries.
 - **World generation is frozen per generator version.** Every shipped
   generator must keep producing byte-identical chunks: the test pins chunk
-  hashes for generators 1–8. Generator 13 (generator 12 plus a much bigger silo
-  Juggernaut hall) is the default for new worlds; once it ships, pin it too
-  (generators 10–12 are pinned). New worlds keep `netherGen` 12. Change terrain
-  only by adding a version: guard new code with `version>=14`, keep `R()` call order unchanged for older versions,
+  hashes for generators 1–8. Generator 14 (the Ocean Update: kelp, seagrass,
+  reefs, shipwrecks with buried treasure, temples, village bells/lecterns/
+  anvils) is the default for new worlds; once it ships, pin it too
+  (generators 10–13 are pinned). New worlds keep `netherGen` 12. Change terrain
+  only by adding a version: guard new code with `version>=15`, keep `R()` call order unchanged for older versions,
   give new features their own `mulberry32` stream or a position hash, and
-  bump the default in the three `genVersion` spots and the guest-meta check.
+  bump the default in the three `genVersion` spots, the guest-meta checks and
+  the `m.generator<=14` / `m.netherGen<=14` ranges in `migrateMeta()`
+  (generator 13 worlds used to be reset to 2 there because the list stopped
+  at 12).
   Features that span chunks (tunnels, villages) are planned from world
   coordinates per cell and cached, so every chunk agrees on them.
 - **Saves migrate forward.** World metadata carries a version `v` (currently
-  19). When you change the save shape, bump it and add a step to
-  `migrateMeta()` so old saves load. Saves live in `localStorage`
-  (`bc.*` keys; per-world `bc.w<slot>.*`).
-- **The texture atlas is 16 × 64 tiles** (`ATLAS_ROWS`); about 600 are used.
-  Every `makeTile` that isn't a `mob_` tile takes an atlas slot.
+  20: decor, hardcore, ocean). When you change the save shape, bump it and add
+  a step to `migrateMeta()` so old saves load, and raise the `m.v>20` limit in
+  `validateWorldFile()` (it used to stop at 18, so v19 exports could not be
+  imported). Metadata and settings live in `localStorage` (`bc.*` keys;
+  per-world `bc.w<slot>.*`); chunk edit lists and backups (`bigKey()`) live in
+  IndexedDB (database `minercraft`, store `kv`) behind `BIGSTORE`, which
+  keeps `store.get/set/del/keys` synchronous and moves old localStorage keys
+  over on first run. Worlds start only once `BIGSTORE.ready`.
+- **The texture atlas is 16 × 64 tiles** (`ATLAS_ROWS`); 725 of 1,024 are
+  used (`/atlas`). Every `makeTile` that isn't a `mob_` tile takes an atlas
+  slot; drawing a tile name again now reuses its slot, and a full atlas throws.
+  Big art (paintings, banners) uses its own canvases instead of atlas slots.
 - **Sound pack changes need the test updated.** The test checks the manifest
   count and a hash of every sound file.
 
@@ -211,7 +285,10 @@ To try the game locally, serve the folder over http (for example
   (`world`, `player`, `inv`, `net`, `setState`, …). Note that it captures
   function references at boot, so functions wrapped later (such as by the
   multiplayer section) should be called by their global name instead.
-- `?autostart` — skip the menus straight into a test world.
+- `?autostart` — skip the menus straight into a test world (seed 12345,
+  generator 14, not saved). After teleporting far, mesh the nearby chunks
+  with `meshChunkSync` before screenshots: SwiftShader meshes slowly.
+- `/bench` in chat: compare frame times before and after a renderer change.
 - `?relay=ws://localhost:PORT` — use a different MQTT relay for multiplayer
   (e.g. a local `aedes` broker).
 
@@ -240,7 +317,7 @@ How syncing works, so new features stay multiplayer-safe:
 - New kinds of shared state that don't go through the functions above need a
   message: add a case to `netHostOnMsg` (guest → host; validate everything,
   guests are untrusted) and to `netClientOnMsg` (host → guest).
-- `NET_V` is the protocol version (currently 9). Bump it whenever messages
+- `NET_V` is the protocol version (currently 10). Bump it whenever messages
   or block ids change in an incompatible way, so mismatched players get a
   "refresh to update" message instead of a broken game.
 - Friendly fire is the host's setting `world.mp.pvp` (pause-menu button or
@@ -260,13 +337,17 @@ How syncing works, so new features stay multiplayer-safe:
 - Wrapped functions are reassigned globals (`spawnItem = function…`), so
   always call them by name rather than keeping your own reference.
 
+- Offhand items travel as an extra trailing field in `st` and `ps` rows
+  (older clients ignore it). Decor uses `decq`/`dec`.
+
 Known limits: the world is online only while the host's tab is open;
 simulation only runs in chunks the host has loaded; the host leads portal
 travel; only the host sleeps through the night; villager trade stock is not
 synced (each guest trades with their own copy); village growth only happens
 near the host; photo mode can't freeze the shared world, so in multiplayer it
-freezes mobs only in the photographer's view; there's no TURN server, so some
-strict networks can't connect.
+freezes mobs only in the photographer's view; bell rings only steer villagers
+on the host; hardcore applies to the host's own player; there's no TURN
+server, so some strict networks can't connect.
 
 ## Style
 
