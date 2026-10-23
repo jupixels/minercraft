@@ -9908,6 +9908,18 @@ function gunHitMob(e,dmg){
  if(net.role==='client'&&e.netId){if(e.dead)return;netSend({t:'gh',n:e.netId,a:Math.round(dmg*10)/10,g:inv.heldId()});e.hurt=.25;sfx.mob(e.kind,true,e.pos);return;}
  e.hurt=0;hurtMob(e,dmg);if(e.kind==='hezmas'||e.kind==='juggernaut'){e.knockX*=.05;e.knockZ*=.05;e.vel.y=Math.min(e.vel.y,0);}
 }
+// Friendly fire with guns: a gun does PVP_GUN of its mob damage to a player (a rifle round is about
+// 4.4, ×1.5 on someone with no armour, a sniper body shot 28). The shooter finds the hit; the host checks
+// the setting, the gun the shooter was last seen holding, range and fire rate before passing it on.
+const PVP_GUN=.4,_pvRay=new THREE.Ray(),_pvBox=new THREE.Box3(),_pvHit=new THREE.Vector3();
+function avatarsOnRay(o,d,maxT){const out=[];_pvRay.set(o,d);
+ for(const a of net.avatars.values()){if((a.flags&8)||!a.model.g.visible)continue;const p=a.model.g.position;
+  _pvBox.min.set(p.x-.34,p.y,p.z-.34);_pvBox.max.set(p.x+.34,p.y+1.85,p.z+.34);
+  if(_pvRay.intersectBox(_pvBox,_pvHit)){const t=_pvHit.distanceTo(o);if(t<=maxT)out.push({a,t,hy:(_pvHit.y-p.y)/1.85,hp:_pvHit.clone()});}}
+ return out.sort((x,y)=>x.t-y.t);}
+function gunHitPlayer(a,dmg){const n=Math.round(Math.min(40,dmg)*10)/10;if(!(n>0))return;
+ if(net.role==='host'){const peer=netJoined().find(p=>p.name===a.name);if(peer)netSendPeer(peer,{t:'hurt',a:n,c:'gunfire',x:player.pos.x,z:player.pos.z});}
+ else netSend({t:'pg',n:a.name,a:n,g:inv.heldId()});}
 function fireGun(G,st){
  const creative=player.mode==='creative';
  if(!creative){setMag(st,magOf(st)-1);wearHeld(G.wear);}
@@ -9926,6 +9938,7 @@ function fireGun(G,st){
  netFx({k:'shot',g:G.key,p:[r2(mz.x),r2(mz.y),r2(mz.z)],d:[+dir.x.toFixed(3),+dir.y.toFixed(3),+dir.z.toFixed(3)]});
  if(G.projectile==='rocket'){spawnRocket(mz,dir,'player');return;}
  const hits=new Map();let anyHit=false,headHit=false;
+ const pvp=net.role&&(net.role==='host'?world.mp?.pvp:net.pvp)&&net.avatars.size&&player.mode!=='spectator',phits=new Map();
  for(let n=0;n<G.pellets;n++){
   const d=spreadDir(dir,cone,new THREE.Vector3()),r=bulletRay(eye.x,eye.y,eye.z,d.x,d.y,d.z,G.range,true);
   let end=r.t,pierce=G.beam?G.pierce:du?4:0;
@@ -9934,12 +9947,19 @@ function fireGun(G,st){
    const fall=h.t<G.falloff[0]?1:h.t>G.falloff[1]?G.falloff[2]:lerp(1,G.falloff[2],(h.t-G.falloff[0])/(G.falloff[1]-G.falloff[0]));
    const dmg=G.dmg*fall*mult*(du?1.25:1);hits.set(h.e,(hits.get(h.e)||0)+dmg);anyHit=true;fleshFx(h.hp,d,h.e);
    if(pierce--<=0){end=h.t;break;}}
+  if(pvp&&pierce>=0)for(const h of avatarsOnRay(eye,d,end)){
+   const mult=h.hy>.8?G.head:1;if(mult>1.2)headHit=true;
+   const fall=h.t<G.falloff[0]?1:h.t>G.falloff[1]?G.falloff[2]:lerp(1,G.falloff[2],(h.t-G.falloff[0])/(G.falloff[1]-G.falloff[0]));
+   phits.set(h.a,(phits.get(h.a)||0)+G.dmg*fall*mult*(du?1.25:1)*PVP_GUN);anyHit=true;
+   for(let k=0;k<3;k++)emitParticle(h.hp.x,h.hp.y,h.hp.z,(Math.random()-.5)*2+d.x*2,Math.random()*1.5,(Math.random()-.5)*2+d.z*2,TEX.redstone_ore);
+   if(pierce--<=0){end=h.t;break;}}
   if(r.glass)for(const [gx,gy,gz,gid] of r.glass){if(Math.hypot(gx+.5-eye.x,gy+.5-eye.y,gz+.5-eye.z)>end+.5)break;shatterGlass(gx,gy,gz,gid);}
   const ep=eye.clone().addScaledVector(d,end);
   if(G.beam)beamFx(mz,ep);else if(n%(G.pellets>1?3:1)===0)spawnTracer(mz,ep,G.key==='minigun'?.05:.035,0);
   if(end===r.t&&r.id>0)impactFx(ep,r,G.key==='shotgun'&&n%3?.5:1);
  }
  for(const [e,dmg] of hits)gunHitMob(e,dmg);
+ for(const [a,dmg] of phits)gunHitPlayer(a,dmg);
  if(anyHit){gunState.hit=.22;gunState.head=headHit;sfxAtomic(headHit?'head':'hit');}
 }
 function shatterGlass(x,y,z,id){if(world.getBlock(x,y,z)!==id)return;spawnBreakParticles(x,y,z,id);world.setBlock(x,y,z,0);sfxAtomic('glass',x+.5,y+.5,z+.5);for(let k=0;k<6;k++)emitParticle(x+Math.random(),y+Math.random(),z+Math.random(),(Math.random()-.5)*4,Math.random()*3,(Math.random()-.5)*4,particleTile(id));}
@@ -11261,6 +11281,12 @@ function atomicHostMsg(peer,m){
   case 'gh':{const e=entities.find(x=>x.nid===m.n),G=GUNS[peer.held|0];if(!e||e.dead||!G||!peer.v||e.pos.distanceTo(peer.v)>G.range+10)return true;
    const now=performance.now();peer.ghT=(peer.ghT||[]).filter(t=>now-t<1000);if(peer.ghT.length>30)return true;peer.ghT.push(now);
    const a=clamp(+m.a||0,0,G.dmg*Math.max(1,G.pellets)*2.6*1.25);e.hurt=0;hurtMob(e,a);return true;}
+  case 'pg':{if(!world.mp?.pvp||typeof m.n!=='string'||!peer.v)return true;const G=GUNS[peer.held|0];if(!G||G.projectile||(m.g|0)!==(peer.held|0))return true;
+   const now=performance.now(),gap=60000/G.rpm*.6;if(now-(peer.pgT||0)<Math.min(gap,400))return true;peer.pgT=now;
+   const a=clamp(+m.a||0,0,Math.min(40,G.dmg*Math.max(1,G.pellets)*G.head*1.25*PVP_GUN));if(!(a>0))return true;
+   if(m.n===net.me){if(player.pos.distanceTo(peer.v)>G.range+8)return true;mobDamage(a,'gunfire',{x:peer.v.x,z:peer.v.z});return true;}
+   const t=netJoined().find(p=>p.name===m.n);if(!t||t===peer||!t.v||(t.flags&8)||t.v.distanceTo(peer.v)>G.range+8)return true;
+   netSendPeer(t,{t:'hurt',a,c:'gunfire',x:peer.v.x,z:peer.v.z});return true;}
   case 'nukearm':{if(!okv(m.p,3)||!peer.v||Math.hypot(m.p[0]+.5-peer.v.x,m.p[1]-peer.v.y,m.p[2]+.5-peer.v.z)>8)return true;armBomb(m.p[0]|0,m.p[1]|0,m.p[2]|0,'player');return true;}
   case 'launch':{if(typeof m.k!=='string'||!/^-?\d+,-?\d+,-?\d+$/.test(m.k)||!Number.isFinite(m.x)||!Number.isFinite(m.z))return true;const [x,y,z]=m.k.split(',').map(Number),c=world.containers.get(m.k);
    if(!c||c.type!=='console'||c.slots[0]?.id!==B.launch_key||!peer.v||Math.hypot(x-peer.v.x,z-peer.v.z)>10)return true;const p=nearestLoadedPad(x,y,z);if(p)launchICBM(p,clamp(Math.round(m.x),-490000,490000),clamp(Math.round(m.z),-490000,490000),'remote');return true;}
