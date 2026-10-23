@@ -7806,10 +7806,11 @@ function buildCavesCliffsTextures(){
 // Daylight burning: zombies and skeletons catch fire under open sky once the sun is
 // up, keep smouldering briefly in shade, and stop in water or rain. Uses the clock,
 // not the renderer, so it works for every hostile the host simulates.
+function isNightTime(){return (world.dimension||'overworld')==='overworld'&&Math.sin(dayTime*Math.PI*2)<-.02;}
 function sunIsUp(){return (world.dimension||'overworld')==='overworld'&&Math.sin(dayTime*Math.PI*2)>.06;}
 function tickDaylightBurn(e,d,dt){
  if(!d.burns||e.dead)return;const p=e.pos;
- e.sunT=(e.sunT||0)-dt;if(e.sunT<=0){e.sunT=.5;const fluid=BLOCKS[world.getBlock(Math.floor(p.x),Math.floor(p.y+.4),Math.floor(p.z))]?.fluid;
+ e.sunT=(e.sunT||0)-dt;if(e.sunT<=0){e.sunT=.5;const wet=y=>{const b=BLOCKS[world.getBlock(Math.floor(p.x),Math.floor(y),Math.floor(p.z))];return b?.fluid==='water'||!!b?.aquatic;},fluid=wet(p.y+.4)||wet(p.y+d.h*.6)?'water':null;
   e.inSun=sunIsUp()&&weather.type==='clear'&&fluid!=='water'&&skyVisible(p.x,p.y+d.h,p.z);if(e.inSun)e.onFire=Math.max(e.onFire||0,3);if(fluid==='water')e.onFire=0;}
  if(!(e.onFire>0))return;e.onFire-=dt;e.burn=(e.burn||0)+dt;
  if(e.burn>=.75){e.burn=0;hurtMob(e,2);}
@@ -10810,7 +10811,7 @@ function tickBombs(dt){
 
 /* ---- the detonation sequence ---- */
 const NUKE_VERT=`varying vec3 vW; void main(){ vec4 w=modelMatrix*vec4(position,1.0); vW=w.xyz; gl_Position=projectionMatrix*viewMatrix*w; }`;
-const NUKE_FRAG=`uniform vec3 uCen,uSunDir,uSunRad,uFogColor,uCamFwd; uniform vec3 uAmb[6]; uniform float uAge,uS,uSeed,uHdr,uExposure,uSky,uSoft,uFade,uSteps,uFar; uniform vec2 uScreen,uNearFar; uniform sampler2D uSceneDep; uniform vec3 uBMin,uBMax; varying vec3 vW;
+const NUKE_FRAG=`uniform vec3 uCen,uSunDir,uSunRad,uFogColor,uCamFwd; uniform vec3 uAmb[6]; uniform float uAge,uS,uSeed,uHdr,uExposure,uSky,uSoft,uFade,uSteps,uFar; uniform vec2 uScreen,uNearFar; uniform sampler2D uSceneDep; uniform vec3 uBMin,uBMax; uniform mat4 projectionMatrix; varying vec3 vW;
  float h3(vec3 p){ p=fract(p*0.3183099+vec3(0.71,0.113,0.419)); p*=17.0; return fract(p.x*p.y*p.z*(p.x+p.y+p.z)); }
  float vn(vec3 x){ vec3 i=floor(x),f=fract(x); f=f*f*(3.0-2.0*f);
   return mix(mix(mix(h3(i),h3(i+vec3(1,0,0)),f.x),mix(h3(i+vec3(0,1,0)),h3(i+vec3(1,1,0)),f.x),f.y),mix(mix(h3(i+vec3(0,0,1)),h3(i+vec3(1,0,1)),f.x),mix(h3(i+vec3(0,1,1)),h3(i+vec3(1,1,1)),f.x),f.y),f.z); }
@@ -10850,7 +10851,7 @@ const NUKE_FRAG=`uniform vec3 uCen,uSunDir,uSunRad,uFogColor,uCamFwd; uniform ve
   vec3 inv=1.0/rd, t0=(uBMin-ro)*inv, t1=(uBMax-ro)*inv, tmn=min(t0,t1), tmx=max(t0,t1);
   float tn=max(max(tmn.x,tmn.y),max(tmn.z,0.0)), tf=min(min(tmx.x,tmx.y),tmx.z); if(tf<=tn) discard;
   if(uSoft>0.5){ float zs=linZ(texture2D(uSceneDep,gl_FragCoord.xy/uScreen).r); tf=min(tf,zs/max(dot(rd,uCamFwd),1e-3)); if(tf<=tn) discard; }
-  float T=1.0; vec3 C=vec3(0.0); float t=tn+h3(vec3(gl_FragCoord.xy,uAge))*1.5;
+  float T=1.0; vec3 C=vec3(0.0); float t=tn+h3(vec3(gl_FragCoord.xy,uAge))*1.5, tz=-1.0;
   float heatAll=exp(-A/3.2), capGlow=exp(-A/14.0);
   vec3 L=normalize(uSunDir+vec3(0.0,0.05,0.0));
   for(int i=0;i<64;i++){
@@ -10870,11 +10871,13 @@ const NUKE_FRAG=`uniform vec3 uCen,uSunDir,uSunRad,uFogColor,uCamFwd; uniform ve
     vec3 lit=uHdr>0.5?(uSunRad*sunT*0.85+uAmb[2]*0.9+uAmb[3]*0.25)+glowLit*6.0:vec3(max(uSky,0.16))*(0.3+0.85*sunT)+glowLit*1.2;
     vec3 E=bb(heat)*(uHdr>0.5?60.0:4.5)*heat*heat;
     float a=1.0-exp(-d*d*st*0.6);
-    C+=T*a*(alb*lit+E); T*=1.0-a;
+    C+=T*a*(alb*lit+E); T*=1.0-a; if(tz<0.0&&T<0.92) tz=t;
    }
    t+=st;
   }
   float alpha=1.0-T; if(alpha<0.004) discard;
+  // depth of the cloud's visible front, so blocks between you and the cloud hide it (even from inside the volume)
+  vec4 zc=projectionMatrix*viewMatrix*vec4(ro+rd*(tz<0.0?min(t,tf):tz),1.0); gl_FragDepthEXT=clamp(zc.z/zc.w*0.5+0.5,0.0,1.0);
   vec3 c=C;
   float fogK=smoothstep(uFar*0.6,uFar*1.6,length(vW-cameraPosition))*0.5;
   if(uHdr>0.5){ c=pow(max(c*uExposure,0.0),vec3(1.0/2.2)); }
@@ -10890,7 +10893,7 @@ function startNukeFx(b,Y,o={}){
  const s=Y.fx,cen=new THREE.Vector3(b.x+.5,b.y+(Y.nc?.5:-b.r*.25),b.z+.5),W=10*s*1.75*2.8+14,H=10*s*.9+105*s+10*s*3.2+30;
  const U2={uCen:{value:cen.clone()},uAge:{value:0},uS:{value:s},uSeed:{value:(b.s%1000)/37},uHdr:{value:0},uExposure:U.uExposure,uSunDir:sky.domeU.uSun,uSunRad:U.uSunRad,uAmb:U.uAmb,uSky:U.uSky,uFogColor:U.uFogColor,
   uSoft:SP_SOFT,uSceneDep:U.uSceneDep,uScreen:U.uScreen,uNearFar:U.uNearFar,uCamFwd:{value:new THREE.Vector3()},uFade:{value:1},uSteps:{value:40},uFar:{value:300},uBMin:{value:new THREE.Vector3(cen.x-W,cen.y-4,cen.z-W)},uBMax:{value:new THREE.Vector3(cen.x+W+30,cen.y+H,cen.z+W)}};
- const box=new THREE.Mesh(new THREE.BoxGeometry(1,1,1),new THREE.ShaderMaterial({uniforms:U2,vertexShader:NUKE_VERT,fragmentShader:NUKE_FRAG,transparent:true,depthWrite:false,side:THREE.BackSide,depthTest:false,
+ const box=new THREE.Mesh(new THREE.BoxGeometry(1,1,1),new THREE.ShaderMaterial({uniforms:U2,vertexShader:NUKE_VERT,fragmentShader:NUKE_FRAG,transparent:true,depthWrite:false,side:THREE.BackSide,depthTest:true,extensions:{fragDepth:true},
   blending:THREE.CustomBlending,blendSrc:THREE.OneFactor,blendDst:THREE.OneMinusSrcAlphaFactor,blendEquation:THREE.AddEquation}));
  const bmin=U2.uBMin.value,bmax=U2.uBMax.value;box.scale.set(bmax.x-bmin.x,bmax.y-bmin.y,bmax.z-bmin.z);box.position.set((bmin.x+bmax.x)/2,(bmin.y+bmax.y)/2,(bmin.z+bmax.z)/2);box.frustumCulled=false;box.renderOrder=6;scene.add(box);SP_LATE.push(box);
  const shU={uA:{value:0},uHdr:{value:0}},shell=new THREE.Mesh(new THREE.SphereGeometry(1,40,20),new THREE.ShaderMaterial({uniforms:shU,vertexShader:SHELL_VERT,fragmentShader:SHELL_FRAG,transparent:true,depthWrite:false}));
@@ -10916,7 +10919,7 @@ function updateNukes(dt){
   U2.uFade.value=1-THREE.MathUtils.smoothstep(a,150,240);
   // the box is drawn from inside when the camera is in it
   const bm=U2.uBMin.value,bx=U2.uBMax.value,cp=camera.position,inside=cp.x>bm.x&&cp.x<bx.x&&cp.y>bm.y&&cp.y<bx.y&&cp.z>bm.z&&cp.z<bx.z;
-  n.box.material.side=inside?THREE.BackSide:THREE.FrontSide;n.box.material.depthTest=!inside;
+  n.box.material.side=inside?THREE.BackSide:THREE.FrontSide;
   const fbY=cen.y+10*s*.9+105*s*(1-Math.exp(-a/12));
   // flash on the screen and in the world
   flash=Math.max(flash,n.flashK*(a<.07?1:Math.exp(-(a-.07)*2.2)));
@@ -11638,7 +11641,7 @@ function cfInitLayer(){
  #cfLayer{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:2}
  #cfLayer .dn{position:absolute;left:0;top:0;font-size:calc(var(--g)*9);color:#fff;text-shadow:calc(var(--g)*1) calc(var(--g)*1) 0 #2a0b08;white-space:nowrap;will-change:transform,opacity}
  #cfLayer .dn.crit{color:#ffd23a;font-size:calc(var(--g)*11)}#cfLayer .dn.head{color:#ff5440;font-size:calc(var(--g)*12)}#cfLayer .dn.kill{color:#ff9a3a}#cfLayer .dn.big{font-size:calc(var(--g)*14)}
- #cfLayer .hb{position:absolute;left:0;top:0;width:calc(var(--g)*22);height:calc(var(--g)*3);background:#1a1a1a;box-shadow:0 0 0 calc(var(--g)*.5) rgba(0,0,0,.7);will-change:transform,opacity}
+ #cfLayer .hb{position:absolute;left:0;top:0;width:calc(var(--g)*22);height:calc(var(--g)*1.5);background:#1a1a1a;box-shadow:0 0 0 calc(var(--g)*.5) rgba(0,0,0,.7);will-change:transform,opacity}
  #cfLayer .hb>i{position:absolute;left:0;top:0;bottom:0;background:#e0e0e0;transition:width .35s ease-out}#cfLayer .hb>b{position:absolute;left:0;top:0;bottom:0;background:#e5372a}
  #cfLayer .ha{position:absolute;left:50%;top:50%;width:calc(var(--g)*70);height:calc(var(--g)*70);margin:calc(var(--g)*-35) 0 0 calc(var(--g)*-35);border-radius:50%;
   background:radial-gradient(circle at 50% 2%,rgba(255,30,20,.9),rgba(255,30,20,0) 22%);will-change:transform,opacity}
@@ -11667,13 +11670,21 @@ function cfUpdateLayer(dt){
   n.el.style.transform=`translate(${s[0].toFixed(1)}px,${s[1].toFixed(1)}px) translate(-50%,-50%) scale(${pop.toFixed(2)})`;n.el.style.opacity=a.toFixed(2);}
  // health bars over recently hurt mobs
  for(const [e,b] of CF.bars){b.t-=dt;if(b.t<=0||!entities.includes(e)){b.el.remove();CF.bars.delete(e);continue;}
-  const md=MOB_DEFS[e.kind],g=e.model?.g?.position||e.pos,s=cfProject(g.x,g.y+(md?.h||1.8)*mobScale(e)+.45,g.z);if(!s||!show){b.el.style.opacity='0';continue;}
+  const md=MOB_DEFS[e.kind],g=e.model?.g?.position||e.pos,by=g.y+(md?.h||1.8)*mobScale(e)+.45,s=cfProject(g.x,by,g.z);if(!s||!show){b.el.style.opacity='0';continue;}
+  // blocks between the camera and the bar hide it (checked a few times a second; the bar fades in/out)
+  if((b.losT=(b.losT||0)-dt)<=0){b.losT=.12;b.hid=cfOccluded(g.x,by,g.z)&&cfOccluded(g.x,by-.6,g.z);}b.vis=clamp((b.vis??1)+(b.hid?-dt*10:dt*10),0,1);if(b.vis<=0){b.el.style.opacity='0';continue;}
   const f=clamp(Math.max(0,e.hp)/(e._mh||1),0,1);b.fill.style.width=(f*100).toFixed(1)+'%';b.ghost.style.width=(Math.max(f,b.ghostF)*100).toFixed(1)+'%';b.ghostF=Math.max(f,b.ghostF-dt*.8);
-  b.el.style.transform=`translate(${s[0].toFixed(1)}px,${s[1].toFixed(1)}px) translate(-50%,-50%)`;b.el.style.opacity=Math.min(1,b.t*2).toFixed(2);}
+  b.el.style.transform=`translate(${s[0].toFixed(1)}px,${s[1].toFixed(1)}px) translate(-50%,-50%)`;b.el.style.opacity=(Math.min(1,b.t*2)*b.vis).toFixed(2);}
  // directional hurt arcs
  for(let i=CF.hurtArcs.length-1;i>=0;i--){const h=CF.hurtArcs[i];h.age+=dt;if(h.age>1.1){h.el.remove();CF.hurtArcs.splice(i,1);continue;}
   const dx=h.x-player.pos.x,dz=h.z-player.pos.z,y=player.yaw,fwd=-Math.sin(y)*dx-Math.cos(y)*dz,rt=Math.cos(y)*dx-Math.sin(y)*dz;
   h.el.style.transform=`rotate(${Math.atan2(rt,fwd).toFixed(3)}rad)`;h.el.style.opacity=(Math.min(1,h.k)*(1-h.age/1.1)).toFixed(2);}}
+// true when an opaque block sits on the line from the camera to (x,y,z): voxel walk (Amanatides-Woo)
+function cfOccluded(x,y,z){const o=camera.position;let dx=x-o.x,dy=y-o.y,dz=z-o.z;const L=Math.hypot(dx,dy,dz);if(L<.5||L>96)return false;dx/=L;dy/=L;dz/=L;
+ let ix=Math.floor(o.x),iy=Math.floor(o.y),iz=Math.floor(o.z);const sx=dx>0?1:-1,sy=dy>0?1:-1,sz=dz>0?1:-1,tdx=Math.abs(1/dx),tdy=Math.abs(1/dy),tdz=Math.abs(1/dz);
+ let tx=(dx>0?ix+1-o.x:o.x-ix)*tdx,ty=(dy>0?iy+1-o.y:o.y-iy)*tdy,tz=(dz>0?iz+1-o.z:o.z-iz)*tdz;
+ for(let n=0;n<300;n++){let t;if(tx<ty&&tx<tz){t=tx;ix+=sx;tx+=tdx;}else if(ty<tz){t=ty;iy+=sy;ty+=tdy;}else{t=tz;iz+=sz;tz+=tdz;}if(t>=L-.05)return false;
+  const id=world.getBlock(ix,iy,iz);if(id>0&&BLOCKS[id]?.opaque)return true;}return false;}
 function cfBar(e,before){
  if(!CONFIG.dmgNumbers||MOB_DEFS[e.kind]?.boss)return;cfInitLayer();e._mh=Math.max(e._mh||0,MOB_DEFS[e.kind]?.hp||0,before||0);let b=CF.bars.get(e);
  if(!b){if(CF.bars.size>=14)return;const d=el('div','hb',null,cfLayer);b={el:d,ghost:el('b',null,null,d),fill:el('i',null,null,d),ghostF:clamp(before/(e._mh||1),0,1),t:0};CF.bars.set(e,b);}
@@ -12691,8 +12702,38 @@ Object.assign(MOB_SPECS,{
   {id:'fluke',parent:'tail',pivot:[0,0,-7],box:[-3,-.5,-3,6,1,3],c:[200,120,60]}]},
 });
 MOB_SPECS.elder_deepwatcher={...MOB_SPECS.deepwatcher,parts:MOB_SPECS.deepwatcher.parts.map(p=>({...p,c:p.id==='body'?[196,192,176]:p.id==='tail'?[180,176,160]:p.c}))};
-MOB_SPECS.drowned={scale:.9,parts:MOB_SPECS.zombie.parts.map(p=>({...p,c:p.id==='body'?[70,120,110]:p.id==='legR'||p.id==='legL'?[60,80,96]:[110,150,140],
-  f:p.id==='head'?{front:facePainter({hair:[40,90,80],eyes:[[1,3,[150,230,220],[20,40,40]],[5,3,[20,40,40],[150,230,220]]],extra:(P)=>{rp(P,2,6,4,1,[60,90,80]);}}),top:(P,w,h,R)=>rp(P,0,0,w,h,vary([40,90,80],R,10))}:p.f}))};}
+// the drowned: a waterlogged zombie. Same silhouette and outstretched arms as the zombie, but grey-green
+// bloated skin, a rotted shirt torn open over the ribs, wet hair plastered down, a gaping mouth,
+// kelp hanging off it and eyes that glow cyan in the dark (own unlit material, so they show at night)
+{const SK=[84,116,104],SKd=[58,84,76],CL=[34,52,60],CLd=[24,36,42],KELP=[44,98,46],HAIR=[20,40,36],TEETH=[198,192,156],GORE=[112,44,42],BARN=[196,196,182];
+ const rot=(P,w,h,R,n)=>{for(let i=0;i<n;i++){const x=R()*w,y=R()*h;P(x,y,vary(SKd,R,10));if(R()<.5)P(x+1,y,vary(SKd,R,10));}};
+ const torn=(P,w,y0,y1,R,c)=>{for(let x=0;x<w;x++){const e=y1-((R()*3)|0);for(let y=y0;y<e;y++)P(x,y,vary(c,R,8));}};
+ let eyeMat=null;const eyes=()=>eyeMat||(eyeMat=new THREE.MeshBasicMaterial({color:0x86fff0}));
+ MOB_SPECS.drowned={scale:.9,parts:[
+  {id:'body',pivot:[0,12,0],box:[-4,0,-2,8,12,4],c:SK,f:{
+   front:(P,w,h,R)=>{rot(P,w,h,R,6);torn(P,w,0,9,R,CL);rp(P,3,2,3,5,SK);for(const y of [3,5])rp(P,3,y,3,1,SKd);P(4,6,GORE);   // shirt ripped open over the ribs
+    for(let y=0;y<h;y++)P(1+y*.5,y,vary(KELP,R,14));P(6,1,BARN);P(7,2,BARN);P(6,2,BARN);},
+   back:(P,w,h,R)=>{rot(P,w,h,R,5);torn(P,w,0,10,R,CL);rp(P,2,4,2,3,SK);P(5,7,CLd);P(1,2,BARN);},
+   sides:(P,w,h,R)=>{torn(P,w,0,9,R,CL);rot(P,w,h,R,2);},bottom:(P,w,h)=>rp(P,0,0,w,h,SKd)}},
+  {id:'head',pivot:[0,24,0],box:[-4,0,-4,8,8,8],c:SK,f:{
+   front:(P,w,h,R)=>{rot(P,w,h,R,5);for(let x=0;x<w;x++){P(x,0,vary(HAIR,R,10));if(R()<.6)P(x,1,vary(HAIR,R,10));}rp(P,0,1,1,4,HAIR);rp(P,7,1,1,3,HAIR);   // plastered hair
+    rp(P,1,2,2,3,[14,22,22]);rp(P,5,2,2,3,[14,22,22]);                         // sunken sockets (the glowing eyes sit in row 3)
+    P(3,5,[28,36,34]);P(4,5,[28,36,34]);rp(P,1,6,6,2,[16,8,10]);for(const [x,y] of [[2,6],[4,6],[6,6],[1,7],[3,7],[5,7]])P(x,y,TEETH);   // gaping mouth
+    P(7,5,GORE);P(7,6,GORE);P(0,6,SKd);},
+   top:(P,w,h,R)=>{for(let y=0;y<h;y++)for(let x=0;x<w;x++)if(R()<.82)P(x,y,vary(HAIR,R,10));P(2,3,BARN);P(5,5,BARN);},
+   sides:(P,w,h,R)=>{rot(P,w,h,R,3);for(let x=0;x<w;x++){const l=2+((R()*4)|0);for(let y=0;y<l;y++)P(x,y,vary(HAIR,R,10));}},
+   back:(P,w,h,R)=>{for(let x=0;x<w;x++){const l=4+((R()*4)|0);for(let y=0;y<l;y++)P(x,y,vary(HAIR,R,10));}}}},
+  {id:'eyeL',parent:'head',pivot:[0,0,0],box:[-3,4,4,2,1,.3],c:[134,255,240],ownMaterial:eyes},
+  {id:'eyeR',parent:'head',pivot:[0,0,0],box:[1,4,4,2,1,.3],c:[134,255,240],ownMaterial:eyes},
+  ...['armR','armL'].map((id,k)=>({id,pivot:[k?6:-6,22,0],box:[-2,-10,-2,4,12,4],c:SK,rot:[-Math.PI/2+.1,0,0],limb:{amp:.12,phase:k?Math.PI:0},f:{
+   sides:(P,w,h,R)=>{torn(P,w,0,5,R,CL);rot(P,w,h,R,3);rp(P,0,h-1,w,1,SKd);if(k)P(1,h-4,BARN);},top:(P,w,h)=>rp(P,0,0,w,h,CL),
+   bottom:(P,w,h)=>{rp(P,0,0,w,h,SKd);for(let x=0;x<w;x+=2)P(x,0,[26,32,30]);}}})),
+  ...['legR','legL'].map((id,k)=>({id,pivot:[k?2:-2,12,0],box:[-2,-12,-2,4,12,4],c:[38,48,64],limb:{phase:k?Math.PI:0},f:{
+   sides:(P,w,h,R)=>{for(let i=0;i<4;i++)P(R()*w,R()*(h-4),[30,38,52]);for(let x=0;x<w;x++){const e=h-4+((R()*3)|0);for(let y=e;y<h;y++)P(x,y,vary(SK,R,10));}   // trousers rotted off at the shin
+    rp(P,0,k?5:7,w,1,KELP);rp(P,0,h-1,w,1,SKd);},bottom:(P,w,h)=>rp(P,0,0,w,h,SKd)}})),
+  {id:'kelp0',parent:'body',pivot:[-2.5,11.5,2.3],box:[-.5,-9,-.3,1,9,.6],c:KELP,n:20,limb:{idle:true,amp:.22,phase:0,axis:'z'}},
+  {id:'kelp1',parent:'body',pivot:[2.8,12,-2.3],box:[-.5,-11,-.3,1,11,.6],c:[38,86,40],n:20,limb:{idle:true,amp:.18,phase:1.7,axis:'z'}},
+  {id:'kelp2',parent:'head',pivot:[3.6,7,1],box:[-.3,-7,-.5,.6,7,1],c:KELP,n:20,limb:{idle:true,amp:.2,phase:3.1,axis:'z'}}]};}}
 /* ---- helpers ---- */
 const isWater=id=>id>0&&(BLOCKS[id].fluid==='water'||!!BLOCKS[id].aquatic);
 const waterAt=(x,y,z)=>isWater(world.getBlock(Math.floor(x),Math.floor(y),Math.floor(z)));
@@ -12866,7 +12907,7 @@ const OCEAN_AI={
 };
 OCEAN_AI.elder_deepwatcher=OCEAN_AI.deepwatcher;
 {const _th=tickHostile;tickHostile=function(e,dt,dist){const ai=OCEAN_AI[e.kind];if(!ai)return _th(e,dt,dist);
- const T=hostileTarget(e.pos);e.attackT=Math.max(0,(e.attackT||0)-dt);tickDaylightBurn(e,MOB_DEFS[e.kind],dt);ai(e,dt,T,e.pos.distanceToSquared(T.pos),_th,dist);};}
+ const T=hostileTarget(e.pos);e.attackT=Math.max(0,(e.attackT||0)-dt);if(e.kind!=='drowned')tickDaylightBurn(e,MOB_DEFS[e.kind],dt);else if(waterAt(e.pos.x,e.pos.y+.9,e.pos.z))e.onFire=0;/* on land tickHostile burns the drowned, once */ai(e,dt,T,e.pos.distanceToSquared(T.pos),_th,dist);};}
 {const _rm=removeMob;removeMob=function(e){dropBeam(e);return _rm(e);};}
 // spines: hitting a Deepwatcher up close sometimes pricks you back; the Elder's 'Pressure' slows mining
 {const _hm=hurtMob;hurtMob=function(e,amount){const r=_hm.apply(this,arguments);
@@ -12913,10 +12954,11 @@ function oceanSpawns(dt){
   const A=world.ocean||(world.ocean={}),k=t.x+','+t.z;
   if(!A.elders?.[k]&&!entities.some(e=>e.kind==='elder_deepwatcher'))spawnMob('elder_deepwatcher',t.x+.5,t.y+8,t.z+.5,{persistent:true,home:[t.x+.5,t.y+8,t.z+.5]});
   if(keepers<5&&entities.length<ENTITY_LIMIT){const a=Math.random()*6.283,r=6+Math.random()*12,x=t.x+Math.cos(a)*r,z=t.z+Math.sin(a)*r,y=t.y+2+Math.random()*12;if(waterAt(x,y,z))spawnMob('deepwatcher',x,y,z,{home:[t.x+.5,t.y+6,t.z+.5]});}}
+ if(sunIsUp())for(const e of entities.slice())if(e.kind==='drowned'&&!e.dead&&!e.persistent&&e.pos.distanceToSquared(pp)>24*24&&Math.random()<.2)removeMob(e);
  if(entities.length>=ENTITY_LIMIT)return;
  for(let attempt=0;attempt<4;attempt++){const a=Math.random()*6.283,r=14+Math.random()*26,x=Math.floor(pp.x+Math.cos(a)*r),z=Math.floor(pp.z+Math.sin(a)*r),c=world.get(x>>4,z>>4);if(!c?.meshed)continue;
   let y=SEA;while(y>2&&isWater(world.getBlock(x,y,z)))y--;const depth=SEA-y;if(depth<3)continue;const b=gen.biomeAt(x,z);if(b!==5&&b!==6&&b!==7)continue;const wy=y+1+Math.random()*(depth-1.5);
-  if(Math.random()<.3&&hostile<netHostileCap()&&CONFIG.difficulty!=='peaceful'&&(U.uSky.value<.35||depth>12||b===7&&Math.random()<.3)){spawnMob('drowned',x+.5,y+1,z+.5);return;}
+  if(Math.random()<.3&&hostile<netHostileCap()&&CONFIG.difficulty!=='peaceful'&&isNightTime()){spawnMob('drowned',x+.5,y+1,z+.5);return;}
   if(aq>=AQUA_CAP)return;const warm=gen.biomeAt&&b!==7&&reefWarm(x,z),roll=Math.random();
   if(roll<.42){const kind=warm?'reef_fish':'fish',n=3+((Math.random()*4)|0);for(let i=0;i<n&&entities.length<ENTITY_LIMIT;i++)spawnMob(kind,x+.5+(Math.random()-.5)*2,wy,z+.5+(Math.random()-.5)*2,{yaw:a});return;}
   if(roll<.78){spawnMob('squid',x+.5,wy,z+.5);return;}
