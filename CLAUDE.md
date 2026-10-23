@@ -98,6 +98,17 @@ Two limits on that freedom:
   WebGL silently drops the draw (this is why nukes were invisible on Ultra).
 - Day length: `DAY_PHASES` (seconds of day, sunset, night, sunrise); `dayRate`
   runs the clock at a different speed in each part. `DAY_LENGTH` is the total.
+- Section 59 (just before BOOT) is fire, held light and blast ragdolls: the
+  `fire` block (985) with `FIRE`/`FLAM`/`igniteAt` (host spreads, everyone
+  draws flames), the held-light uniform `U.uHand` (a torch or glowing block in
+  either hand acts as a moving block light, `vHand` in `VERT`; Fancy/Ultra add a
+  warm point light), and `flingMob` (explosions launch and tumble mobs; corpses
+  fly before they despawn). Player blast knockback is `player.kbx/kbz`.
+- Redstone wire is drawn by `pushWire` in the mesher from its links (dot, line,
+  corner, wall climb) and links diagonally up/down (`redstoneCell`,
+  `wakeRedstone`).
+- `sfx.hold(on)` suspends all audio while paused; `sfx.mob(kind,hurt,pos)` is
+  positional (silent beyond 16 blocks, 32 for bosses).
 - Section 47 is uranium: ore (generator 9), yellowcake, and the Enrichment
   Table (container type `enrichment`, ticked by the host from
   `updateFurnaces`). Section 57 replaces `tickEnrichment` to add the second
@@ -167,11 +178,10 @@ Two limits on that freedom:
   `BLOCKS` has holes at 256–511, so loops over it must skip empty entries.
 - **World generation is frozen per generator version.** Every shipped
   generator must keep producing byte-identical chunks: the test pins chunk
-  hashes for generators 1–8. Generator 12 (generator 11 plus real acacia,
-  jungle, dark-oak and huge-mushroom shapes, rarer badlands and savanna, fewer cave
-  mouths, uranium exposed on cave walls) is the default for new worlds; once it
-  ships, pin it too (generators 10 and 11 are pinned). Change terrain
-  only by adding a version: guard new code with `version>=13`, keep `R()` call order unchanged for older versions,
+  hashes for generators 1–8. Generator 13 (generator 12 plus a much bigger silo
+  Juggernaut hall) is the default for new worlds; once it ships, pin it too
+  (generators 10–12 are pinned). New worlds keep `netherGen` 12. Change terrain
+  only by adding a version: guard new code with `version>=14`, keep `R()` call order unchanged for older versions,
   give new features their own `mulberry32` stream or a position hash, and
   bump the default in the three `genVersion` spots and the guest-meta check.
   Features that span chunks (tunnels, villages) are planned from world
@@ -230,7 +240,7 @@ How syncing works, so new features stay multiplayer-safe:
 - New kinds of shared state that don't go through the functions above need a
   message: add a case to `netHostOnMsg` (guest → host; validate everything,
   guests are untrusted) and to `netClientOnMsg` (host → guest).
-- `NET_V` is the protocol version (currently 8). Bump it whenever messages
+- `NET_V` is the protocol version (currently 9). Bump it whenever messages
   or block ids change in an incompatible way, so mismatched players get a
   "refresh to update" message instead of a broken game.
 - Friendly fire is the host's setting `world.mp.pvp` (pause-menu button or
