@@ -86,7 +86,30 @@ Two limits on that freedom:
   they work for guests automatically.
 - Section 47 is uranium: ore (generator 9), yellowcake, and the Enrichment
   Table (container type `enrichment`, ticked by the host from
-  `updateFurnaces`). It is groundwork for a bigger nuclear update.
+  `updateFurnaces`). Section 57 replaces `tickEnrichment` to add the second
+  stage (4 enriched → 1 weapons-grade).
+- Section 57 is the Atomic Age (just before BOOT): art/recipes and the Armory
+  Workbench GUI (`ARMORY` blueprints take from the inventory), sound voices on
+  `sfx.rig()`, guns (`GUNS` by item id, magazine in `stack.en.mag`, hitscan
+  `bulletRay`/`mobsOnRay`, `FX` tracers/decals/brass, first-person models
+  `GUN_SPECS` via a `renderHeld` wrapper, over-the-shoulder camera in an
+  `updateThirdPerson` wrapper), rockets and grenades, radiation (`player.rads`,
+  `doseRateAt`, hazmat/combat armour via `armorMat`), nukes, launch pads,
+  consoles and ICBMs, the new mobs (`ATOM_AI`), Hezmas, and the glue
+  (`atomicFrame`, `netFx`, `atomicHostMsg`/`atomicClientMsg`).
+- Nukes are blast records (`world.blasts` per dimension, saved in meta and the
+  multiplayer snapshot). `blastCell()` is a pure per-block transform and
+  `carveChunkData()` applies a record to a chunk; `onChunkData` runs
+  `applyBlastsToData` before saved edits, a live blast rewrites cells that
+  already have edits, and unloaded chunks get their stored edits transformed.
+  Keep `blastCell` deterministic. The cloud (`startNukeFx`) is a ray-marched
+  volume (`NUKE_FRAG`) plus a condensation shell and ground ring; `SHOCK_SPEED`
+  sets when the shock and sound arrive.
+- Ground Zero is a fourth dimension (`DIMENSIONS`, chunk prefix `g.c.`,
+  `makeZeroGen` in worldgen-src, fixed arrival like the End; `mode 'gate'`
+  returns you to the gate you left). Fission Gates are lead-block frames lit
+  with a fuel rod (`tickGates`). ICBM silos are generator 11 (`siloAt`,
+  `structureAt` → `'silo'`).
 - Explosions (section 27): `explode()` casts blast rays against block blast
   resistance; `explosionEffects()` / `boomFx` draw the flash, fireball, smoke,
   dust, sparks and shockwave as instanced billboards (drawn late in the shader
@@ -128,16 +151,16 @@ Two limits on that freedom:
   `BLOCKS` has holes at 256–511, so loops over it must skip empty entries.
 - **World generation is frozen per generator version.** Every shipped
   generator must keep producing byte-identical chunks: the test pins chunk
-  hashes for generators 1–8. Generator 10 (generator 9 plus ruined portals,
-  and the new Nether) is the default for new worlds; once it ships, pin it
-  too (generator 9 is pinned). Change terrain
-  only by adding a version: guard new code with `version>=11`, keep `R()` call order unchanged for older versions,
+  hashes for generators 1–8. Generator 11 (generator 10 plus ICBM silos)
+  is the default for new worlds; once it ships, pin it too (generator 10 is
+  pinned). Change terrain
+  only by adding a version: guard new code with `version>=12`, keep `R()` call order unchanged for older versions,
   give new features their own `mulberry32` stream or a position hash, and
   bump the default in the three `genVersion` spots and the guest-meta check.
   Features that span chunks (tunnels, villages) are planned from world
   coordinates per cell and cached, so every chunk agrees on them.
 - **Saves migrate forward.** World metadata carries a version `v` (currently
-  18). When you change the save shape, bump it and add a step to
+  19). When you change the save shape, bump it and add a step to
   `migrateMeta()` so old saves load. Saves live in `localStorage`
   (`bc.*` keys; per-world `bc.w<slot>.*`).
 - **The texture atlas is 16 × 64 tiles** (`ATLAS_ROWS`); about 600 are used.
@@ -190,7 +213,7 @@ How syncing works, so new features stay multiplayer-safe:
 - New kinds of shared state that don't go through the functions above need a
   message: add a case to `netHostOnMsg` (guest → host; validate everything,
   guests are untrusted) and to `netClientOnMsg` (host → guest).
-- `NET_V` is the protocol version (currently 6). Bump it whenever messages
+- `NET_V` is the protocol version (currently 7). Bump it whenever messages
   or block ids change in an incompatible way, so mismatched players get a
   "refresh to update" message instead of a broken game.
 - Friendly fire is the host's setting `world.mp.pvp` (pause-menu button or
