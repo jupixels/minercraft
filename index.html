@@ -13180,7 +13180,7 @@ const CX_NOISE=`
 const LENS_VERT=`varying vec2 vUv; void main(){ vUv=position.xy*0.5+0.5; gl_Position=vec4(position.xy,0.0,1.0); }`;
 const LENS_FRAG=`#include <packing>
  uniform sampler2D uScene,uDepth; uniform mat4 uInvProj,uCamWorld,uViewProj;
- uniform vec3 uCam,uBH,uN,uT1,uT2,uFwd,uSkyCol;
+ uniform vec3 uCam,uBH,uN,uT1,uT2,uFwd,uSkyCol,uSunD,uMoonD;
  uniform float uRs,uNear,uFar,uTime,uRIn,uROut,uRM,uSteps,uSpace,uSpaceR,uWave,uWaveR,uJet,uHeat,uSeed;
  varying vec2 vUv;
  ${CX_NOISE}
@@ -13257,6 +13257,9 @@ const LENS_FRAG=`#include <packing>
    float inS=cc.w>0.0?smoothstep(0.0,0.025,min(min(uv2.x,uv2.y),min(1.0-uv2.x,1.0-uv2.y))):0.0;
    bg=mix(uSkyCol*0.55,texture2D(uScene,uc).rgb,inS);
    float sky=mix(1.0,depthAt(uc)>0.9999?1.0:0.0,inS);
+   // the flat sun and moon sprites would be blown up into big white discs where the light is bent: paint them over with sky
+   float bent=smoothstep(0.003,0.03,length(de-rd)), lum=acos(clamp(dot(de,uSunD),-1.0,1.0)), lmo=acos(clamp(dot(de,uMoonD),-1.0,1.0));
+   bg=mix(bg,uSkyCol*0.8,bent*sky*max(1.0-smoothstep(0.2,0.3,lum),1.0-smoothstep(0.15,0.24,lmo)));
    float spc=clamp(uSpace*exp(-pow(ang/uSpaceR,2.0))*sky,0.0,0.94);    // space shows through around it
    bg=mix(bg,vec3(0.006,0.004,0.013)+stars(de),spc);
   }
@@ -13273,7 +13276,7 @@ function cxLensInit(){
  if(CX.lens)return CX.lens;
  const L={size:new THREE.Vector2(-1,-1),dmat:new THREE.MeshDepthMaterial({depthPacking:THREE.RGBADepthPacking})};
  const v3=()=>({value:new THREE.Vector3()}),f=v=>({value:v});
- L.U={uScene:f(null),uDepth:f(null),uInvProj:f(new THREE.Matrix4()),uCamWorld:f(new THREE.Matrix4()),uViewProj:f(new THREE.Matrix4()),uCam:v3(),uBH:v3(),uN:v3(),uT1:v3(),uT2:v3(),uFwd:v3(),uSkyCol:f(new THREE.Color()),
+ L.U={uScene:f(null),uDepth:f(null),uInvProj:f(new THREE.Matrix4()),uCamWorld:f(new THREE.Matrix4()),uViewProj:f(new THREE.Matrix4()),uCam:v3(),uBH:v3(),uN:v3(),uT1:v3(),uT2:v3(),uFwd:v3(),uSunD:v3(),uMoonD:v3(),uSkyCol:f(new THREE.Color()),
   uRs:f(1),uNear:f(.1),uFar:f(1000),uTime:f(0),uRIn:f(3),uROut:f(11.5),uRM:f(22),uSteps:f(120),uSpace:f(0),uSpaceR:f(.5),uWave:f(0),uWaveR:f(0),uJet:f(1),uHeat:f(1),uSeed:f(0)};
  L.mat=new THREE.ShaderMaterial({uniforms:L.U,vertexShader:LENS_VERT,fragmentShader:LENS_FRAG,depthTest:false,depthWrite:false});
  L.scene=new THREE.Scene();L.cam=new THREE.OrthographicCamera(-1,1,1,-1,0,1);
@@ -13305,7 +13308,10 @@ function cxLensPass(){
  const U2=L.U,a=ev.age,end=ev.dur;
  U2.uInvProj.value.copy(cam.projectionMatrixInverse);U2.uCamWorld.value.copy(cam.matrixWorld);U2.uViewProj.value.multiplyMatrices(cam.projectionMatrix,cam.matrixWorldInverse);
  U2.uCam.value.copy(cam.position);U2.uBH.value.copy(_cxV);U2.uFwd.value.copy(_cxF);U2.uN.value.copy(ev.n);U2.uT1.value.copy(ev.t1);U2.uT2.value.copy(ev.t2);
- U2.uSkyCol.value.copy(U.uFogColor.value);U2.uRs.value=rs;U2.uNear.value=cam.near;U2.uFar.value=cam.far;U2.uTime.value=a;U2.uSeed.value=(ev.seed%997)/41;
+ U2.uSkyCol.value.copy(U.uFogColor.value);
+ const sd=(m,o)=>m?.visible!==false&&m?(m.getWorldPosition(o),o.sub(cam.position).normalize()):o.set(0,-1,0);sd(sky?.sun,U2.uSunD.value);sd(sky?.moon,U2.uMoonD.value);
+ if(sky?.domeU?.uSun&&shadersOn())U2.uSunD.value.copy(sky.domeU.uSun.value).normalize();   // the shader pack draws its own sun disk
+U2.uRs.value=rs;U2.uNear.value=cam.near;U2.uFar.value=cam.far;U2.uTime.value=a;U2.uSeed.value=(ev.seed%997)/41;
  U2.uSteps.value=shadersOn()&&CONFIG.shaders==='ultra'?150:110;
  const form=bhForm(ev);U2.uSpace.value=form*.9;U2.uSpaceR.value=Math.max(.32,Math.min(1.1,Math.atan2(rs*34,dist)));
  U2.uWave.value=a<9?Math.exp(-a/2.6)*(1-Math.exp(-a*3)):0;U2.uWaveR.value=a*48;
@@ -13335,7 +13341,6 @@ function cxGrab(e,w,lf,dt,spin=1){   // drag a mob along a velocity field, tumbl
  f.t=Math.min(f.t,.05);f.bounces=2;const k=Math.min(1,dt*3);f.vx+=(w.x-f.vx)*k;f.vz+=(w.z-f.vz)*k;
  if(lf>0){e.vel.y+=28*lf*dt+(w.y-e.vel.y)*Math.min(1,dt*2.5)*lf;e.onGround=false;}
 }
-function cxConsume(x,y,z){boomInit();for(let i=0;i<6;i++)boomPart({x,y,z,vx:(Math.random()-.5)*6,vy:(Math.random()-.5)*6,vz:(Math.random()-.5)*6,kind:2,heat:1,cool:.8,size:.12,life:.5+Math.random()*.4,drag:1});}
 function bhTick(ev,dt,host,here){
  bhAxes(ev);const form=bhForm(ev),grow=1+.35*Math.min(1,ev.eaten/6000);ev.rsNow=ev.rs*form*grow;
  if(!here)return;
@@ -13360,12 +13365,12 @@ function bhTick(ev,dt,host,here){
    bhField(ev,x+.5,y+1,z+.5,Rp,_cxW);boomInit();boomPart({x:x+.5,y:y+1,z:z+.5,vx:_cxW.x*.5,vy:4+Math.random()*5+_cxW.y*.4,vz:_cxW.z*.5,kind:1,tint:1,size:.8,grow:2.5+Math.random()*2,growK:1.2,life:1.8+Math.random()*1.5,drag:.6,rise:2,op:.45});}
   // items (everyone moves them; the host decides what it swallows)
   for(let i=itemEntities.length-1;i>=0;i--){const it=itemEntities[i];if(it.fly)continue;const u=bhField(ev,it.pos.x,it.pos.y,it.pos.z,Rp,_cxW);if(u>=1)continue;
-   if(u*Rp<rs*2.4){if(host){cxConsume(it.pos.x,it.pos.y,it.pos.z);removeItem(it);}continue;}
+   if(u*Rp<rs*2.4){if(host)removeItem(it);continue;}
    const k=Math.min(1,dt*2),lf=cxSm(.62,.3,u);it.vel.x+=(_cxW.x-it.vel.x)*k;it.vel.z+=(_cxW.z-it.vel.z)*k;if(lf>0){it.vel.y+=24*lf*dt+(_cxW.y-it.vel.y)*k*lf;it.onGround=false;}}
   if(host){
    for(let i=entities.length-1;i>=0;i--){const e=entities[i],d=MOB_DEFS[e.kind];if(e.dead||!d||d.boss||e===riding||e.rider)continue;
     const u=bhField(ev,e.pos.x,e.pos.y+d.h*.5,e.pos.z,Rp,_cxW);if(u>=1)continue;
-    if(u*Rp<rs*2.4){cxConsume(e.pos.x,e.pos.y,e.pos.z);removeMob(e);continue;}
+    if(u*Rp<rs*2.4){removeMob(e);continue;}
     cxGrab(e,_cxW,cxSm(.62,.32,u),dt);}
    // the ground: columns under it are eaten from the top down, nearest first
    if(form>.3){ev.eatA+=dt*(10+34*cxSm(8,60,ev.age))*form;const re=Rp*.62;
@@ -13583,7 +13588,7 @@ function cxDebTick(dt){
    const vin=6+260/(r+6),tx=n.y*rz-n.z*ry,ty=n.z*rx-n.x*rz,tz=n.x*ry-n.y*rx,tl=Math.hypot(tx,ty,tz)||1,sw=.95*cxSm(48,8,r),pl=(rx*n.x+ry*n.y+rz*n.z)/r*.7*cxSm(30,6,r);
    const wx=-rx/r*vin+tx/tl*vin*sw-n.x*vin*pl,wy=-ry/r*vin+ty/tl*vin*sw-n.y*vin*pl,wz=-rz/r*vin+tz/tl*vin*sw-n.z*vin*pl,k=Math.min(1,dt*1.6);
    d.vx+=(wx-d.vx)*k;d.vy+=(wy-d.vy)*k;d.vz+=(wz-d.vz)*k;d.heat=cxSm(rs*9,rs*3.5,r);d.st=cxSm(rs*8,rs*3.2,r);d.r=r;
-   if(r<rs*3.1){kill=true;if(Math.random()<.5)cxConsume(d.x,d.y,d.z);}
+   if(r<rs*3.1)kill=true;   // no spark here: the lens would magnify it into big flashing circles
   }else if(d.mode==='tor'){
    const P=torParams(ev),h=d.y-ev.by,E=TOR_EF[ev.ef];
    if(torField(ev,P,d.x,d.y,d.z,_cxW)>1e8||h>d.rel||P.k<.2){d.mode='fall';const ax=torAxis(ev,P,h,_cxA),ox=d.x-(ev.x+ax.x),oz=d.z-(ev.z+ax.y),l=Math.hypot(ox,oz)||1,s=10+Math.random()*14;d.vx+=ox/l*s;d.vz+=oz/l*s;}
