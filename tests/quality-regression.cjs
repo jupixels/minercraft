@@ -34,8 +34,11 @@ assert.equal(digest(JSON.stringify(BLOCKS.slice(512,955).map(b=>[b.id,b.name])))
 // The Atomic Age appended 955-984 (armory, silo and test-site blocks, the bomb, blast scars, the Fission Gate).
 assert.equal(digest(JSON.stringify(BLOCKS.slice(512,985).map(b=>[b.id,b.name]))),'85f22a4d78a39c7cec7649c19f02f024f604f0aaf174cf9e648b1e5c167b62af','Atomic Age block IDs/names changed');
 // Fire appended 985.
+// Workshop blocks (986-989: anvil, campfire, lectern, bell) and the Ocean Update (990-1001) appended after it.
+assert.equal(digest(JSON.stringify(BLOCKS.slice(512,1002).map(b=>[b.id,b.name]))),'a3afdbe904de5e098c502f20bd88aa0854578878bed78d328c3ec3c1ae78e6fa','workshop/ocean block IDs/names changed');
 assert.equal(digest(JSON.stringify(BLOCKS.slice(512,986).map(b=>[b.id,b.name]))),'10cb8d79105bb50214acdf16499379886733a8834a8d3b2eea72963e39b86d38','fire block ID/name changed');
-for(const id of Object.keys(ITEMS).map(Number))assert(id>=256&&id<512&&!BLOCKS[id],'item ids live in 256-511');
+// Items live in 256-511 and, since that range filled up, in 1024-2047 (above every block id).
+for(const id of Object.keys(ITEMS).map(Number))assert((id>=256&&id<512||id>=1024&&id<2048)&&!BLOCKS[id],'item ids live in 256-511 or 1024-2047');
 // Items defined outside section 2 (boats, spawn eggs) must not reuse a section-2 item id.
 {const reg=source.slice(source.indexOf('const B = {};'),source.indexOf('const isBlockId =')),rest=source.replace(reg,''),later=[...rest.matchAll(/defItem\((\d+),/g)].map(m=>+m[1]);
  const eggs=JSON.parse(rest.match(/const SPAWN_EGGS=(\[[^\]]*\])/)[1].replace(/'/g,'"')).map((_,i)=>400+i);
@@ -56,6 +59,8 @@ LEGACY.hashes.push([10,42,"overworld",0,0,"e6929bff97b706532b165fbee6bbcae0d8194
 LEGACY.hashes.push([11,42,"overworld",0,0,"e6929bff97b706532b165fbee6bbcae0d8194dfe25cef5575d2ea563fc8f527a"],[11,42,"overworld",15,-31,"0c91801bcc59fa267a289b7f966785d10bc658e2f346d3b7fbbafba7079186e9"],[11,12345,"overworld",100,100,"eb89145efbb715b55ac174ade69d02189fd1f6b144d40eede0def53fad6dc1c2"],[11,42,"overworld",-1,2,"5f43ea6405577d243c329d11435db6d82f7b0cebbd0ddfb2891189961878e498"]);
 // Generator 12 shipped as the default before generator 13 (the bigger silo Juggernaut hall), so it is pinned too.
 LEGACY.hashes.push([12,42,"overworld",0,0,"79af567b49af17b61e70bbf669e802305910db2c73c0b7e6ad7039e0b32ac8b8"],[12,42,"overworld",15,-31,"cc805581937122020aa5784a8b018eb96f988de1490d6af6c11403394f9e2795"],[12,12345,"overworld",100,100,"eb89145efbb715b55ac174ade69d02189fd1f6b144d40eede0def53fad6dc1c2"],[12,42,"overworld",-1,2,"5f43ea6405577d243c329d11435db6d82f7b0cebbd0ddfb2891189961878e498"],[12,42,"overworld",-17,-9,"dde96da7aea66f1799f021717aa38aed873f53c468d557820922147a129414d6"],[12,42,"overworld",-16,-9,"72fb9f5d249246073db9de2aaedd090c4cb818ba39edac89b448e8c4310faa8a"],[12,42,"overworld",-16,-10,"b13fa790884073ffa1bd752e0727623211d0160894de358b65c8dd772869d0fd"]);
+// Generator 13 shipped as the default before the Ocean Update (generator 14), so it is pinned too.
+LEGACY.hashes.push([13,42,"overworld",0,0,"79af567b49af17b61e70bbf669e802305910db2c73c0b7e6ad7039e0b32ac8b8"],[13,42,"overworld",15,-31,"cc805581937122020aa5784a8b018eb96f988de1490d6af6c11403394f9e2795"],[13,12345,"overworld",100,100,"eb89145efbb715b55ac174ade69d02189fd1f6b144d40eede0def53fad6dc1c2"],[13,42,"overworld",-1,2,"5f43ea6405577d243c329d11435db6d82f7b0cebbd0ddfb2891189961878e498"],[13,42,"overworld",-17,-9,"49d43542ae1098de9cfad417fb1ce62f0b1b3b585bee1a263214c514d572dbfc"],[13,42,"overworld",-16,-9,"af8fe9e73d077af52399f62c2e0f19601e3d638e04c76f1738d10321ffb9b76c"]);
 for(const [version,seed,dimension,x,z,expected] of LEGACY.hashes)assert.equal(digest(make(seed,B,version,dimension).genChunk(x,z)),expected,`legacy ${version}/${seed}/${dimension}/${x},${z}`);
 for(const seed of [42,12345,-98765]){
  const a=make(seed,B,3),b=make(seed,B,3);let underground=0;
@@ -168,10 +173,24 @@ for(const seed of [42,-98765]){
  const blk=(x,y,z)=>g13.genChunk(x>>4,z>>4)[(x&15)+((z&15)<<4)+(y<<8)];let air=0;for(let x=p.x+6;x<=p.x+25;x++)for(let z=p.z-14;z<=p.z+6;z++)if(blk(x,p.ctrl,z)===0&&blk(x,p.ctrl+1,z)===0)air++;
  assert(air>300,'generator 13 Juggernaut hall too small: '+air);assert(blk(p.x+14,p.ctrl,p.z-5)===0&&blk(p.x+14,p.ctrl+1,p.z-5)===0,'Juggernaut spawn blocked');
  for(let cz=-3;cz<3;cz++)for(let cx=-3;cx<3;cx++)assert.equal(digest(g12.genChunk(cx,cz)),digest(g13.genChunk(cx,cz)),'generator 13 changed terrain away from silos');}
+// Generator 14 (the Ocean Update): kelp, seagrass and reefs on ocean floors, order-independent shipwrecks with
+// buried treasure and temples; away from them it only adds ocean plants and coral (and village bells/lecterns/anvils).
+{const OCEAN=new Set(['kelp','seagrass','azure_coral_block','rose_coral_block','amber_coral_block','violet_coral_block','azure_coral','rose_coral','amber_coral','violet_coral'].map(n=>B[n]));
+ const g13=make(12345,B,13),g14=make(12345,B,14),again=make(12345,B,14),seen=new Set();let other=0,plants=0;
+ const w=g14.nearestStructure(0,0,'shipwreck'),tp=g14.nearestStructure(0,0,'temple'),tr=g14.nearestStructure(0,0,'buried_treasure');assert(w&&tp&&tr,'generator 14 structures missing');
+ for(const s of [w,tp]){const cs=[[s.x>>4,s.z>>4],[(s.x>>4)+1,s.z>>4],[s.x>>4,(s.z>>4)-1]];for(const [x,z] of cs.slice().reverse())again.genChunk(x+2,z-2);
+  for(const [x,z] of cs){const d=g14.genChunk(x,z);assert.equal(digest(d),digest(again.genChunk(x,z)),'generator 14 structures depend on request order');for(const id of d)seen.add(id);}}
+ const tc=g14.genChunk(tr.x>>4,tr.z>>4);assert(tc[(tr.x&15)+((tr.z&15)<<4)+(tr.y<<8)]===B.chest,'buried treasure chest missing');assert.equal(g14.structureAt(tr.x,tr.y,tr.z),'buried_treasure');
+ assert.equal(g14.structureAt(tp.x,tp.y+2,tp.z),'temple');assert.equal(g14.structureAt(w.x,w.y+1,w.z),'shipwreck');
+ for(const name of ['prismarine_bricks','dark_prismarine','sea_lantern','gold_block','wet_sponge','spruce_planks'])assert(seen.has(B[name]),name+' missing from generator 14 structures');
+ const near=(x,z)=>[w,tp].some(s=>Math.abs(x-s.x)<48&&Math.abs(z-s.z)<48)||Math.hypot(x-tr.x,z-tr.z)<24;
+ for(let cz=-10;cz<10;cz+=2)for(let cx=-10;cx<10;cx+=2){if(near(cx*16+8,cz*16+8))continue;const a=g13.genChunk(cx,cz),b=g14.genChunk(cx,cz);
+  for(let i=0;i<a.length;i++)if(a[i]!==b[i]){if(OCEAN.has(b[i]))plants++;else if(![B.bell,B.lectern,B.anvil].includes(b[i]))other++;}}
+ if(process.env.DEBUG_GEN)console.log({plants,other});assert(plants>500,'generator 14 ocean life missing');assert(other<200,'generator 14 changed more than ocean life away from its structures: '+other);}
 // Legacy metadata must retain generator and equipment, including offhand enchants.
 vm.runInContext(source.slice(source.indexOf('function migrateMeta('),source.indexOf('function mobRecord('))+';globalThis.migrate=migrateMeta;',context);
 const equipment=[315,1,123,{fortune:2}],old={v:12,generator:2,inv:[equipment],offhand:[384,1,200,null],p:{x:1,y:70,z:2}};
-const migrated=context.migrate(old);assert.equal(migrated.v,19);assert.equal(JSON.stringify([migrated.blasts,migrated.bombs,migrated.rads]),'[[],[],0]');assert.equal(JSON.stringify([migrated.graves,migrated.waypoints,migrated.villages]),'[[],{},{}]');assert.equal(migrated.netherGen,10);assert.equal(context.migrate({v:16,generator:4,dimensions:{nether:{}},p:{}}).netherGen,4);assert.equal(migrated.dayLock,false);assert.equal(migrated.generator,2);assert.deepEqual(migrated.inv[0],equipment);assert.equal(migrated.offhand[2],200);
+const migrated=context.migrate(old);assert.equal(migrated.v,20);assert.equal(JSON.stringify([migrated.decor,migrated.hardcore]),'[{},false]');assert.equal(JSON.stringify([migrated.blasts,migrated.bombs,migrated.rads]),'[[],[],0]');assert.equal(JSON.stringify([migrated.graves,migrated.waypoints,migrated.villages]),'[[],{},{}]');assert.equal(migrated.netherGen,10);assert.equal(context.migrate({v:16,generator:4,dimensions:{nether:{}},p:{}}).netherGen,4);assert.equal(migrated.dayLock,false);assert.equal(migrated.generator,2);assert.deepEqual(migrated.inv[0],equipment);assert.equal(migrated.offhand[2],200);
 assert.equal(context.migrate({v:15,generator:8,p:{}}).generator,8);assert.equal(context.migrate({v:15,generator:9,p:{}}).generator,9);
 assert.equal(context.migrate({v:1,p:{}}).generator,1);assert.equal(context.migrate({v:12,p:{}}).generator,2);
 // Frame detection/destruction with optional corners, both orientations and a build marker.
@@ -187,4 +206,4 @@ for(const axis of [0,1]){
  world.setBlock(x,y+2,z,0);context.portals.invalidatePortal(x,y+2,z);
  assert(![...cells.values()].includes(B.portal));assert.equal(world.getBlock(20,35,20),B.bricks,'frame maintenance changed a neighbouring build');
 }
-console.log(`PASS: syntax, soundpack, 256 stable IDs + ${BLOCKS.length-512} appended, ${LEGACY.hashes.length} legacy chunks, v3-v13 determinism/resources/villages/uranium/Nether Update/silos/Ground Zero, migration and both portal frames.`);
+console.log(`PASS: syntax, soundpack, 256 stable IDs + ${BLOCKS.length-512} appended, ${LEGACY.hashes.length} legacy chunks, v3-v14 determinism/resources/villages/uranium/Nether Update/silos/Ground Zero/Ocean Update, migration and both portal frames.`);
