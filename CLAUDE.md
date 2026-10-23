@@ -84,6 +84,20 @@ Two limits on that freedom:
   `localActor()` or, on the host, `peerActor()` for a guest; add new animal
   interactions there, using `a.held`, `a.consume()`, `a.give()`, `a.ride()`, so
   they work for guests automatically.
+- Section 58 (just before BOOT) is combat feel and polish: floating damage
+  numbers and mob health bars (`cfNumber`, `cfBar`), blood droplets and splat
+  decals (`cfSpray`, `cfSplat`, colours per kind in `CF_BLOOD`), melee slash
+  trails (`cfSlash`), the directional hurt arc, mining chips, eased mob strides,
+  flinch and fall-over, the fuller player pose, and the corner minimap
+  (`updateMinimap`). `/gore`, `/dmgnumbers`, `/minimap` toggle them. All of it
+  hangs off the outermost `hurtMob` wrapper, so any damage source shows up.
+- Shader pipeline and scene depth: anything whose shader samples
+  `U.uSceneDep` must be pushed to `SP_LATE` and use `SP_SOFT` as its `uSoft`;
+  `spUltraRender` then draws it in the late pass (Fancy takes the split path
+  while one is live). Drawing it in pass 1 is a framebuffer feedback loop and
+  WebGL silently drops the draw (this is why nukes were invisible on Ultra).
+- Day length: `DAY_PHASES` (seconds of day, sunset, night, sunrise); `dayRate`
+  runs the clock at a different speed in each part. `DAY_LENGTH` is the total.
 - Section 47 is uranium: ore (generator 9), yellowcake, and the Enrichment
   Table (container type `enrichment`, ticked by the host from
   `updateFurnaces`). Section 57 replaces `tickEnrichment` to add the second
@@ -102,7 +116,9 @@ Two limits on that freedom:
   `carveChunkData()` applies a record to a chunk; `onChunkData` runs
   `applyBlastsToData` before saved edits, a live blast rewrites cells that
   already have edits, and unloaded chunks get their stored edits transformed.
-  Keep `blastCell` deterministic. The cloud (`startNukeFx`) is a ray-marched
+  Keep `blastCell` deterministic (and idempotent: `applyBlastLive` queues chunks in
+  `blastQueue` and `tickBlastQueue` carves a few per frame as the shock arrives, so a
+  chunk can be carved by both `onChunkData` and the queue). The cloud (`startNukeFx`) is a ray-marched
   volume (`NUKE_FRAG`) plus a condensation shell and ground ring; `SHOCK_SPEED`
   sets when the shock and sound arrive.
 - Ground Zero is a fourth dimension (`DIMENSIONS`, chunk prefix `g.c.`,
@@ -151,10 +167,11 @@ Two limits on that freedom:
   `BLOCKS` has holes at 256–511, so loops over it must skip empty entries.
 - **World generation is frozen per generator version.** Every shipped
   generator must keep producing byte-identical chunks: the test pins chunk
-  hashes for generators 1–8. Generator 11 (generator 10 plus ICBM silos)
-  is the default for new worlds; once it ships, pin it too (generator 10 is
-  pinned). Change terrain
-  only by adding a version: guard new code with `version>=12`, keep `R()` call order unchanged for older versions,
+  hashes for generators 1–8. Generator 12 (generator 11 plus real acacia,
+  jungle, dark-oak and huge-mushroom shapes, rarer badlands and savanna, fewer cave
+  mouths, uranium exposed on cave walls) is the default for new worlds; once it
+  ships, pin it too (generators 10 and 11 are pinned). Change terrain
+  only by adding a version: guard new code with `version>=13`, keep `R()` call order unchanged for older versions,
   give new features their own `mulberry32` stream or a position hash, and
   bump the default in the three `genVersion` spots and the guest-meta check.
   Features that span chunks (tunnels, villages) are planned from world
@@ -213,7 +230,7 @@ How syncing works, so new features stay multiplayer-safe:
 - New kinds of shared state that don't go through the functions above need a
   message: add a case to `netHostOnMsg` (guest → host; validate everything,
   guests are untrusted) and to `netClientOnMsg` (host → guest).
-- `NET_V` is the protocol version (currently 7). Bump it whenever messages
+- `NET_V` is the protocol version (currently 8). Bump it whenever messages
   or block ids change in an incompatible way, so mismatched players get a
   "refresh to update" message instead of a broken game.
 - Friendly fire is the host's setting `world.mp.pvp` (pause-menu button or
