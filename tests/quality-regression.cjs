@@ -49,6 +49,9 @@ LEGACY.hashes.push([8,42,"overworld",0,0,"b6f65147d7f335dd4afd34c1eff8a5272df51c
 LEGACY.hashes.push([9,42,"overworld",0,0,"e6929bff97b706532b165fbee6bbcae0d8194dfe25cef5575d2ea563fc8f527a"],[9,42,"overworld",15,-31,"0c91801bcc59fa267a289b7f966785d10bc658e2f346d3b7fbbafba7079186e9"],[9,12345,"overworld",100,100,"eb89145efbb715b55ac174ade69d02189fd1f6b144d40eede0def53fad6dc1c2"],[9,-98765,"overworld",-7,3,"09f252387cbb958f6f31b6f3ce16f3816318fe4f43500e6127683915aa393af0"],[9,42,"nether",0,0,"4dacfd22a4aa0a6a093e477d96c2fc43fdb5a91a3e29b8619acc5e056bc3859d"],[9,12345,"nether",-1,2,"b09a31abde9a5f38c06a2d922c2e7ac0cbe501962990bfa0e551f937870f7241"]);
 // Generator 10 shipped as the default before the Atomic Age (generator 11), so it is pinned too.
 LEGACY.hashes.push([10,42,"overworld",0,0,"e6929bff97b706532b165fbee6bbcae0d8194dfe25cef5575d2ea563fc8f527a"],[10,42,"overworld",15,-31,"0c91801bcc59fa267a289b7f966785d10bc658e2f346d3b7fbbafba7079186e9"],[10,12345,"overworld",100,100,"eb89145efbb715b55ac174ade69d02189fd1f6b144d40eede0def53fad6dc1c2"],[10,-98765,"overworld",-7,3,"09f252387cbb958f6f31b6f3ce16f3816318fe4f43500e6127683915aa393af0"],[10,42,"overworld",8,-3,"40074768e8b82f41ac08b42dc67fd8612a5c9c38f2d7d9484d0f5a7ac9e81c85"],[10,42,"nether",0,0,"f8336abecbd4c0a117588bd73228e871e56c1eb2807edeafa6253731849e7a79"],[10,12345,"nether",-1,2,"b0b182c115c3d7684b0032ec29a3bb512dc371600de00cfdf87977152dea812a"]);
+// Generator 11 shipped as the default before generator 12 (new tree shapes, rarer badlands and savanna,
+// fewer cave mouths, uranium exposed on cave walls), so it is pinned too.
+LEGACY.hashes.push([11,42,"overworld",0,0,"e6929bff97b706532b165fbee6bbcae0d8194dfe25cef5575d2ea563fc8f527a"],[11,42,"overworld",15,-31,"0c91801bcc59fa267a289b7f966785d10bc658e2f346d3b7fbbafba7079186e9"],[11,12345,"overworld",100,100,"eb89145efbb715b55ac174ade69d02189fd1f6b144d40eede0def53fad6dc1c2"],[11,42,"overworld",-1,2,"5f43ea6405577d243c329d11435db6d82f7b0cebbd0ddfb2891189961878e498"]);
 for(const [version,seed,dimension,x,z,expected] of LEGACY.hashes)assert.equal(digest(make(seed,B,version,dimension).genChunk(x,z)),expected,`legacy ${version}/${seed}/${dimension}/${x},${z}`);
 for(const seed of [42,12345,-98765]){
  const a=make(seed,B,3),b=make(seed,B,3);let underground=0;
@@ -172,4 +175,4 @@ for(const axis of [0,1]){
  world.setBlock(x,y+2,z,0);context.portals.invalidatePortal(x,y+2,z);
  assert(![...cells.values()].includes(B.portal));assert.equal(world.getBlock(20,35,20),B.bricks,'frame maintenance changed a neighbouring build');
 }
-console.log(`PASS: syntax, soundpack, 256 stable IDs + ${BLOCKS.length-512} appended, ${LEGACY.hashes.length} legacy chunks, v3-v11 determinism/resources/villages/uranium/Nether Update/silos/Ground Zero, migration and both portal frames.`);
+console.log(`PASS: syntax, soundpack, 256 stable IDs + ${BLOCKS.length-512} appended, ${LEGACY.hashes.length} legacy chunks, v3-v12 determinism/resources/villages/uranium/Nether Update/silos/Ground Zero, migration and both portal frames.`);
