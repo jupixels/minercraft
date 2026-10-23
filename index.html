@@ -7243,10 +7243,12 @@ function startMeshingWorkers(){
    const record={worker:new Worker(url),job:null};record.worker.onmessage=e=>{
     if(!meshWorkers.includes(record))return;const task=record.job;record.job=null;if(!task)return;const ch=task.ch;ch.meshPending=false;
     if(world.get(ch.cx,ch.cz)!==ch||task.epoch!==(world.meshEpoch||0))return;
-    if(task.rev!==(ch.rev||0)){ch.dirty=true;return;}
+    // a block changed while this was meshing: still show it (it is newer than what's on screen) and mesh again.
+    // Dropping it starved chunks that change every tick, e.g. near the fires a nuke leaves, so placed blocks stayed invisible.
+    const stale=task.rev!==(ch.rev||0);
     const data=e.data;if(ch.solidGeo)ch.solidGeo.dispose();if(ch.waterGeo)ch.waterGeo.dispose();if(ch.cutGeo)ch.cutGeo.dispose();ch.solidGeo=workerGeometry(data.solid);ch.waterGeo=workerGeometry(data.water);ch.cutGeo=workerGeometry(data.cut);ch.blockLight=data.blockLight;
     const radius=Math.sqrt(128+((data.maxY-data.minY+1)/2)**2),cy=(data.minY+data.maxY+1)/2;for(const g of [ch.solidGeo,ch.waterGeo,ch.cutGeo])if(g)g.boundingSphere=new THREE.Sphere(new THREE.Vector3(8,cy,8),radius);
-    attachMeshes(ch);ch.meshed=true;ch.urgent=false;ch.dirty=false;meshStats.last=data.ms;meshStats.avg=meshStats.avg*.95+data.ms*.05;
+    attachMeshes(ch);ch.meshed=true;ch.urgent=stale;ch.dirty=stale;meshStats.last=data.ms;meshStats.avg=meshStats.avg*.95+data.ms*.05;
    };record.worker.onerror=e=>{if(!meshWorkers.includes(record))return;meshWorkerError=e.message;stopMeshingWorkers();toast('Mesh worker unavailable; using the synchronous mesher');};meshWorkers.push(record);
   }
   URL.revokeObjectURL(url);
@@ -13443,9 +13445,10 @@ const TOR_FRAG=`uniform vec3 uBase,uSunDir,uSunRad,uFogColor,uCamFwd; uniform ve
     float sunT=exp(-((a1*1.5+a2+a3)+(b1*1.5+b2+b3)*0.7)*1.3);
     float hn=clamp((p.y-uBase.y)/uH,0.0,1.0);
     vec3 dust=mix(vec3(0.37,0.30,0.23),vec3(0.78,0.83,0.88),uWet);
-    vec3 alb=(df*1.5*mix(vec3(0.38,0.39,0.41),vec3(0.62,0.64,0.65),hn)+dd*dust+dw*vec3(0.27,0.31,0.3))/den;
+    vec3 alb=(df*1.5*mix(vec3(0.38,0.39,0.41),vec3(0.62,0.64,0.65),hn)+dd*dust+dw*vec3(0.2,0.23,0.23))/den;
     float fwd=1.0+1.6*pow(max(dot(rd,L),0.0),6.0)*(1.0-sunT*0.5);   // a silver lining when you look toward the sun
-    vec3 lit=uHdr>0.5?(uSunRad*sunT*0.35+uAmb[2]*0.95+uAmb[3]*0.3+uFlash*vec3(0.75,0.8,1.0)*5.0):vec3(max(uSky,0.12))*(0.42+0.58*sunT)+uFlash*vec3(0.75,0.8,1.0)*1.2;
+    float occ=mix(1.0,clamp((p.y-uBase.y-uH+4.0)/20.0,0.22,1.0),dw/den);   // the storm's own mass darkens its underside
+    vec3 lit=(uHdr>0.5?(uSunRad*sunT*0.3+uAmb[2]*0.8+uAmb[3]*0.25):vec3(max(uSky,0.12))*(0.42+0.58*sunT))*occ+uFlash*vec3(0.75,0.8,1.0)*(uHdr>0.5?2.5:0.9);
     float a=1.0-exp(-den*st*0.55);
     C+=T*a*alb*lit*fwd; T*=1.0-a; if(tz<0.0&&T<0.9) tz=t;
    }
@@ -13498,7 +13501,7 @@ function torTick(ev,dt,host,here){
  if(!ev.box)torMakeBox(ev);
  const U2=ev.U,hdr=shadersOn(),wall=24+ev.ef*5;ev.box.visible=true;
  U2.uBase.value.set(ev.x,ev.by,ev.z);U2.uLean.value.set(ev.lx,ev.lz);U2.uTime.value=ev.age;U2.uH.value=ev.H;U2.uR0.value=E.r0;U2.uRTop.value=E.r0*2.2+9;U2.uWall.value=wall;
- U2.uReach.value=P.reach;U2.uRope.value=P.rope;U2.uDeb.value=P.deb;U2.uWet.value=ev.wet;U2.uHdr.value=hdr?1:0;U2.uFlash.value=Math.min(1,weather.flash*3);U2.uFar.value=CONFIG.renderDistance*16;
+ U2.uReach.value=P.reach;U2.uRope.value=P.rope;U2.uDeb.value=P.deb;U2.uWet.value=ev.wet;U2.uHdr.value=hdr?1:0;U2.uFlash.value=Math.min(.7,weather.flash*2.2);U2.uFar.value=CONFIG.renderDistance*16;
  U2.uSteps.value=hdr&&spTier?.()?.refl?56:44;U2.uFade.value=cxSm(0,2.5,ev.age)*(1-cxSm(ev.dur-2,ev.dur+.8,ev.age));camera.getWorldDirection(U2.uCamFwd.value);
  const W=wall*1.8+8+Math.hypot(ev.lx,ev.lz),bm=U2.uBMin.value.set(ev.x-W,ev.by-4,ev.z-W),bx=U2.uBMax.value.set(ev.x+W,ev.by+ev.H+24,ev.z+W);
  ev.box.scale.set(bx.x-bm.x,bx.y-bm.y,bx.z-bm.z);ev.box.position.set((bm.x+bx.x)/2,(bm.y+bx.y)/2,(bm.z+bx.z)/2);
