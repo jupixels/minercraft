@@ -11156,7 +11156,9 @@ function siloKey(s){return s.x+','+s.z;}
 function tickSiloGuards(){
  if(net.role==='client'||(world.dimension||'overworld')!=='overworld'||CONFIG.difficulty==='peaceful')return;const s=gen?.siloAt?.(player.pos.x,player.pos.z);if(!s)return;
  const A=world.atomic||(world.atomic={}),st=(A.silos||(A.silos={}))[siloKey(s)]||(A.silos[siloKey(s)]={});
- if(st.g||Math.hypot(player.pos.x-s.x,player.pos.z-s.z)>34)return;
+ const sd=Math.hypot(player.pos.x-s.x,player.pos.z-s.z);if(st.g||sd>34)return;
+ // an unready survivor walking past isn't ambushed: warn once, and wake the garrison only if they go in
+ if(!threatReady(player.pos)){if(!st.w){st.w=1;toast('Turrets and heavy footsteps… this silo is guarded. Come back with iron armour or a gun.');}if(sd>12)return;}
  const near=(x,y,z)=>world.get(Math.floor(x)>>4,Math.floor(z)>>4)?.data;if(!near(s.x+10,s.ctrl,s.z-4)||!near(s.x,s.y,s.z))return;
  st.g=1;const yC=s.ctrl,y0=s.y+1;
  for(const [x,y,z] of s.big?[[s.x+23.5,yC+4,s.z-12.5],[s.x+23.5,yC+4,s.z+4.5],[s.x+5.5,y0,s.z+5.5],[s.x-5.5,y0,s.z-5.5]]:[[s.x+12.5,yC,s.z-9.5],[s.x+12.5,yC,s.z+1.5],[s.x+5.5,y0,s.z+5.5],[s.x-5.5,y0,s.z-5.5]])spawnMob('sentry',x,y,z,{persistent:true});
@@ -11313,15 +11315,31 @@ function tickJuggernaut(e,dt){
   for(let k=0;k<6;k++)spawnXP(30,p.x+(Math.random()-.5)*2,p.y+1,p.z+(Math.random()-.5)*2);explosionEffects(p.x,p.y+1.5,p.z,2);
   const A=world.atomic||(world.atomic={});if(e.silo){(A.silos||(A.silos={}))[e.silo]={...(A.silos[e.silo]||{}),j:1};}awardAdvancement('Silo Breaker',B.minigun);toast('The Juggernaut falls. It dropped a launch key.');}
  return ok;};}
+// Survival progression gate: gun-toting patrols only roam once a player can fight back
+// (half a set of iron armour or better, any Armory gun, or THREAT_DAYS survived). Before that a
+// fresh world only throws the classic night mobs at you. Creative is unaffected.
+const THREAT_DAYS=8,THREAT_DEF=10;
+function threatReady(pp){
+ if(player.mode!=='survival')return true;
+ if(dayCount>=THREAT_DAYS)return true;
+ if(pp&&pp!==player.pos)return false; // a guest's gear lives on their side: days only
+ let def=0;for(let i=0;i<4;i++){const s=armorSlots[i],d=s&&ITEMS[s.id];if(d&&d.armor===i)def+=d.defense||0;}
+ if(def>=THREAT_DEF)return true;
+ for(const s of inv.slots)if(s&&GUNS[s.id])return true;
+ return !!(offhand[0]&&GUNS[offhand[0].id]);
+}
 // spawning: ghouls in fallout, the odd marauder patrol at night, and the silo garrison
 {const _ths=tickHostileSpawns;tickHostileSpawns=function(dt){
  if(world.dimension==='groundzero')return tickZeroSpawns(dt);
  _ths(dt);if(net.role==='client'||CONFIG.difficulty==='peaceful'||world.dimension==='end')return;
  rad.spawnT=(rad.spawnT||0)-dt;if(rad.spawnT>0)return;rad.spawnT=2;
  let ghouls=0,mar=0;for(const e of entities){if(e.kind==='ghoul')ghouls++;if(e.kind==='marauder'&&!e.persistent)mar++;}if(entities.length>=ENTITY_LIMIT-2)return;
- const pp=netSpawnCenter(),fall=doseRateAt(pp.x,pp.y,pp.z);
+ const pp=netSpawnCenter(),fall=doseRateAt(pp.x,pp.y,pp.z),ready=threatReady(pp),A=world.atomic||(world.atomic={});
+ // patrols that wandered in before you were ready (older saves) slip away while out of sight
+ if(!ready)for(const e of entities.slice())if(e.kind==='marauder'&&!e.persistent&&!e.dead&&!e.sees&&e.pos.distanceToSquared(player.pos)>28*28)removeMob(e);
+ if(ready&&!A.pw&&pp===player.pos&&player.mode==='survival'){A.pw=1;toast('Word spreads of your strength. Marauder patrols now roam at night.');}
  if(fall>.05&&ghouls<6&&Math.random()<.6)spawnNear('ghoul',pp,16,30,1+((Math.random()*2)|0));
- else if((world.dimension||'overworld')==='overworld'&&U.uSky.value<.3&&mar<3&&Math.random()<.035)spawnNear('marauder',pp,22,36,2);
+ else if(ready&&(world.dimension||'overworld')==='overworld'&&U.uSky.value<.3&&mar<3&&Math.random()<.035)spawnNear('marauder',pp,22,36,2);
  tickSiloGuards();
 };}
 function spawnNear(kind,pp,r0,r1,n){
