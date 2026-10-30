@@ -226,6 +226,10 @@ Two limits on that freedom:
   both on the main thread and in Web Workers (built from this text at
   runtime), so it must stay self-contained: no references to anything outside
   that block.
+- `manifest.webmanifest`, `sw.js`, `icons/` — the installable app (Chrome's install
+  icon / Add to Home screen). `sw.js` is network-first: online players always get
+  the latest `main`; the cache is only used offline. It ignores range requests
+  and off-site hosts except the CDNs, so multiplayer relays are untouched.
 - `sounds/` — optional `.ogg` sound pack plus `manifest.json`; the game falls
   back to synthesized Web Audio sounds.
 - `tests/quality-regression.cjs` — the regression suite.
