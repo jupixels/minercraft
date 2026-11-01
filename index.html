@@ -13780,8 +13780,23 @@ window.__bc = { checkEndPortalAt, get endPortals(){return world.endPortals;}, ge
    ========================================================================= */
 const NET_V=11, NET_NS='minercraft-jupixels/v1', NET_MAX=8, NET_STALE=150000;
 const NET_QS=new URLSearchParams(location.search);
-const NET_BROKERS=(NET_QS.get('relay')||'wss://broker.emqx.io:8084/mqtt,wss://broker.hivemq.com:8884/mqtt,wss://test.mosquitto.org:8081/mqtt').split(',').map(s=>s.trim()).filter(Boolean);
+const NET_BROKERS=(NET_QS.get('relay')||'wss://mqtt.eclipseprojects.io:443/mqtt,wss://broker.emqx.io:8084/mqtt,wss://broker.hivemq.com:8884/mqtt,wss://test.mosquitto.org:8081/mqtt').split(',').map(s=>s.trim()).filter(Boolean);
 const NET_RTC={iceServers:[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']},{urls:'stun:stun.cloudflare.com:3478'}]};
+// TURN relay for networks that only allow ports 80/443 (schools, offices). Paste a Metered credentials URL
+// (https://<app>.metered.live/api/v1/turn/credentials?apiKey=...) or a JSON iceServers list here, or pass
+// ?turn=<same> once (remembered in this browser; ?turn= with nothing clears it). Empty = direct connections only.
+const NET_TURN_DEFAULT='';
+const NET_TURN=(()=>{const q=NET_QS.get('turn');try{if(q!==null){if(q)localStorage.setItem('bc.turn',q);else localStorage.removeItem('bc.turn');}return (q||localStorage.getItem('bc.turn')||NET_TURN_DEFAULT).trim();}catch(e){return (q||NET_TURN_DEFAULT).trim();}})();
+let netIceP=null,netIceAt=0;
+function netIce(){// STUN plus TURN credentials, fetched once and reused for 30 minutes; falls back to STUN only
+ if(!NET_TURN)return Promise.resolve(NET_RTC);
+ if(netIceP&&performance.now()-netIceAt<18e5)return netIceP;netIceAt=performance.now();
+ return netIceP=(async()=>{try{let j;
+   if(/^[\[{]/.test(NET_TURN))j=JSON.parse(NET_TURN);
+   else{const ctl=new AbortController(),t=setTimeout(()=>ctl.abort(),5000);try{j=await (await fetch(NET_TURN,{signal:ctl.signal,cache:'no-store'})).json();}finally{clearTimeout(t);}}
+   const list=(Array.isArray(j)?j:j?.iceServers||[j]).filter(x=>x&&x.urls);if(!list.length)throw new Error('no servers');
+   return {iceServers:[...NET_RTC.iceServers,...list]};
+  }catch(e){netIceP=null;console.warn('TURN relay unavailable:',e);return NET_RTC;}})();}
 const NET_CODE_CHARS='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const _te=new TextEncoder(),_td=new TextDecoder();
 const netRandHex=n=>Array.from(crypto.getRandomValues(new Uint8Array(n)),b=>b.toString(16).padStart(2,'0')).join('');
@@ -13848,7 +13863,7 @@ async function ecdhKey(kp,pub){const k=await crypto.subtle.importKey('raw',unb64
  return crypto.subtle.deriveKey({name:'ECDH',public:k},kp.privateKey,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);}
 async function seal(key,obj){const iv=crypto.getRandomValues(new Uint8Array(12));return {iv:b64(iv),ct:b64(new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},key,_te.encode(JSON.stringify(obj)))))};}
 async function unseal(key,m){return JSON.parse(_td.decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(m.iv)},key,unb64(m.ct))));}
-function waitIce(pc,ms=3500){return new Promise(res=>{if(pc.iceGatheringState==='complete')return res();const t=setTimeout(res,ms);pc.addEventListener('icegatheringstatechange',()=>{if(pc.iceGatheringState==='complete'){clearTimeout(t);res();}});});}
+function waitIce(pc,ms=NET_TURN?6000:3500){return new Promise(res=>{if(pc.iceGatheringState==='complete')return res();const t=setTimeout(res,ms);pc.addEventListener('icegatheringstatechange',()=>{if(pc.iceGatheringState==='complete'){clearTimeout(t);res();}});});}
 
 /* ---- a peer link: JSON messages, split into 16 KB parts, sent with back-pressure ---- */
 function linkInit(link,dc,onmsg,maxParts){
@@ -14111,7 +14126,7 @@ async function netHostSignal(topic,payload){
  const peer={id:m.from,name:null,v:null,flags:0,mode:'survival',chatT:[],ping:0,joinedAt:performance.now()};
  try{
   const key=await ecdhKey(net.kp,m.pub),body=await unseal(key,m);if(net.role!=='host'||body?.sdp?.type!=='offer')throw 0;
-  const pc=peer.pc=new RTCPeerConnection(NET_RTC);net.peers.set(peer.id,peer);
+  const pc=peer.pc=new RTCPeerConnection(await netIce());net.peers.set(peer.id,peer);
   pc.ondatachannel=e=>{linkInit(peer,e.channel,msg=>netHostOnMsg(peer,msg),64);e.channel.onclose=()=>netDropPeer(peer,'left the world');};
   pc.onconnectionstatechange=()=>{if(['failed','closed'].includes(pc.connectionState))netDropPeer(peer,'lost connection');};
   await pc.setRemoteDescription(body.sdp);await pc.setLocalDescription(await pc.createAnswer());await waitIce(pc);
@@ -14232,7 +14247,7 @@ async function netJoin(listing){
  relay.start(null);relay.handlers.add(onSignal);relay.sub(`${NET_NS}/peer/${attempt.id}`);
  try{
   const kp=await ecdhPair();attempt.key=await ecdhKey(kp,listing.pub);const pub=await ecdhPub(kp);
-  const pc=attempt.pc=new RTCPeerConnection(NET_RTC),dc=pc.createDataChannel('game',{ordered:true}),link={pc};
+  const pc=attempt.pc=new RTCPeerConnection(await netIce()),dc=pc.createDataChannel('game',{ordered:true}),link={pc};
   linkInit(link,dc,msg=>netClientOnMsg(link,msg,attempt),8192);
   dc.onopen=()=>{netConnectStatus('Saying hello');linkSend(link,{t:'hello',v:NET_V,name,tok:netEnsureToken()});};
   dc.onclose=()=>{if(net.host===link&&!net.leaving){netStop();netLostHost('Lost connection to the host.');}else if(!attempt.done)fail('The host closed the connection.');};
