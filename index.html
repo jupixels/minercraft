@@ -13785,7 +13785,7 @@ const NET_RTC={iceServers:[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.g
 // TURN relay for networks that only allow ports 80/443 (schools, offices). Paste a Metered credentials URL
 // (https://<app>.metered.live/api/v1/turn/credentials?apiKey=...) or a JSON iceServers list here, or pass
 // ?turn=<same> once (remembered in this browser; ?turn= with nothing clears it). Empty = direct connections only.
-const NET_TURN_DEFAULT='';
+const NET_TURN_DEFAULT='https://cultivation.metered.live/api/v1/turn/credentials?apiKey=7159975908ce81062958fa816b7d0a6cffc9';
 const NET_TURN=(()=>{const q=NET_QS.get('turn');try{if(q!==null){if(q)localStorage.setItem('bc.turn',q);else localStorage.removeItem('bc.turn');}return (q||localStorage.getItem('bc.turn')||NET_TURN_DEFAULT).trim();}catch(e){return (q||NET_TURN_DEFAULT).trim();}})();
 let netIceP=null,netIceAt=0;
 function netIce(){// STUN plus TURN credentials, fetched once and reused for 30 minutes; falls back to STUN only
