@@ -13782,7 +13782,7 @@ const NET_V=11, NET_NS='minercraft-jupixels/v1', NET_MAX=8, NET_STALE=150000;
 const NET_QS=new URLSearchParams(location.search);
 const NET_BROKERS=(NET_QS.get('relay')||'wss://mqtt.eclipseprojects.io:443/mqtt,wss://broker.emqx.io:8084/mqtt,wss://broker.hivemq.com:8884/mqtt,wss://test.mosquitto.org:8081/mqtt').split(',').map(s=>s.trim()).filter(Boolean);
 const NET_RTC={iceServers:[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']},{urls:'stun:stun.cloudflare.com:3478'}]};
-// TURN relay for networks that only allow ports 80/443 (schools, offices). Paste a Metered credentials URL
+// TURN relay for networks that only allow ports 80/443. Paste a Metered credentials URL
 // (https://<app>.metered.live/api/v1/turn/credentials?apiKey=...) or a JSON iceServers list here, or pass
 // ?turn=<same> once (remembered in this browser; ?turn= with nothing clears it). Empty = direct connections only.
 const NET_TURN_DEFAULT='https://cultivation.metered.live/api/v1/turn/credentials?apiKey=7159975908ce81062958fa816b7d0a6cffc9';
