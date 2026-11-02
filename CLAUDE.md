@@ -368,8 +368,10 @@ travel; only the host sleeps through the night; villager trade stock is not
 synced (each guest trades with their own copy); village growth only happens
 near the host; photo mode can't freeze the shared world, so in multiplayer it
 freezes mobs only in the photographer's view; bell rings only steer villagers
-on the host; hardcore applies to the host's own player; there's no TURN
-server, so some strict networks can't connect.
+on the host; hardcore applies to the host's own player; strict networks (only ports
+80/443 open) need a TURN relay: set `NET_TURN_DEFAULT` (or `?turn=`), which
+`netIce()` fetches and adds to `NET_RTC`, and the eclipseprojects relay is the
+one MQTT relay on port 443.
 
 ## Style
 
