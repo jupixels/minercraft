@@ -3254,6 +3254,10 @@ function makeMaterials(){
       float f=smoothstep(uFog.x,uFog.y,vFog); gl_FragColor=vec4(mix(c,uFogColor,f),1.0); }` });
   window.MAT_WATER = new THREE.ShaderMaterial({ uniforms:U, vertexShader:VERT, transparent:true, side:THREE.DoubleSide, depthWrite:false, extensions:{derivatives:true}, fragmentShader: FRAG_COMMON + `
     uniform sampler2D uWater; uniform sampler2D uLava; uniform float uTime;
+    // molten lava: a fine layer drifting one way over a coarse layer drifting the other, plus a slow heat pulse; it lights itself
+    vec3 lavaCol(vec2 p){ vec3 a=texture2D(uLava,p+vec2(uTime*0.035,uTime*0.022)).rgb, b=texture2D(uLava,p*0.37+vec2(0.31-uTime*0.012,0.17+uTime*0.017)).rgb;
+      vec3 c=max(a,b*0.92)*0.62+a*0.38; float pulse=0.94+0.08*sin(uTime*1.4+p.x*0.9+p.y*0.6)*sin(uTime*0.73+p.y*1.3);
+      return c*pulse; }
     #ifdef SHADERS
     uniform vec3 uSkyTop,uSkyHor; uniform sampler2D uReflMap; uniform mat4 uReflVP; uniform float uReflY;
     // Moving water: layered travelling waves give a rippling normal; fresnel blends a
@@ -3321,7 +3325,7 @@ function makeMaterials(){
         if(!under) c+=uSunRad*3.14159*sunVis*FH*NL*(pow(NH,2400.0)*96.0+pow(NH,180.0)*7.5);
         float edge=smoothstep(uFog.x,uFog.y,vFog);
         gl_FragColor=enc(aerialFog(c,vWorld,vFog,edge,uFogColor,uUnderwater),max(alpha,edge)); return; }
-      vec2 luv=vUv*0.5+vec2(uTime*0.02,uTime*0.035); vec3 lc=toLin(texture2D(uLava,luv).rgb)*max(.75,vLight.x-2.0)*2.6/pow(uExposure,0.7);
+      vec3 lb=lavaCol(vUv); vec3 lc=toLin(lb)*mix(1.0,vLight.x-2.0,0.25)*(1.6+1.2*dot(lb,vec3(0.2,0.6,0.2)))/pow(uExposure,0.7);
       gl_FragColor=enc(aerialFog(lc,vWorld,vFog,smoothstep(uFog.x,uFog.y,vFog),uFogColor,uUnderwater),1.0); return;
     #endif
     #ifdef SHADERS
@@ -3338,7 +3342,7 @@ function makeMaterials(){
         vec3 c=mix(body,refl*max(s,0.15),F)+(top?uSunCol*pow(max(dot(R,uSunDir),0.0),260.0)*3.5*s:vec3(0.0));
         float f=smoothstep(uFog.x,uFog.y,vFog); gl_FragColor=vec4(mix(c,uFogColor,f),mix(mix(0.5,0.95,F),1.0,f)); return; }
     #endif
-      vec2 uv=vUv*0.5 + vec2(uTime*0.02, uTime*0.035); bool lava=vLight.x>1.5;vec4 t=lava?texture2D(uLava,uv):texture2D(uWater,uv); vec3 c=lava?t.rgb*max(.75,vLight.x-2.0):t.rgb*lightColor(); float f=smoothstep(uFog.x,uFog.y,vFog); gl_FragColor=vec4(mix(c,uFogColor,f), lava?1.0:mix(0.62,1.0,f)); }` });
+      vec2 uv=vUv*0.5 + vec2(uTime*0.02, uTime*0.035); bool lava=vLight.x>1.5;vec3 c=lava?min(lavaCol(vUv)*mix(1.0,vLight.x-2.0,0.2)*1.12,vec3(1.0)):texture2D(uWater,uv).rgb*lightColor(); float f=smoothstep(uFog.x,uFog.y,vFog); gl_FragColor=vec4(mix(c,uFogColor,f), lava?1.0:mix(0.62,1.0,f)); }` });
 }
 const chunkGroup = new THREE.Group(); scene.add(chunkGroup);
 function attachMeshes(ch){
@@ -6741,7 +6745,12 @@ function tickFire(dt){
  fireOverlay.style.display=p.fire>0&&p.mode==='survival'&&gameState!=='title'?'block':'none';
 }
 function buildFluidTextures(){
- makeTile('lava_still',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++){const hot=Math.sin(x*.8+Math.sin(y*.7))*Math.cos(y*.6);P(x,y,vary(hot>.1?[255,194,31]:hot<-.3?[161,44,12]:[239,106,13],R,24));}});
+ // molten lava: tileable wave noise (integer frequencies over 16 px) through a crust -> orange -> yellow-white ramp
+ makeTile('lava_still',(P,R)=>{const T=Math.PI*2/16,W=[[1,0,0.3,1],[0,1,1.7,1],[1,1,2.9,.8],[2,-1,4.1,.55],[1,-2,.9,.5],[3,1,5.3,.3],[-1,3,2.2,.3]];
+  const ramp=[[0,[96,14,4]],[.22,[158,34,6]],[.42,[214,72,10]],[.6,[240,112,14]],[.76,[252,156,28]],[.9,[255,206,72]],[1,[255,240,160]]];
+  for(let y=0;y<16;y++)for(let x=0;x<16;x++){let h=0,n=0;for(const [a,b,ph,w] of W){h+=Math.sin((a*x+b*y)*T+ph)*w;n+=w;}
+   h=h/n*.5+.5;h=clamp(Math.pow(h,1.15)*1.25-.08+(R()-.5)*.06,0,1);let k=1;while(k<ramp.length-1&&ramp[k][0]<h)k++;
+   const [t0,c0]=ramp[k-1],[t1,c1]=ramp[k],f=clamp((h-t0)/(t1-t0),0,1),q=Math.round(f*3)/3;P(x,y,[c0[0]+(c1[0]-c0[0])*q,c0[1]+(c1[1]-c0[1])*q,c0[2]+(c1[2]-c0[2])*q]);}});
  makeTile('obsidian',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++)P(x,y,vary((x*7+y*3)%13<3?[60,43,84]:[29,26,43],R,18));});
  for(const [name,fill] of [['bucket',null],['water_bucket',[57,112,218]],['lava_bucket',[244,136,24]]])makeTile('item_'+name,(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++){const shape=y>=4&&y<=13&&x>=2+((y-4)/5|0)&&x<=13-((y-4)/5|0);P(x,y,vary(fill&&y<7?fill:x<5?[223,225,228]:[126,139,151],R,18),shape?255:0);}});
  CREATIVE_TABS[1].items.push(B.lava,B.obsidian);CREATIVE_TABS[3].items.push(B.bucket,B.water_bucket,B.lava_bucket);shaped(['I I',' I '],{I:[B.iron_ingot]},B.bucket);
