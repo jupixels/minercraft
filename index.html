@@ -11343,18 +11343,28 @@ function tickJuggernaut(e,dt){
   for(let k=0;k<6;k++)spawnXP(30,p.x+(Math.random()-.5)*2,p.y+1,p.z+(Math.random()-.5)*2);explosionEffects(p.x,p.y+1.5,p.z,2);
   const A=world.atomic||(world.atomic={});if(e.silo){(A.silos||(A.silos={}))[e.silo]={...(A.silos[e.silo]||{}),j:1};}awardAdvancement('Silo Breaker',B.minigun);toast('The Juggernaut falls. It dropped a launch key.');}
  return ok;};}
-// Survival progression gate: gun-toting patrols only roam once a player can fight back
-// (half a set of iron armour or better, any Armory gun, or THREAT_DAYS survived). Before that a
-// fresh world only throws the classic night mobs at you. Creative is unaffected.
-const THREAT_DAYS=8,THREAT_DEF=10;
+// Survival progression gate: gun-toting mobs (marauders, sentries, drones; the Juggernaut only
+// lives in silos) spawn naturally only once a player is armed: a gun with rounds in its magazine,
+// or a gun plus ammo it can fire anywhere in the inventory/offhand. Days survived and armour no
+// longer count. Creative is unaffected; silo garrisons and spawn eggs are placed, not natural.
+const THREAT_KINDS=new Set(['marauder','sentry','drone','juggernaut']);
+function armedWith(stacks){
+ const have=new Set();for(const s of stacks)if(s&&s.count>0)have.add(s.id);
+ for(const s of stacks){const G=s&&GUNS[s.id];if(!G)continue;if((s.en&&s.en.mag)>0)return true;for(const a of G.ammo)if(have.has(a))return true;}
+ return false;
+}
+// unarmed patrols that wandered in slip away while nobody can see them (an emptied-out player
+// stops meeting new patrols); anything within 28 blocks of any player stays
+function threatSlipAway(){const far=e=>{if(e.pos.distanceToSquared(player.pos)<=28*28)return false;if(net.role==='host')for(const p of net.peers.values())if(p.v&&e.pos.distanceToSquared(p.v)<=28*28)return false;return true;};
+ for(const e of entities.slice())if(THREAT_KINDS.has(e.kind)&&!e.persistent&&!e.dead&&!e.sees&&far(e))removeMob(e);}
 function threatReady(pp){
- if(player.mode!=='survival')return true;
- if(dayCount>=THREAT_DAYS)return true;
- if(pp&&pp!==player.pos)return false; // a guest's gear lives on their side: days only
- let def=0;for(let i=0;i<4;i++){const s=armorSlots[i],d=s&&ITEMS[s.id];if(d&&d.armor===i)def+=d.defense||0;}
- if(def>=THREAT_DEF)return true;
- for(const s of inv.slots)if(s&&GUNS[s.id])return true;
- return !!(offhand[0]&&GUNS[offhand[0].id]);
+ if(!pp||pp===player.pos){if(player.mode!=='survival')return true;return armedWith([...inv.slots,offhand[0]]);}
+ // a guest: their gear lives in their browser; the host judges it from the inventory they
+ // report every 10 s in their 'save' message (no report yet = not armed)
+ const peer=net.role==='host'?[...net.peers.values()].find(p=>p.v===pp):null;if(!peer)return false;
+ if((peer.mode||'survival')!=='survival')return true;
+ const sv=peer.save;if(!sv||!Array.isArray(sv.inv))return false;
+ try{return armedWith([...sv.inv,sv.off].map(x=>Array.isArray(x)?{id:x[0]|0,count:x[1]|0,en:x[3]&&typeof x[3]==='object'?x[3]:null}:null));}catch(e){return false;}
 }
 // spawning: ghouls in fallout, the odd marauder patrol at night, and the silo garrison
 {const _ths=tickHostileSpawns;tickHostileSpawns=function(dt){
@@ -11364,8 +11374,8 @@ function threatReady(pp){
  let ghouls=0,mar=0;for(const e of entities){if(e.kind==='ghoul')ghouls++;if(e.kind==='marauder'&&!e.persistent)mar++;}if(entities.length>=ENTITY_LIMIT-2)return;
  const pp=netSpawnCenter(),fall=doseRateAt(pp.x,pp.y,pp.z),ready=threatReady(pp),A=world.atomic||(world.atomic={});
  // patrols that wandered in before you were ready (older saves) slip away while out of sight
- if(!ready)for(const e of entities.slice())if(e.kind==='marauder'&&!e.persistent&&!e.dead&&!e.sees&&e.pos.distanceToSquared(player.pos)>28*28)removeMob(e);
- if(ready&&!A.pw&&pp===player.pos&&player.mode==='survival'){A.pw=1;toast('Word spreads of your strength. Marauder patrols now roam at night.');}
+ if(!ready)threatSlipAway();
+ if(ready&&!A.pw&&pp===player.pos&&player.mode==='survival'){A.pw=1;toast('Word spreads that you are armed. Marauder patrols now roam at night.');}
  if(fall>.05&&ghouls<6&&Math.random()<.6)spawnNear('ghoul',pp,16,30,1+((Math.random()*2)|0));
  else if(ready&&(world.dimension||'overworld')==='overworld'&&U.uSky.value<.3&&mar<3&&Math.random()<.035)spawnNear('marauder',pp,22,36,2);
  tickSiloGuards();
@@ -11379,7 +11389,9 @@ function tickZeroSpawns(dt){
  if(net.role==='client'||CONFIG.difficulty==='peaceful')return;combat.spawnT-=dt;if(combat.spawnT>0)return;combat.spawnT=1.5;
  let n=0;for(const e of entities)if(MOB_DEFS[e.kind].hostile&&!MOB_DEFS[e.kind].boss)n++;if(n>=10||entities.length>=ENTITY_LIMIT-3)return;
  const pp=netSpawnCenter();if(Math.hypot(pp.x,pp.z)<70)return;
- const r=Math.random(),kind=r<.45?'ghoul':r<.75?'marauder':r<.92?'drone':'sentry';spawnNear(kind,pp,20,40,kind==='ghoul'?1+((Math.random()*3)|0):kind==='marauder'?2:1);
+ const ready=threatReady(pp);if(!ready)threatSlipAway();
+ let r=Math.random();if(!ready)r=Math.min(r,.44);   // unarmed: Ground Zero only sends ghouls
+ const kind=r<.45?'ghoul':r<.75?'marauder':r<.92?'drone':'sentry';spawnNear(kind,pp,20,40,kind==='ghoul'?1+((Math.random()*3)|0):kind==='marauder'?2:1);
 }
 // per-frame animation for the new kinds
 {const _ue=updateEntities;updateEntities=function(dt){_ue(dt);

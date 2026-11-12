@@ -193,6 +193,14 @@ const equipment=[315,1,123,{fortune:2}],old={v:12,generator:2,inv:[equipment],of
 const migrated=context.migrate(old);assert.equal(migrated.v,20);assert.equal(JSON.stringify([migrated.decor,migrated.hardcore]),'[{},false]');assert.equal(JSON.stringify([migrated.blasts,migrated.bombs,migrated.rads]),'[[],[],0]');assert.equal(JSON.stringify([migrated.graves,migrated.waypoints,migrated.villages]),'[[],{},{}]');assert.equal(migrated.netherGen,10);assert.equal(context.migrate({v:16,generator:4,dimensions:{nether:{}},p:{}}).netherGen,4);assert.equal(migrated.dayLock,false);assert.equal(migrated.generator,2);assert.deepEqual(migrated.inv[0],equipment);assert.equal(migrated.offhand[2],200);
 assert.equal(context.migrate({v:15,generator:8,p:{}}).generator,8);assert.equal(context.migrate({v:15,generator:9,p:{}}).generator,9);
 assert.equal(context.migrate({v:1,p:{}}).generator,1);assert.equal(context.migrate({v:12,p:{}}).generator,2);
+// Gun-wielding mobs spawn naturally only for a player holding a gun plus ammo it can fire (or a loaded magazine).
+{const PISTOL=1,P_AMMO=2,R_AMMO=3,SNIPER=4,HEAVY=5,DU=6;
+ vm.runInContext(`globalThis.GUNS={${PISTOL}:{ammo:[${P_AMMO}]},${SNIPER}:{ammo:[${HEAVY},${DU}]}};`+source.slice(source.indexOf('function armedWith('),source.indexOf('// unarmed patrols that wandered in'))+';globalThis.armedWith=armedWith;',context);
+ const S=(id,count=1,en=null)=>({id,count,en}),armed=context.armedWith;
+ assert.equal(armed([]),false);assert.equal(armed([S(PISTOL),null]),false,'gun without ammo');assert.equal(armed([S(P_AMMO,32)]),false,'ammo without gun');
+ assert.equal(armed([S(PISTOL),S(P_AMMO,8)]),true);assert.equal(armed([S(PISTOL),S(R_AMMO,8)]),false,'wrong ammo');
+ assert.equal(armed([S(PISTOL,1,{mag:3})]),true,'loaded magazine');assert.equal(armed([S(SNIPER),null,S(DU,2)]),true,'alternate ammo');
+ assert(!/THREAT_DAYS|THREAT_DEF/.test(source),'day/armour threat paths should be gone');}
 // Frame detection/destruction with optional corners, both orientations and a build marker.
 const cells=new Map(),key=(x,y,z)=>`${x},${y},${z}`;
 const world={getBlock:(x,y,z)=>cells.get(key(x,y,z))||0,setBlock:(x,y,z,id)=>cells.set(key(x,y,z),id)};
