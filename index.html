@@ -2052,7 +2052,7 @@ defBlock(231,'brewing_stand',{label:'Brewing Stand',tex:{all:'cobblestone'},mode
 defBlock(232,'netherrack',{label:'Netherrack',tex:{all:'netherrack'},hardness:.4,tool:'pickaxe',needsTool:true});
 defBlock(233,'soul_sand',{label:'Soul Sand',tex:{all:'soul_sand'},hardness:.5,sound:'sand',tool:'shovel'});
 defBlock(234,'nether_quartz_ore',{label:'Nether Quartz Ore',tex:{all:'nether_quartz_ore'},hardness:3,tool:'pickaxe',needsTool:true,drop:367});
-defBlock(235,'portal',{label:'Portal',tex:{all:'portal'},model:'portal',solid:false,opaque:false,ao:false,hardness:-1,light:11,drop:0});
+defBlock(235,'portal',{label:'Portal',tex:{all:'portal'},model:'portal',solid:false,opaque:false,ao:false,hardness:-1,light:13,drop:0});
 defFacing(236,'piston',{label:'Piston',tex:{top:'planks',bottom:'cobblestone',side:'piston_side',front:'piston_front'},hardness:1.5,tool:'pickaxe'});
 defFacing(240,'piston_extended',{label:'Extended Piston',tex:{top:'planks',bottom:'cobblestone',side:'piston_side',front:'piston_front'},hardness:1.5,tool:'pickaxe',drop:236});
 defFacing(244,'sticky_piston',{label:'Sticky Piston',tex:{top:'planks',bottom:'cobblestone',side:'piston_side',front:'sticky_front'},hardness:1.5,tool:'pickaxe'});
@@ -2713,6 +2713,8 @@ const vi = (x,y,z)=> (x+PADW) + (z+PADW)*VX + (y+1)*VXZ;
 // Per-block lookup tables for the inner loop
 const T_OPAQUE = new Uint8Array(BLOCK_COUNT), T_AO = new Uint8Array(BLOCK_COUNT), T_DRAW = new Uint8Array(BLOCK_COUNT), T_LIQ = new Uint8Array(BLOCK_COUNT), T_PLANT = new Uint8Array(BLOCK_COUNT), T_TORCH=new Uint8Array(BLOCK_COUNT), T_CULLSELF=new Uint8Array(BLOCK_COUNT), T_LIGHTDIM=new Uint8Array(BLOCK_COUNT), T_FLAT=new Uint8Array(BLOCK_COUNT), T_CUT=new Uint8Array(BLOCK_COUNT);
 const FACE_TILE = new Int16Array(BLOCK_COUNT*6);
+// self-lit blocks: their faces ignore the light around them (aLight.x carries +4, decoded in VERT as vEmis)
+const T_EMIS = new Uint8Array(BLOCK_COUNT), EMISSIVE_NAMES=['glowstone','portal','sea_lantern','shroomlight','ochre_froglight','verdant_froglight','pearlescent_froglight','crying_obsidian','magma_block','radioactive_sludge'];
 function buildBlockTables(){
   for(let id=0;id<BLOCK_COUNT;id++){ const b=BLOCKS[id]; if(!b) continue;
     T_OPAQUE[id]=b.opaque?1:0; T_AO[id]=(b.opaque||b.cutout&&b.ao)?1:0; T_DRAW[id]=id?1:0; T_LIQ[id]=b.liquid||b.aquatic?1:0; T_PLANT[id]=b.plant?1:0; T_TORCH[id]=b.model==='torch'?1:0; T_CULLSELF[id]=b.cullSelf?1:0;   // aquatic plants (kelp, seagrass, coral fans) count as water for water faces
@@ -2722,6 +2724,7 @@ function buildBlockTables(){
     FACE_TILE[id*6+0]=side; FACE_TILE[id*6+1]=side; FACE_TILE[id*6+2]=top; FACE_TILE[id*6+3]=bot; FACE_TILE[id*6+4]=side; FACE_TILE[id*6+5]=side;
     FACE_TILE[id*6+(b.facing!==undefined ? FACING_FACE[b.facing] : 4)] = front;
     T_FLAT[id] = b.model==='flat'?1:0;
+    T_EMIS[id] = EMISSIVE_NAMES.includes(b.name)?1:0;
     T_CUT[id] = ((b.cutout&&!b.opaque) || b.plant || b.model==='torch' || b.model==='wall_torch' || b.model==='flat') ? 1 : 0;
   }
 }
@@ -2852,7 +2855,7 @@ function pushQuad(buf, fi, x,y,z, tile, i, isWater, yTop,corners=null,lava=false
       buf.uv[v*2]=tu + (uv[0]? 1/16-e : e); buf.uv[v*2+1]=tv + (uv[1]? e*.5 : 1/ATLAS_ROWS-e*.5);
     }
     buf.rep[v*2]=-1; buf.rep[v*2+1]=-1;
-    buf.lt[v*3]=shade*AO_CURVE[a]+(lava?2:0); buf.lt[v*3+1]=sky/(cnt*15); buf.lt[v*3+2]=bl/(cnt*15);
+    buf.lt[v*3]=shade*AO_CURVE[a]+(lava===true?2:lava||0); buf.lt[v*3+1]=sky/(cnt*15); buf.lt[v*3+2]=bl/(cnt*15);
     const tint=(currentTintAll||fi===2)?currentTint:WHITE_TINT;buf.tint[v*3]=tint[0];buf.tint[v*3+1]=tint[1];buf.tint[v*3+2]=tint[2];
     v++;
   }
@@ -3010,8 +3013,8 @@ function meshChunkSync(ch){
           const nid=vol[i+FACE_N_OFF[f]];
           if(T_OPAQUE[nid]) continue;
           if(nid===id && cs) continue;
-          if(greedy){const mode=cornerData(f,i);if(mode){greedyPut(f,x,y,z,FACE_TILE[id*6+f],(currentTintAll||f===2)&&currentTint!==WHITE_TINT?ch.biomes[x+z*16]+1:0,mode);continue;}}
-          pushQuad(sb,f,x,y,z,FACE_TILE[id*6+f],i,false,BLOCKS[id].model==='farmland'?.9375:1);
+          if(greedy&&!T_EMIS[id]){const mode=cornerData(f,i);if(mode){greedyPut(f,x,y,z,FACE_TILE[id*6+f],(currentTintAll||f===2)&&currentTint!==WHITE_TINT?ch.biomes[x+z*16]+1:0,mode);continue;}}
+          pushQuad(sb,f,x,y,z,FACE_TILE[id*6+f],i,false,BLOCKS[id].model==='farmland'?.9375:1,null,T_EMIS[id]?4:0);
         }
       }
     }
@@ -3054,7 +3057,7 @@ addEventListener('resize', ()=>{ applyResolution(); camera.aspect=innerWidth/inn
 let atlasTex, waterTex;
 const U = {   // shared uniforms
   uMap:{value:null}, uWater:{value:null}, uSky:{value:1}, uFogColor:{value:new THREE.Color(0x9cc8ff)}, uFog:{value:new THREE.Vector2(60,90)},
-  uTime:{value:0}, uUnderwater:{value:0}, uSkyTint:{value:new THREE.Color(1,1,1)}, uGamma:{value:0.35},uNightVision:{value:0},uAmbient:{value:0},
+  uTime:{value:0}, uUnderwater:{value:0}, uSkyTint:{value:new THREE.Color(1,1,1)}, uGamma:{value:0.5},uNightVision:{value:0},uAmbient:{value:0},
   // shader pack (section 45)
   uSunDir:{value:new THREE.Vector3(0,1,0)}, uSunCol:{value:new THREE.Color(1,1,1)}, uSkyCol:{value:new THREE.Color(1,1,1)}, uSkyTop:{value:new THREE.Color()}, uSkyHor:{value:new THREE.Color()},
   uDay:{value:1}, uClipY:{value:-1e9}, uWaveMap:{value:null}, uShadowMap:{value:null}, uShadowVP:{value:new THREE.Matrix4()}, uShadowAmt:{value:0},
@@ -3087,14 +3090,14 @@ vec3 aerialFog(vec3 c,vec3 wp,float dist,float edge,vec3 fogCol,float under){
 }`;
 const VERT = `
 attribute vec3 aLight;attribute vec3 aTint;attribute vec2 aRep;varying vec3 vTint; varying vec2 vUv; varying vec2 vRep; varying vec3 vLight; varying float vFog;
-uniform vec4 uHand; varying float vHand;
+uniform vec4 uHand; varying float vHand; varying float vEmis;
 #ifdef SHADERS
 varying vec3 vWorld; uniform float uTime;
 #endif
 #ifdef WAVE
 uniform sampler2D uWaveMap;
 #endif
-void main(){vTint=aTint; vUv=uv; vRep=aRep; vLight=aLight;
+void main(){vTint=aTint; vUv=uv; vRep=aRep; vEmis=step(3.5,aLight.x); vLight=vec3(aLight.x-4.0*vEmis,aLight.yz);
   // held light behaves like a moving block light: level 14 at the hand, one level less per block
   vHand=uHand.w*clamp((14.5-distance((modelMatrix*vec4(position,1.0)).xyz,uHand.xyz))/15.0,0.0,1.0);
 #ifdef SHADERS
@@ -3113,14 +3116,14 @@ void main(){vTint=aTint; vUv=uv; vRep=aRep; vLight=aLight;
   vFog=length(mv.xyz); gl_Position=projectionMatrix*mv; }`;
 const FRAG_COMMON = `
 uniform float uSky; uniform vec3 uFogColor; uniform vec2 uFog; uniform vec3 uSkyTint; uniform float uGamma;uniform float uNightVision;uniform float uAmbient;
-varying vec3 vTint;varying vec2 vUv; varying vec2 vRep; varying vec3 vLight; varying float vFog; varying float vHand; uniform vec4 uHand;
+varying vec3 vTint;varying vec2 vUv; varying vec2 vRep; varying vec3 vLight; varying float vFog; varying float vHand; uniform vec4 uHand; varying float vEmis;
 // greedy quads repeat their tile once per block (vRep counts blocks); ordinary quads have vRep = -1
 vec2 atlasUv(){ return vRep.x<-0.5?vUv:vUv+(fract(vRep)*0.996+0.002)*vec2(0.0625,0.015625); }
 vec3 lightColor(){
   float s=vLight.y*uSky, b=max(vLight.z,vHand);
-  s = mix(s/(4.0-3.0*s), s, uGamma); b = mix(b/(4.0-3.0*b), b, uGamma);
-  vec3 c = max(uSkyTint*s, vec3(1.0,0.86,0.66)*b);
-  return max(c, vec3(max(uAmbient,mix(.03,.72,uNightVision)))) * vLight.x;
+  s = mix(s/(4.0-3.0*s), s, uGamma); b = mix(b/(4.0-3.0*b), b, max(uGamma,0.65));   // block light keeps more of its reach than sky light
+  vec3 c = max(uSkyTint*s, vec3(1.0,0.9,0.72)*b*1.04);
+  return mix(max(c, vec3(max(uAmbient,mix(.06,.72,uNightVision)))) * vLight.x, vec3(0.88+0.12*vLight.x), vEmis);
 }
 #ifdef SHADERS
 #include <packing>
@@ -3175,8 +3178,8 @@ vec3 shadeLight(bool plant){
 #ifdef SHADOWS
   sh=sunShadow(plant?vec3(0.0,1.0,0.0):N);
 #endif
-  vec3 c=uSkyCol*s*(0.56+0.22*N.y)+uSunCol*nl*sh*smoothstep(0.55,0.95,vLight.y)+vec3(1.0,0.78,0.52)*pow(b,1.7)*0.9;
-  return max(c,vec3(max(uAmbient,mix(.03,.72,uNightVision))))*ao;
+  vec3 c=uSkyCol*s*(0.56+0.22*N.y)+uSunCol*nl*sh*smoothstep(0.55,0.95,vLight.y)+vec3(1.0,0.82,0.6)*mix(b/(4.0-3.0*b),b,max(uGamma,0.65))*1.0;
+  return mix(max(c,vec3(max(uAmbient,mix(.06,.72,uNightVision))))*ao, vec3(0.9+0.1*fs), vEmis);
 }
 #ifdef ULTRA
 uniform vec3 uAmb[6]; uniform vec4 uBoom;
@@ -3187,7 +3190,7 @@ vec3 ambCube(vec3 N){ vec3 n=N*N; return n.x*(N.x>0.0?uAmb[0]:uAmb[1])+n.y*(N.y>
 vec3 shadeUltra(bool plant){
   vec3 N=normalize(cross(dFdx(vWorld),dFdy(vWorld)));
   float fs=N.y>0.5?1.0:N.y<-0.5?0.5:abs(N.x)>0.5?0.6:0.8, ao=clamp(vLight.x/fs,0.0,1.0);
-  float s=vLight.y, b=vLight.z, skyVis=s*s*(0.35+0.65*s);
+  float s=vLight.y, b=vLight.z, skyVis=s*(0.12+0.88*s)*(0.4+0.6*s);
   vec3 V=normalize(cameraPosition-vWorld), L=uSunDir;
   // held torch: a soft warm point light that falls off like block light and wraps round corners a little
   vec3 handL=vec3(0.0);
@@ -3202,10 +3205,10 @@ vec3 shadeUltra(bool plant){
   vec3 direct=uSunRad*nl*sunVis*mix(1.0,ao,0.35);
   if(plant) direct+=uSunRad*sunVis*pow(max(dot(-V,L),0.0),6.0)*1.6;
   vec3 amb=ambCube(plant?normalize(N+vec3(0.0,1.0,0.0)):N)*skyVis*ao;
-  vec3 torch=vec3(1.0,0.5,0.18)*pow(b,2.6)*1.3/pow(uExposure,0.7)*ao+handL;
+  vec3 torch=vec3(1.0,0.5,0.18)*(pow(b,2.0)*1.2+b*0.06)/pow(uExposure,0.7)*ao+handL;   // gentler falloff: torchlight carries ~10 blocks
   if(uBoom.w>0.001){ vec3 bd=uBoom.xyz-vWorld; float bl=dot(bd,bd); torch+=vec3(1.0,0.6,0.28)*uBoom.w*(plant?0.7:max(dot(N,bd*inversesqrt(bl+1e-4)),0.0)*0.85+0.15)*30.0/pow(uExposure,0.6)/(1.0+bl*0.18); }
-  vec3 floorL=vec3(max(uAmbient*0.25,mix(0.0012,0.35,uNightVision)))/uExposure;
-  return max(direct+amb+torch,floorL*ao);
+  vec3 floorL=vec3(max(uAmbient*0.25,mix(0.0028,0.35,uNightVision)))/uExposure;
+  return mix(max(direct+amb+torch,floorL*ao), vec3(1.25+0.25*fs)/pow(uExposure,0.7), vEmis);
 }
 #endif
 #endif`;
@@ -6586,7 +6589,7 @@ function pushShape(buf,x,y,z,id,i,wx,wz){
    if(edge&&opq[off])continue;
    const pts=face.c.map(c=>[x+lerp(r[0],r[3],c[0]),y+lerp(r[1],r[4],c[1]),z+lerp(r[2],r[5],c[2])]);
    const tile=r.length>6&&TEX[r[6]]!==undefined?TEX[r[6]]:FACE_TILE[id*6+f],uv=tileUV(tile,0,0,16,16),light=[face.shade,Math.max(skyL[i],skyL[off])/15,Math.max(blkL[i],blkL[off])/15];
-   if(b.model==='wall_torch')light[2]=1;
+   if(T_EMIS[id])light[0]+=4;
    pushRawQuad(buf,pts,uv,light);
  }
 }
