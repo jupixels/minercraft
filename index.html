@@ -2981,7 +2981,7 @@ function meshChunkSync(ch){
   if(!ch.biomes){ch.biomes=new Uint8Array(256);for(let z=0;z<16;z++)for(let x=0;x<16;x++)ch.biomes[x+z*16]=gen.biomeAt(ch.cx*16+x,ch.cz*16+z);}
   fillVolume(ch); computeLight(ch);
   if(!ch.blockLight)ch.blockLight=new Uint8Array(CS*CS*CH);
-  for(let y=0;y<CH;y++)for(let z=0;z<CS;z++)for(let x=0;x<CS;x++)ch.blockLight[x+(z<<4)+(y<<8)]=blkL[vi(x,y,z)];
+  for(let y=0;y<CH;y++)for(let z=0;z<CS;z++)for(let x=0;x<CS;x++){const i=vi(x,y,z);ch.blockLight[x+(z<<4)+(y<<8)]=blkL[i]|(skyL[i]<<4);}   // low nibble block light, high nibble sky light (lightAt samples both)
   bufSolid.reset(); bufWater.reset(); bufCut.reset();
   let minY=CH, maxY=0;
   for(let y=0;y<CH;y++){
@@ -5427,14 +5427,8 @@ function heldMeshFor(id){
   const o={mesh:m, kind}; held.cache.set(id,o); return o;
 }
 function localBrightness(){
-  // sky exposure straight up plus nearby torches/glowstone (cheap approximation)
-  const p=player.pos, x=Math.floor(p.x), y=Math.floor(p.y+1.6), z=Math.floor(p.z);
-  let open=true; for(let yy=y+1;yy<CH;yy++){ const id=world.getBlock(x,yy,z); if(id>0 && BLOCKS[id].opaque){ open=false; break; } }
-  let bl=0; const cx=x>>4, cz=z>>4;
-  for(let dz=-1;dz<=1;dz++) for(let dx=-1;dx<=1;dx++){ const c=world.get(cx+dx,cz+dz); if(!c||!c.emitters.size) continue;
-    for(const li of c.emitters){ const ex=(cx+dx)*16+(li&15), ez=(cz+dz)*16+((li>>4)&15), ey=li>>8; const dd=Math.abs(ex-x)+Math.abs(ey-y)+Math.abs(ez-z); bl=Math.max(bl,(BLOCKS[c.data[li]].light-dd)/15); } }
-  const sky = player.effects?.night_vision>0? .9 : open ? U.uSky.value : (y<SEA-6 ? 0.06 : 0.35*U.uSky.value);
-  return clamp(Math.max(sky, bl), 0.06, 1);
+  // the light where the player's eyes are (same sampler as mobs and dropped items)
+  const p=player.pos; return clamp(lightAt(p.x,p.y+1.6,p.z), 0.06, 1);
 }
 function updateHeld(dt){
   const id=inv.heldId();
@@ -5502,13 +5496,34 @@ function updateOffHeld(dt){
 const itemEntities = [];
 const ITEM_MAX = 300, ITEM_LIFE = 300, ITEM_R = 0.125;
 const itemGroup = new THREE.Group(); scene.add(itemGroup);
+// Light at a point for sprites, items and mobs. Samples the light levels the mesher computed (chunk.blockLight:
+// low nibble block light, high nibble sky light) so mobs match the terrain they stand on; the old "is any opaque
+// block above me" test turned mobs black under branches, fast-leaves canopies and overhangs below sea level.
+const LIGHT_GAMMA=.5;   // shared with the chunk shaders (U.uGamma): 0 = Minecraft "moody" curve, 1 = linear
+const lightCurve=(v,g=LIGHT_GAMMA)=>{v=clamp(v,0,1);return v/(4-3*v)*(1-g)+v*g;};   // block light uses g=.65 (as in the shaders)
+function lightLevels(bx,by,bz){
+  if(by<0||by>=CH) return by>=CH?{s:15,b:0}:null;
+  const c=world.get(bx>>4,bz>>4), L=c&&c.blockLight; if(!L) return null;
+  const at=(x,y,z)=>{ if(y<0||y>=CH) return y>=CH?240:0; const cc=world.get(x>>4,z>>4), LL=cc&&cc.blockLight; return LL?LL[(x&15)+((z&15)<<4)+(y<<8)]:-1; };
+  let v=L[(bx&15)+((bz&15)<<4)+(by<<8)];
+  const id=world.getBlock(bx,by,bz);
+  if(id>0&&BLOCKS[id]&&BLOCKS[id].opaque){   // sample point is inside a solid block: borrow the brightest open neighbour, one level dimmer
+    let s=0,b=0; for(const [dx,dy,dz] of [[0,1,0],[1,0,0],[-1,0,0],[0,0,1],[0,0,-1],[0,-1,0]]){ const n=at(bx+dx,by+dy,bz+dz); if(n<0) continue; s=Math.max(s,(n>>4)-1); b=Math.max(b,(n&15)-1); }
+    return {s,b};
+  }
+  return {s:v>>4,b:v&15};
+}
 function lightAt(x,y,z){
-  const bx=Math.floor(x), by=Math.floor(y), bz=Math.floor(z);
+  const bx=Math.floor(x), by=Math.floor(y), bz=Math.floor(z), dim=world.dimension||'overworld';
+  const floor=Math.max(player.effects?.night_vision>0?.8:0,dim==='nether'?.18:dim==='end'?.35:.09);
+  const lv=lightLevels(bx,by,bz);
+  if(lv){ const sky=lightCurve(lv.s/15*U.uSky.value), blk=lightCurve(lv.b/15,.65); return clamp(Math.max(floor,sky,blk),.05,1); }
+  // chunk not meshed yet: rough column test
   let open=true; for(let yy=by+1;yy<CH;yy++){ const id=world.getBlock(bx,yy,bz); if(id>0 && BLOCKS[id].opaque){ open=false; break; } }
   let bl=0; const cx=bx>>4, cz=bz>>4;
   for(let dz=-1;dz<=1;dz++) for(let dx=-1;dx<=1;dx++){ const c=world.get(cx+dx,cz+dz); if(!c||!c.emitters.size) continue;
     for(const li of c.emitters){ const ex=(cx+dx)*16+(li&15), ez=(cz+dz)*16+((li>>4)&15), ey=li>>8; bl=Math.max(bl,(BLOCKS[c.data[li]].light-Math.abs(ex-bx)-Math.abs(ey-by)-Math.abs(ez-bz))/15); } }
-  return clamp(Math.max(player.effects?.night_vision>0?.8:0,world.dimension==='nether'?.14:world.dimension==='end'?.35:0,open ? U.uSky.value : (by<SEA-6 ? 0.05 : 0.3*U.uSky.value), bl), 0.05, 1);
+  return clamp(Math.max(floor,open ? U.uSky.value : 0.4*U.uSky.value, lightCurve(bl,.65)), 0.05, 1);
 }
 function makeItemVisual(id, count){
   const o=heldMeshFor(id), isBlock = o.kind==='block', g=new THREE.Group();
@@ -6130,7 +6145,7 @@ const combat={cooldown:0,hurt:0,draw:0,spawnT:0};
 const projectiles=[],arrowGeometry=new THREE.BoxGeometry(.065,.065,.65);
 let arrowMaterial;
 function skyVisible(x,y,z){for(let yy=Math.floor(y)+1;yy<CH;yy++){const id=world.getBlock(Math.floor(x),yy,Math.floor(z));if(id<0||BLOCKS[id]?.opaque)return false;}return true;}
-function blockLightAt(x,y,z){const c=world.get(x>>4,z>>4);return c?.blockLight?.[(x&15)+((z&15)<<4)+(y<<8)]||0;}
+function blockLightAt(x,y,z){const c=world.get(x>>4,z>>4);return (c?.blockLight?.[(x&15)+((z&15)<<4)+(y<<8)]||0)&15;}
 function clearSight(ax,ay,az,bx,by,bz){
  const dx=bx-ax,dy=by-ay,dz=bz-az,n=Math.ceil(Math.hypot(dx,dy,dz)*3);
  for(let i=1;i<n;i++){const id=world.getBlock(Math.floor(ax+dx*i/n),Math.floor(ay+dy*i/n),Math.floor(az+dz*i/n));if(id<0||BLOCKS[id]?.solid)return false;}return true;
