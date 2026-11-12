@@ -172,6 +172,19 @@ Two limits on that freedom:
     instanced atlas-textured debris (`CX.deb`, `cxDebTick`). Mobs are dragged
     with section 59's `e.fling` (`cxGrab`). Wind on the player goes through
     `player.kbx/kbz` plus `vel.y`.
+- Section 68 (just before BOOT) is the texture refresh: `buildTextureRefresh()`
+  runs after every other texture builder and redraws weak legacy tiles in
+  place (bread, meats, nuggets, armour icons, pillar/pumpkin/melon/deepslate
+  tops, sand, sandstone side) and gives un-outlined legacy item sprites an
+  artTile-style outline (`retouchSprite`). New item art should use `artTile`.
+- Lighting: `chunk.blockLight` packs block light (low nibble) and sky light
+  (high nibble); `blockLightAt()` masks the low nibble, `lightAt()` (mobs,
+  dropped items, held item) reads both through `lightCurve`, which mirrors the
+  shaders (`LIGHT_GAMMA` = `U.uGamma` 0.5 for sky, 0.65 for block light).
+  Self-lit blocks are `T_EMIS` (by name in `EMISSIVE_NAMES`): the mesher adds
+  4 to `aLight.x`, `VERT` decodes it as `vEmis`, and every tier draws them
+  full-bright (they skip greedy merging). Lava keeps its own +2 marker in the
+  water pass and is coloured by `lavaCol()` in `MAT_WATER`.
 - Greedy meshing (section 6): `cornerData`/`greedyPut`/`greedyEmit` merge
   full-cube faces only where per-vertex AO and light stay identical. Merged
   quads put the tile origin in `uv` and per-block repeat counts in the
