@@ -12903,7 +12903,7 @@ function buildTreasureGui(panel){
 /* ---- mobs: physics for swimmers ---- */
 {const _mp=mobPhysics;mobPhysics=function(e,dt){const d=MOB_DEFS[e.kind];
  const wet=d&&(d.aquatic||d.swimmer)&&waterAt(e.pos.x,e.pos.y+d.h*mobScale(e)*.5,e.pos.z);
- if(!wet){if(d?.aquatic&&!e.dead){e.dryT=(e.dryT||0)+dt;if(e.onGround&&Math.random()<dt*2){e.vel.y=4;e.yaw+=(Math.random()-.5)*3;}if(e.dryT>(d.breathes?90:20)&&net.role!=='client'){e.dryT=0;hurtMob(e,1);}}return _mp(e,dt);}
+ if(!wet){if(d?.aquatic&&!e.dead){e.dryT=(e.dryT||0)+dt;if(e.onGround&&Math.random()<dt*2.5){e.vel.y=4;if(!e.seek)e.yaw+=(Math.random()-.5)*3;}if(e.dryT>(d.breathes?90:20)&&net.role!=='client'){e.dryT=0;hurtMob(e,1);}}return _mp(e,dt);}
  e.dryT=0;const p=e.pos,v=e.vel,s=mobScale(e),w=d.w*s,h=d.h*s;if(world.getBlock(Math.floor(p.x),Math.floor(p.y),Math.floor(p.z))<0)return;
  v.y+=((e.wantVy??0)-v.y)*Math.min(1,dt*4);
  if(!d.aquatic&&!e.swimChase){v.y=Math.max(v.y-6*dt,-1.5);}   // drowned without prey sink and walk the sea floor
@@ -12915,8 +12915,20 @@ function buildTreasureGui(panel){
 {const _us=unsafeStep;unsafeStep=function(e){const d=MOB_DEFS[e.kind];if(d?.aquatic||d?.swimmer&&waterAt(e.pos.x,e.pos.y+.5,e.pos.z))return false;return _us(e);};}
 /* ---- passive ocean life ---- */
 function playerSwimPos(){return player.inWater&&['playing','inventory','chat'].includes(gameState)&&player.mode!=='spectator'?player.pos:null;}
+// Beached: a water mob on land used to keep its full swim AI (a fed dolphin even "led" you
+// straight over land), so it ran far inland. Now it flops toward the nearest water within 8
+// blocks and, with none in reach, gives up and despawns after a while.
+function nearestWater(x,y,z,r=8){for(let d=1;d<=r;d++)for(let k=0;k<16;k++){const a=k/16*6.283,wx=x+Math.sin(a)*d,wz=z+Math.cos(a)*d;for(const dy of [0,-1,1,-2])if(waterAt(wx,y+dy,wz))return {x:Math.floor(wx)+.5,z:Math.floor(wz)+.5};}return null;}
+function beachedAI(e,dt){
+ const p=e.pos;if((e.seekT=(e.seekT||0)-dt)<=0){e.seekT=1;e.seek=nearestWater(p.x,p.y+.3,p.z);}
+ e.lead=null;e.wantVy=0;e.pitch=lerp(e.pitch||0,0,Math.min(1,dt*4));
+ if(!e.seek){e.lostT=(e.lostT||0)+dt;if(e.lostT>30&&net.role!=='client'&&!e.dead){removeMob(e);return 0;}return 0;}
+ e.lostT=0;e.yaw=Math.atan2(e.seek.x-p.x,e.seek.z-p.z);return e.onGround?0:1.6;   // drifts toward water while airborne from a flop
+}
 function aquaticAI(e,dt){
  const d=MOB_DEFS[e.kind],p=e.pos;e.aiT-=dt;let speed=d.speed*(e.moving?1:.35);
+ if(!waterAt(p.x,p.y+d.h*mobScale(e)*.5,p.z)&&!waterAt(p.x,p.y-.2,p.z))return beachedAI(e,dt);
+ e.lostT=0;
  const pp=playerSwimPos(),near=pp&&p.distanceToSquared(pp)<36;
  if(e.kind==='squid'){if(e.aiT<=0){e.aiT=1.5+Math.random()*2.5;e.yaw+=(Math.random()-.5)*2.5;e.wantVy=(Math.random()-.5)*1.2;e.moving=Math.random()<.7;}
   e.pulse=(e.pulse||0)+dt*2.4;speed*=.4+Math.max(0,Math.sin(e.pulse))*1.4;if(e.panic>0){speed=d.speed*3;if(pp)e.yaw=Math.atan2(p.x-pp.x,p.z-pp.z);}}
@@ -12927,7 +12939,8 @@ function aquaticAI(e,dt){
   if(near||e.panic>0){speed=d.speed*2.4;if(pp)e.yaw=Math.atan2(p.x-pp.x,p.z-pp.z);}}
  else if(e.kind==='dolphin'){
   e.air=(e.air??60)-dt;const surface=!waterAt(p.x,p.y+1.2,p.z);if(surface)e.air=60;
-  if(e.lead&&(e.lead.t-=dt)>0){e.yaw=Math.atan2(e.lead.x-p.x,e.lead.z-p.z);e.wantVy=clamp((e.lead.y-p.y)*.5,-2,2);speed=pp&&p.distanceToSquared(pp)>196?0.6:d.speed*.8;if(Math.hypot(e.lead.x-p.x,e.lead.z-p.z)<4)e.lead=null;}
+  if(e.lead&&(e.lead.t-=dt)>0&&!waterAt(p.x+Math.sin(Math.atan2(e.lead.x-p.x,e.lead.z-p.z))*2,p.y+.3,p.z+Math.cos(Math.atan2(e.lead.x-p.x,e.lead.z-p.z))*2))e.lead.t=Math.min(e.lead.t,.5);
+  if(e.lead&&e.lead.t>0){e.yaw=Math.atan2(e.lead.x-p.x,e.lead.z-p.z);e.wantVy=clamp((e.lead.y-p.y)*.5,-2,2);speed=pp&&p.distanceToSquared(pp)>196?0.6:d.speed*.8;if(Math.hypot(e.lead.x-p.x,e.lead.z-p.z)<4)e.lead=null;}
   else if(e.air<12){e.wantVy=3;speed=d.speed*.6;}
   else if(pp&&p.distanceToSquared(pp)<144){const a=Math.atan2(pp.x-p.x,pp.z-p.z)+Math.PI/2.4;e.yaw=a;e.wantVy=clamp((pp.y-p.y)*.8,-2,2);speed=d.speed;if(player.swimming&&p.distanceToSquared(pp)<49){player.effects=player.effects||{};player.effects.dolphins_grace=Math.max(player.effects.dolphins_grace||0,5);}}
   else{if(e.aiT<=0){e.aiT=2+Math.random()*3;e.yaw+=(Math.random()-.5)*2;e.wantVy=(Math.random()-.5)*1.5;e.moving=true;}}
@@ -13020,9 +13033,9 @@ function oceanSpawns(dt){
   let y=SEA;while(y>2&&isWater(world.getBlock(x,y,z)))y--;const depth=SEA-y;if(depth<3)continue;const b=gen.biomeAt(x,z);if(b!==5&&b!==6&&b!==7)continue;const wy=y+1+Math.random()*(depth-1.5);
   if(Math.random()<.3&&hostile<netHostileCap()&&CONFIG.difficulty!=='peaceful'&&isNightTime()){spawnMob('drowned',x+.5,y+1,z+.5);return;}
   if(aq>=AQUA_CAP)return;const warm=gen.biomeAt&&b!==7&&reefWarm(x,z),roll=Math.random();
-  if(roll<.42){const kind=warm?'reef_fish':'fish',n=3+((Math.random()*4)|0);for(let i=0;i<n&&entities.length<ENTITY_LIMIT;i++)spawnMob(kind,x+.5+(Math.random()-.5)*2,wy,z+.5+(Math.random()-.5)*2,{yaw:a});return;}
+  if(roll<.42){const kind=warm?'reef_fish':'fish',n=3+((Math.random()*4)|0);for(let i=0;i<n&&entities.length<ENTITY_LIMIT;i++){const fx=x+.5+(Math.random()-.5)*2,fz=z+.5+(Math.random()-.5)*2;if(waterAt(fx,wy,fz))spawnMob(kind,fx,wy,fz,{yaw:a});}return;}
   if(roll<.78){spawnMob('squid',x+.5,wy,z+.5);return;}
-  if(b!==7&&depth>5){const n=1+((Math.random()*3)|0);for(let i=0;i<n;i++)spawnMob('dolphin',x+.5+i,Math.max(y+1.5,SEA-2.5),z+.5);return;}}
+  if(b!==7&&depth>5){const n=1+((Math.random()*3)|0);for(let i=0;i<n;i++){const dy=Math.max(y+1.5,SEA-2.5);if(waterAt(x+.5+i,dy,z+.5)&&waterAt(x+.5+i,dy+.6,z+.5))spawnMob('dolphin',x+.5+i,dy,z+.5);}return;}}
 }
 function reefWarm(x,z){let y=SEA;while(y>2&&isWater(world.getBlock(x,y,z)))y--;for(let dx=-3;dx<=3;dx+=3)for(let dz=-3;dz<=3;dz+=3){const id=world.getBlock(x+dx,y+1,z+dz);if(BLOCKS[id]?.coral)return true;}return false;}
 // ocean life far from everyone simply goes (no archive), so the sea doesn't fill the save
