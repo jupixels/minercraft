@@ -6751,7 +6751,12 @@ function buildFluidTextures(){
   for(let y=0;y<16;y++)for(let x=0;x<16;x++){let h=0,n=0;for(const [a,b,ph,w] of W){h+=Math.sin((a*x+b*y)*T+ph)*w;n+=w;}
    h=h/n*.5+.5;h=clamp(Math.pow(h,1.15)*1.25-.08+(R()-.5)*.06,0,1);let k=1;while(k<ramp.length-1&&ramp[k][0]<h)k++;
    const [t0,c0]=ramp[k-1],[t1,c1]=ramp[k],f=clamp((h-t0)/(t1-t0),0,1),q=Math.round(f*3)/3;P(x,y,[c0[0]+(c1[0]-c0[0])*q,c0[1]+(c1[1]-c0[1])*q,c0[2]+(c1[2]-c0[2])*q]);}});
- makeTile('obsidian',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++)P(x,y,vary((x*7+y*3)%13<3?[60,43,84]:[29,26,43],R,18));});
+ // obsidian: glassy volcanic facets (wrapped Voronoi), darker seams, curved conchoidal sheen and a few purple glints
+ makeTile('obsidian',(P,R)=>{const S=[];for(let i=0;i<9;i++)S.push([R()*16,R()*16,(R()-.5)*14,R()*6.28]);
+  for(let y=0;y<16;y++)for(let x=0;x<16;x++){let d1=1e9,d2=1e9,bi=0;for(let i=0;i<S.length;i++){let dx=Math.abs(x+.5-S[i][0]),dy=Math.abs(y+.5-S[i][1]);dx=Math.min(dx,16-dx);dy=Math.min(dy,16-dy);const d=Math.hypot(dx,dy);if(d<d1){d2=d1;d1=d;bi=i;}else if(d<d2)d2=d;}
+   const c=S[bi],sheen=Math.sin(d1*1.9+c[3])>.82&&d1>1.2,seam=d2-d1<.9,v=c[2];
+   P(x,y,seam?[16+v*.3,12,28]:sheen?[78+v,58+v,118+v]:vary([36+v+(y<8?4:0),28+v,54+v],R,6));}
+  for(let n=0;n<4;n++){const x=(R()*16)|0,y=(R()*16)|0;P(x,y,[150,104,214]);if(R()<.5)P((x+1)&15,y,[96,66,150]);}});
  for(const [name,fill] of [['bucket',null],['water_bucket',[57,112,218]],['lava_bucket',[244,136,24]]])makeTile('item_'+name,(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++){const shape=y>=4&&y<=13&&x>=2+((y-4)/5|0)&&x<=13-((y-4)/5|0);P(x,y,vary(fill&&y<7?fill:x<5?[223,225,228]:[126,139,151],R,18),shape?255:0);}});
  CREATIVE_TABS[1].items.push(B.lava,B.obsidian);CREATIVE_TABS[3].items.push(B.bucket,B.water_bucket,B.lava_bucket);shaped(['I I',' I '],{I:[B.iron_ingot]},B.bucket);
 }
@@ -7537,7 +7542,11 @@ function buildEngineeringTextures(){
  makeTile('sticky_front',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++)P(x,y,vary(x<2||y<2||x>13||y>13?[121,123,105]:[126,167,86],R,24));});
  makeTile('nether_wart',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++)P(x,y,vary([137,46,47],R,32),y>4&&Math.abs(x-8)<6-(y%5)?255:0);});
  // End textures are built here so the atlas indices are stable before worker setup.
- makeTile('end_stone',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++)P(x,y,vary((x*3+y*7)%13<3?[183,183,134]:[219,217,165],R,24));});
+ // end stone: pale and porous, with pits that are lit on the upper-left rim and shadowed inside
+ makeTile('end_stone',(P,R)=>{const base=[221,219,168],px=new Array(256);for(let i=0;i<256;i++){const r=R();px[i]=r<.12?[232,230,182]:r<.22?[206,204,152]:vary(base,R,10);}
+  for(let n=0;n<13;n++){const cx=R()*16,cy=R()*16,r=.5+R()*1.3;for(let y=-3;y<=3;y++)for(let x=-3;x<=3;x++){const d=Math.hypot(x,y);if(d>r+.6)continue;const X=(Math.floor(cx)+x+16)&15,Y=(Math.floor(cy)+y+16)&15;
+   px[Y*16+X]=d<r-.4?(x+y>0?[176,174,124]:[160,158,112]):(x+y<0?[198,196,144]:[236,234,190]);}}
+  for(let i=0;i<256;i++)P(i&15,i>>4,px[i]);});
  makeTile('end_portal',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++)P(x,y,R()<.06?[106,183,181]:[17,31,38]);});
  CREATIVE_TABS[2].items.push(B.piston,B.sticky_piston,B.hopper);CREATIVE_TABS[0].items.push(B.end_stone,B.star_glass);CREATIVE_TABS[3].items.push(B.dispenser_mechanism,B.repair_kit,B.map,B.compass);
  shaped(['PPP','CIC','CRC'],{P:PLANKS,C:[B.cobblestone],I:[B.iron_ingot],R:[B.redstone]},B.piston);shapeless([B.piston,B.slime_ball],B.sticky_piston);
