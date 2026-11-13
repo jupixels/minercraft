@@ -221,6 +221,17 @@ Two limits on that freedom:
   chunk can be carved by both `onChunkData` and the queue). The cloud (`startNukeFx`) is a ray-marched
   volume (`NUKE_FRAG`) plus a condensation shell and ground ring; `SHOCK_SPEED`
   sets when the shock and sound arrive.
+- The End has its own generator version, `world.endGen` (meta `endGen`, save v21;
+  `genVer()` returns it in the End). 1 is the original `makeEndGen` (pinned in the
+  test); 2 is `makeEnd2`, "the Shattered Halo": a broken ring round a central dais
+  (exit portal), four land bridges, twisted obsidian/crying-obsidian spires carrying
+  the crystals (`gen.pillars`, crystal at `top+1`), stepping stones from the arrival
+  platform (100,48,0), floating shards, amethyst spires and obelisks on the far
+  islands. Migration keeps 1 for worlds whose End was visited or fought over; new
+  worlds get 2; guests receive it as `eg`. The End sky (every generator) is painted:
+  the dome's `uFlat` gradient (also on Ultra), `buildEndSky`/`endSkyFrame` (eclipse,
+  nebula veils, drifting motes). The Starwing model is `MOB_SPECS.starwing` (palette `SW`),
+  next to `tickBoss`.
 - Ground Zero is a fourth dimension (`DIMENSIONS`, chunk prefix `g.c.`,
   `makeZeroGen` in worldgen-src, fixed arrival like the End; `mode 'gate'`
   returns you to the gate you left). Fission Gates are lead-block frames lit
@@ -289,8 +300,8 @@ Two limits on that freedom:
   Features that span chunks (tunnels, villages) are planned from world
   coordinates per cell and cached, so every chunk agrees on them.
 - **Saves migrate forward.** World metadata carries a version `v` (currently
-  20: decor, hardcore, ocean). When you change the save shape, bump it and add
-  a step to `migrateMeta()` so old saves load, and raise the `m.v>20` limit in
+  21: decor, hardcore, ocean, endGen). When you change the save shape, bump it and add
+  a step to `migrateMeta()` so old saves load, and raise the `m.v>21` limit in
   `validateWorldFile()` (it used to stop at 18, so v19 exports could not be
   imported). Metadata and settings live in `localStorage` (`bc.*` keys;
   per-world `bc.w<slot>.*`); chunk edit lists and backups (`bigKey()`) live in
@@ -352,7 +363,7 @@ How syncing works, so new features stay multiplayer-safe:
 - New kinds of shared state that don't go through the functions above need a
   message: add a case to `netHostOnMsg` (guest → host; validate everything,
   guests are untrusted) and to `netClientOnMsg` (host → guest).
-- `NET_V` is the protocol version (currently 11). Bump it whenever messages
+- `NET_V` is the protocol version (currently 12). Bump it whenever messages
   or block ids change in an incompatible way, so mismatched players get a
   "refresh to update" message instead of a broken game.
 - Friendly fire is the host's setting `world.mp.pvp` (pause-menu button or

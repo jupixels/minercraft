@@ -347,7 +347,7 @@ function makeNoise(seed){
 /* ---- Terrain generator ---- */
 function makeGen(seed, B, version=1,dimension='overworld'){
   if(dimension==='nether')return version>=10?makeNether10(seed,B):makeNetherGen(seed,B,version);
-  if(dimension==='end')return makeEndGen(seed,B);
+  if(dimension==='end')return version>=2?makeEnd2(seed,B):makeEndGen(seed,B);
   if(dimension==='groundzero')return makeZeroGen(seed,B);
   const N = makeNoise(seed), N2 = makeNoise(seed+101), N3 = makeNoise(seed+202);
   const smooth = (a,b,x)=>{ const t=Math.min(1,Math.max(0,(x-a)/(b-a))); return t*t*(3-2*t); };
@@ -1535,6 +1535,63 @@ function makeEndGen(seed,B){
  return {genChunk,heightAt,biomeAt:()=>0,mountainAt:()=>0,BIOME_NAMES:['The End'],pillars};
 }
 
+/* The Shattered Halo (End generator 2): Minercraft's own End. A broken ring of pitted end stone
+   hangs round a raised central dais; four crooked land bridges cross the void between them and
+   the underside drips with long stone spikes. Eight twisted obsidian spires banded with crying
+   obsidian carry the Starwing's crystals. Stepping-stone islets lead from the arrival platform to
+   the ring, shards of rock float in the middle distance, and the far islands grow amethyst spires
+   and crying-obsidian obelisks. Generator 1 (makeEndGen) stays as it was for Ends already built. */
+function makeEnd2(seed,B){
+ const N=makeNoise(seed^0x3e9d2),N2=makeNoise(seed^0x7a11c),r=mulberry32((seed^0x51ac)>>>0),pillars=[],bridges=[];
+ const hash=(x,z,s)=>{let h=Math.imul(x|0,0x27d4eb2d)^Math.imul(z|0,0x165667b1)^Math.imul(s|0,0x9e3779b1)^seed;h=Math.imul(h^h>>>15,0x85ebca6b);h=Math.imul(h^h>>>13,0xc2b2ae35);return ((h^h>>>16)>>>0)/4294967296;};
+ for(let i=0;i<8;i++){const a=i/8*Math.PI*2+.2+r()*.25,rad=31+r()*5;pillars.push({x:Math.round(Math.cos(a)*rad),z:Math.round(Math.sin(a)*rad),r:2+((r()*2)|0),top:74+((r()*4)|0)*3,tw:r()*6.28});}
+ for(let i=0;i<4;i++)bridges.push(i/4*Math.PI*2+Math.PI/4+(r()-.5)*.5);
+ const steps=[];for(let i=0;i<7;i++)steps.push({x:94-i*6,z:((r()*3)|0)-1,y:48+Math.min(i,5),r:2.2+r()*.8});   // one-block rises, gaps a sprint-jump can clear
+ const RIN=22,DAIS=11;
+ function ringEdge(x,z){return {inner:RIN+N.n2(x/18,z/18)*3,outer:58+N.n2(x/26,z/26)*6+N2.n2(x/60,z/60)*5};}
+ function mainCol(x,z){
+  const d=Math.hypot(x,z);
+  if(d<DAIS+N.n2(x/7,z/7)*1.2){const t=1-d/(DAIS+1);return {top:60+(d<4?1:0),bottom:Math.floor(52-Math.pow(t,.6)*18-(hash(x,z,11)<.12?hash(x,z,12)*10:0)),dais:true};}
+  const E=ringEdge(x,z);
+  if(d>E.inner&&d<E.outer){const t=Math.min(d-E.inner,E.outer-d)/((E.outer-E.inner)/2),terr=Math.floor((N2.n2(x/20,z/20)*.5+.5)*3);
+   const spike=hash(x>>1,z>>1,3)<.16?Math.pow(hash(x>>1,z>>1,4),2)*20*Math.min(1,t*1.6):0;
+   return {top:Math.floor(53+terr+Math.min(1,t*2)*2),bottom:Math.floor(50-Math.pow(t,.8)*20-spike)};}
+  if(d>=DAIS-1&&d<=E.inner+1){const a=Math.atan2(z,x);for(const ba of bridges){let da=a-(ba+Math.sin(d*.18+ba)*.12);da=Math.atan2(Math.sin(da),Math.cos(da));const w=1.8+N.n2(x/6,z/6)*.6;
+   if(Math.abs(da*d)<w){const k=(d-DAIS)/(E.inner-DAIS),top=Math.round(60+(54-60)*Math.max(0,Math.min(1,k)));return {top,bottom:top-2-(Math.abs(da*d)<w-1?1:0)};}}}
+  return null;}
+ function islet(x,z){
+  for(const s of steps){const d=Math.hypot(x-s.x,z-s.z);if(d<s.r+.4)return {top:s.y,bottom:Math.floor(s.y-1-(s.r-d)*1.6)};}
+  const d0=Math.hypot(x,z);if(d0<72||d0>205)return null;
+  const C=26,gx=Math.floor(x/C),gz=Math.floor(z/C);
+  for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){const cx=gx+dx,cz=gz+dz;if(hash(cx,cz,21)>.42)continue;
+   const ix=cx*C+4+hash(cx,cz,22)*(C-8),iz=cz*C+4+hash(cx,cz,23)*(C-8),ir=2+hash(cx,cz,24)*4,iy=Math.floor(50+hash(cx,cz,25)*22);
+   if(Math.hypot(ix,iz)<72||Math.hypot(ix-100,iz)<12)continue;const d=Math.hypot(x-ix,z-iz)+N.n2(x/4,z/4)*.8;
+   if(d<ir){const t=1-d/ir;return {top:iy+(t>.6?1:0),bottom:Math.floor(iy-1-Math.pow(t,.7)*ir*2.2)};}}
+  return null;}
+ function outerCol(x,z){const d=Math.hypot(x,z);if(d<220)return null;const v=N.fbm2(x/90,z/90,3);if(v<.33)return null;const t=(v-.33)/.67;return {top:Math.floor(52+N.n2(x/50,z/50)*6+t*6),bottom:Math.floor(52-t*24),outer:true};}
+ function colAt(x,z){return mainCol(x,z)||islet(x,z)||outerCol(x,z);}
+ function heightAt(x,z){const c=colAt(x,z);return c?c.top:0;}
+ function genChunk(cx,cz){
+  const d=new Uint16Array(16*16*128),I=(x,y,z)=>x+(z<<4)+(y<<8),ES=B.end_stone,CRY=B.crying_obsidian||B.obsidian,AM=B.amethyst_block||B.star_glass,PU=B.purpur_block||ES;
+  for(let z=0;z<16;z++)for(let x=0;x<16;x++){
+   const wx=cx*16+x,wz=cz*16+z,col=colAt(wx,wz);
+   if(col){for(let y=Math.max(1,col.bottom);y<=col.top;y++)d[I(x,y,z)]=ES;
+    const h=hash(wx,wz,31);
+    if(!col.dais&&h<.02)d[I(x,col.top,z)]=CRY;   // glints of crying obsidian in the crust
+    if(col.dais&&Math.hypot(wx,wz)>8.5&&Math.hypot(wx,wz)<10)d[I(x,col.top,z)]=PU;   // a purpur ring round the dais
+    if(col.outer&&h>.996){const n=2+((hash(wx,wz,32)*4)|0);for(let k=1;k<=n;k++)d[I(x,col.top+k,z)]=AM;}   // amethyst spires on the far islands
+    if(col.outer){const ox=Math.floor(wx/40),oz=Math.floor(wz/40);if(hash(ox,oz,33)<.25){const px=ox*40+20,pz=oz*40+20;if(Math.abs(wx-px)<=1&&Math.abs(wz-pz)<=1&&colAt(px,pz)){const n=6+((hash(ox,oz,34)*6)|0);for(let k=1;k<=n;k++)d[I(x,col.top+k,z)]=(k%3===0?CRY:B.obsidian);}}}}
+   for(const p of pillars){const dd=Math.hypot(wx-p.x,wz-p.z);if(dd>p.r+2.5)continue;const base=col?col.top-2:40;
+    for(let y=base;y<=p.top;y++){const t=(y-base)/Math.max(1,p.top-base),ox=Math.cos(p.tw+y*.35)*(1-t)*1.3,oz=Math.sin(p.tw+y*.35)*(1-t)*1.3,rr=p.r*(1-.42*t)+.55;
+     if(Math.hypot(wx-p.x-ox,wz-p.z-oz)<=rr)d[I(x,y,z)]=(y%5===0?CRY:B.obsidian);}
+    if(wx===p.x&&wz===p.z)d[I(x,p.top+1,z)]=B.star_glass;}
+   if(wx>=98&&wx<=102&&wz>=-2&&wz<=2)d[I(x,48,z)]=B.obsidian;
+  }
+  return d;
+ }
+ return {genChunk,heightAt,biomeAt:()=>0,mountainAt:()=>0,BIOME_NAMES:['The End'],pillars,endGen:2};
+}
+
 /* Ground Zero (the Atomic Age boss dimension, reached through a Fission Gate): an abandoned
    atomic test site. Wind-blown desert flats pocked with glassed craters, a "doom town" of blasted
    houses, steel test towers, half-buried bunkers and pools of glowing sludge. At the origin is the
@@ -2614,7 +2671,7 @@ function buildTextures(){
 const WORLDGEN_SRC = $('worldgen-src').textContent;
 const makeGenMain = new Function(WORLDGEN_SRC + '\nreturn makeGen;')();
 // The Nether has its own generator version (worlds that never visited it get the new Nether).
-function genVer(){return world.dimension==='nether'?(world.netherGen||world.genVersion||2):(world.genVersion||2);}
+function genVer(){return world.dimension==='nether'?(world.netherGen||world.genVersion||2):world.dimension==='end'?(world.endGen||1):(world.genVersion||2);}
 let gen = null;          // main-thread generator (height/biome queries + fallback)
 let workers = [];
 let workerBusy = [];
@@ -3911,7 +3968,7 @@ const store = {
   del(k){ try{ localStorage.removeItem(k); }catch(e){} },
   keys(){ try{ return Object.keys(localStorage); }catch(e){ return []; } },
 };
-world.persist = false;world.genVersion=14;world.netherGen=12; world.containers = new Map(); world.name='World';
+world.persist = false;world.genVersion=14;world.netherGen=12;world.endGen=2; world.containers = new Map(); world.name='World';
 function loadChunkEdits(cx,cz){
   const k=ckey(cx,cz); if(world.edits.has(k)) return world.edits.get(k);
   if(!world.persist) return null;
@@ -3953,7 +4010,7 @@ function saveWorld(){
   }
   if(ok) world.dirtyEdits.clear();
   const containers=[]; for(const [k,c] of world.containers) containers.push([k,{t:c.type,s:c.slots.map(st=>packStack(st)),b:c.burn||0,bm:c.burnMax||0,c:c.cook||0,p:!!c.powered,o:c.owner||undefined,x:c.xp||undefined}]);
-  const meta = { v:20, decor:world.decor||{}, ocean:world.ocean||{}, blasts:world.blasts||[], bombs:atomicBombsSave(), rads:+(player.rads||0).toFixed(2), atomic:atomicSave(), graves:world.graves||[], waypoints:world.waypoints||{}, villages:world.villages||{}, netherGen:world.netherGen||world.genVersion, dayLock:!!world.dayLock, endPortals:world.endPortals||[], endBoss:world.endBoss||{defeated:false}, pendingItems:[...craftGrid2,...craftGrid3,cursor].filter(Boolean).map(packStack), portalLinks:world.portalLinks||[],offhand:packStack(offhand[0]),pistons:[...pistonSticky],plantAges:[...world.plantAges], stats:worldStats,deathCause:world.deathCause||'', dimension:world.dimension||'overworld',dimensions:world.dimensionStates||{}, effects:player.effects||{}, advancements:[...advancements], tnt:primedTNT.map(e=>[e.pos.x,e.pos.y,e.pos.z,e.fuse]), days:dayCount,weather:{type:weather.type,remaining:weather.remaining}, generator:world.genVersion||2, mp:world.mp||undefined, signs:[...signTexts], armor:armorSlots.map(packStack), xpOrbs:xpOrbs.map(e=>[e.value,e.pos.x,e.pos.y,e.pos.z]), mobs:saveMobs(), mobChunks:[...mobChunks], name:world.name, seed:world.seed, mode:player.mode, hardcore:!!world.hardcore, time:dayTime, spawn:world.spawn,
+  const meta = { v:21, decor:world.decor||{}, ocean:world.ocean||{}, blasts:world.blasts||[], bombs:atomicBombsSave(), rads:+(player.rads||0).toFixed(2), atomic:atomicSave(), graves:world.graves||[], waypoints:world.waypoints||{}, villages:world.villages||{}, netherGen:world.netherGen||world.genVersion, endGen:world.endGen||1, dayLock:!!world.dayLock, endPortals:world.endPortals||[], endBoss:world.endBoss||{defeated:false}, pendingItems:[...craftGrid2,...craftGrid3,cursor].filter(Boolean).map(packStack), portalLinks:world.portalLinks||[],offhand:packStack(offhand[0]),pistons:[...pistonSticky],plantAges:[...world.plantAges], stats:worldStats,deathCause:world.deathCause||'', dimension:world.dimension||'overworld',dimensions:world.dimensionStates||{}, effects:player.effects||{}, advancements:[...advancements], tnt:primedTNT.map(e=>[e.pos.x,e.pos.y,e.pos.z,e.fuse]), days:dayCount,weather:{type:weather.type,remaining:weather.remaining}, generator:world.genVersion||2, mp:world.mp||undefined, signs:[...signTexts], armor:armorSlots.map(packStack), xpOrbs:xpOrbs.map(e=>[e.value,e.pos.x,e.pos.y,e.pos.z]), mobs:saveMobs(), mobChunks:[...mobChunks], name:world.name, seed:world.seed, mode:player.mode, hardcore:!!world.hardcore, time:dayTime, spawn:world.spawn,
     p:{ x:+player.pos.x.toFixed(4), y:+player.pos.y.toFixed(4), z:+player.pos.z.toFixed(4), yaw:+player.yaw.toFixed(3), pitch:+player.pitch.toFixed(3),
         fire:player.fire||0, hp:player.health, food:player.food, sat:player.sat, xp:player.xp, fly:player.flying },
     inv: inv.slots.map(st=>packStack(st)), sel:inv.sel, containers,
@@ -4848,7 +4905,7 @@ function setupTitleWorld(meta){
   const seed = meta ? meta.seed : 20261018;
   world.dimension=meta?.dimension||'overworld';world.dimensionStates=meta?.dimensions||{};
   world.dimension=meta?.dimension||'overworld';
-  world.genVersion=meta?.generator||14;world.netherGen=meta?.netherGen||(meta?world.genVersion:12);
+  world.genVersion=meta?.generator||14;world.netherGen=meta?.netherGen||(meta?world.genVersion:12);world.endGen=meta?.endGen===1||meta?.endGen===2?meta.endGen:(meta?1:2);
   world.persist = !!meta;            // read saved edits so the panorama shows your builds
   if(world.seed!==seed || !workers.length||world.builtGenVersion!==genVer()||world.builtDimension!==(world.dimension||'overworld')){ world.edits.clear(); world.dirtyEdits.clear(); startWorld(seed, null, false); }
   if(meta){ titleCam.x=meta.p.x; titleCam.z=meta.p.z; titleCam.y=Math.max(meta.p.y+6, SEA+12); }
@@ -4869,7 +4926,7 @@ function beginGame(seed, meta, mode){
   respawnPending=false;resetMobs();clearSigns();resetRedstone();
   if(world.builtDimension!==world.dimension){world.edits.clear();world.dirtyEdits.clear();}
   if(world.loadedSlot!==worldSlot){world.edits.clear();world.dirtyEdits.clear();world.seed=NaN;world.loadedSlot=worldSlot;}
-  world.genVersion=meta?.generator||14;world.netherGen=meta?.netherGen||(meta?world.genVersion:12);
+  world.genVersion=meta?.generator||14;world.netherGen=meta?.netherGen||(meta?world.genVersion:12);world.endGen=meta?.endGen===1||meta?.endGen===2?meta.endGen:(meta?1:2);
   world.mp=meta?.mp&&typeof meta.mp==='object'?meta.mp:null;
   world.persist = true;
   if(!meta){ world.edits.clear(); world.containers.clear(); }
@@ -5225,10 +5282,10 @@ function buildSky(){
   // gradient dome
   sky.domeU = { uTop:{value:new THREE.Color()}, uHor:{value:new THREE.Color()}, uSun:{value:new THREE.Vector3(1,0,0)}, uGlow:{value:new THREE.Color()}, uGlowAmt:{value:0},
     uSkyLut:U.uSkyLut, uExposure:U.uExposure, uSunRad:U.uSunRad, uTrueSun:U.uTrueSun, uAtmo:U.uAtmo, uHazeK:U.uHazeK, uTime:U.uTime, uUnderwater:U.uUnderwater, uFogColor:U.uFogColor,
-    uCloudTex:{value:null}, uCloudOn:{value:0} };
+    uCloudTex:{value:null}, uCloudOn:{value:0}, uFlat:{value:0} };
   sky.dome = new THREE.Mesh(new THREE.SphereGeometry(600, 24, 16), new THREE.ShaderMaterial({ uniforms:sky.domeU, side:THREE.BackSide, depthWrite:false, depthTest:false, fog:false,
     vertexShader:`varying vec3 vDir; varying vec4 vClip; void main(){ vDir=normalize(position); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); vClip=gl_Position; }`,
-    fragmentShader:`uniform vec3 uTop,uHor,uSun,uGlow; uniform float uGlowAmt; varying vec3 vDir; varying vec4 vClip;
+    fragmentShader:`uniform vec3 uTop,uHor,uSun,uGlow; uniform float uGlowAmt,uFlat; varying vec3 vDir; varying vec4 vClip;
       #ifdef ULTRA
       ${ULTRA_GLSL}
       uniform float uTime,uUnderwater; uniform vec3 uFogColor;
@@ -5240,6 +5297,8 @@ function buildSky(){
       #ifdef ULTRA
         // physically based sky from the scattering LUT, plus a limb-darkened sun disk and its aureole
         if(uUnderwater>0.5){ gl_FragColor=enc(toLin(uFogColor)/uExposure,1.0); return; }
+        // the End has no atmosphere: its own painted gradient, in linear light
+        if(uFlat>0.5){ float hf=max(d.y,0.0); vec3 g=mix(uHor,uTop,pow(hf,0.55)); if(d.y<0.0) g=mix(uHor,uHor*0.4,min(-d.y*3.0,1.0)); gl_FragColor=enc(toLin(g)/uExposure,1.0); return; }
         { vec3 c=skyL(vec3(d.x,max(d.y,0.0),d.z)); c*=mix(1.0,0.55,smoothstep(0.0,-0.3,d.y));
         float mu=dot(d,uTrueSun), rs=0.018, a=acos(clamp(mu,-1.0,1.0));
         float disk=1.0-smoothstep(rs*0.9,rs,a), r=clamp(a/rs,0.0,1.0), limb=1.0-0.55*(1.0-sqrt(1.0-r*r));
@@ -5277,6 +5336,40 @@ function buildSky(){
   scene.add(sky.group);
   buildClouds();
 }
+
+// ---- the End's sky dressing (built on first visit): an eclipsed star whose corona turns slowly,
+// two nebula veils, and motes of light drifting up past the player. Sky-only, so every End gets it.
+function buildEndSky(){
+ const G=new THREE.Group();G.renderOrder=-9;
+ const cv=(w,h,fn)=>{const c=document.createElement('canvas');c.width=w;c.height=h;fn(c.getContext('2d'),w,h);const t=new THREE.CanvasTexture(c);t.minFilter=THREE.LinearFilter;t.generateMipmaps=false;return t;};
+ const R=mulberry32(4242);
+ // the eclipse: dark disc, a thin bright rim and a corona of streamers, all in one texture (normal blending, so the disc hides the stars)
+ const corona=cv(256,256,(g,w)=>{const c=w/2,rd=c*.3;let gr=g.createRadialGradient(c,c,rd,c,c,c);gr.addColorStop(0,'rgba(200,255,245,.95)');gr.addColorStop(.07,'rgba(110,230,225,.6)');gr.addColorStop(.3,'rgba(100,80,210,.22)');gr.addColorStop(1,'rgba(40,10,80,0)');g.fillStyle=gr;g.fillRect(0,0,w,w);
+  g.globalCompositeOperation='lighter';for(let i=0;i<46;i++){const a=R()*6.283,l=c*(.5+R()*.48),wd=.012+R()*.03;g.beginPath();g.moveTo(c+Math.cos(a)*rd,c+Math.sin(a)*rd);g.lineTo(c+Math.cos(a-wd)*l,c+Math.sin(a-wd)*l);g.lineTo(c+Math.cos(a+wd)*l,c+Math.sin(a+wd)*l);g.closePath();
+   const sg=g.createRadialGradient(c,c,rd,c,c,l);sg.addColorStop(0,'rgba(170,255,240,.32)');sg.addColorStop(1,'rgba(120,80,255,0)');g.fillStyle=sg;g.fill();}
+  g.globalCompositeOperation='source-over';g.beginPath();g.arc(c,c,rd+2.5,0,6.283);g.fillStyle='rgba(225,255,250,1)';g.fill();g.beginPath();g.arc(c,c,rd,0,6.283);g.fillStyle='#030208';g.fill();});
+ const add=(tex,size,blend,order)=>{const m=new THREE.Mesh(new THREE.PlaneGeometry(size,size),new THREE.MeshBasicMaterial({map:tex,transparent:true,depthWrite:false,depthTest:true,blending:blend,fog:false}));m.renderOrder=order;m.frustumCulled=false;G.add(m);return m;};
+ const dir=new THREE.Vector3(-.82,.34,-.46).normalize();   // above the island as you step off the arrival platform
+ const cor=add(corona,170,THREE.NormalBlending,-9.3);cor.position.copy(dir).multiplyScalar(430);
+ const N=(new Function(WORLDGEN_SRC+'\nreturn makeNoise;')())(913);
+ const veil=(cols,seedOff)=>cv(256,128,(g,w,h)=>{const img=g.createImageData(w,h);for(let y=0;y<h;y++)for(let x=0;x<w;x++){const v=N.fbm2(x/48+seedOff,y/30,4)*.5+.5,band=Math.sin(y/h*Math.PI),e=Math.min(1,Math.min(x,w-x)/40),a=Math.max(0,v-.38)*1.9*band*e,k=(y*w+x)*4,c=v>.62?cols[1]:cols[0];
+  img.data[k]=c[0];img.data[k+1]=c[1];img.data[k+2]=c[2];img.data[k+3]=Math.min(255,a*170);}g.putImageData(img,0,0);});
+ const v1=add(veil([[60,150,170],[150,110,230]],0),1,THREE.AdditiveBlending,-9.4);v1.scale.set(1100,420,1);v1.position.set(-260,140,-330);v1.lookAt(0,0,0);
+ const v2=add(veil([[120,70,200],[70,190,180]],7),1,THREE.AdditiveBlending,-9.4);v2.scale.set(900,300,1);v2.position.set(380,60,240);v2.lookAt(0,0,0);
+ const M=180,pos=new Float32Array(M*3),seedP=[];for(let i=0;i<M;i++)seedP.push([R()*64,R()*40,R()*64,.4+R()*.9]);
+ const pg=new THREE.BufferGeometry();pg.setAttribute('position',new THREE.BufferAttribute(pos,3));
+ const motes=new THREE.Points(pg,new THREE.PointsMaterial({color:0xa8fff0,size:.16,sizeAttenuation:true,transparent:true,opacity:.75,blending:THREE.AdditiveBlending,depthWrite:false}));motes.frustumCulled=false;scene.add(motes);
+ sky.endFx=G;sky.endMotes={pts:motes,seed:seedP,t:0};G.userData={cor,face:[cor,v1,v2]};sky.group.add(G);
+}
+function endSkyFrame(dt,camPos){
+ if(!sky.endFx)buildEndSky();sky.endFx.visible=true;sky.group.updateMatrixWorld();   // lookAt works in world space: face the camera every frame
+ const U_=sky.endFx.userData;U_.spin=(U_.spin||0)+dt*.02;for(const m of U_.face)m.lookAt(camPos);U_.cor.rotateZ(U_.spin);
+ const m=sky.endMotes;m.t+=dt;m.pts.visible=CONFIG.reduceMotion!==true;const a=m.pts.geometry.attributes.position;
+ for(let i=0;i<m.seed.length;i++){const s=m.seed[i],w=(v,c,span)=>((v-c)%span+span*1.5)%span-span/2;
+  a.setXYZ(i,camPos.x+w(s[0]+Math.sin(m.t*.2+i)*1.5,camPos.x,64),camPos.y+w(s[1]+m.t*s[3],camPos.y,40),camPos.z+w(s[2]+Math.cos(m.t*.17+i)*1.5,camPos.z,64));}
+ a.needsUpdate=true;
+}
+{const _us=updateSky;updateSky=function(dt,camPos){_us(dt,camPos);if(world.dimension!=='end'&&sky.endMotes)sky.endMotes.pts.visible=false;};}
 // ---- clouds: a 64x64 noise map of 12x12-block cells, 4 blocks thick, face-culled
 const CLOUD_CELL=12, CLOUD_N=64, CLOUD_Y=122, CLOUD_H=4, CLOUD_SPAN=CLOUD_CELL*CLOUD_N;
 function buildClouds(){
@@ -5339,10 +5432,11 @@ function updateSky(dt, camPos){
   const nether=world.dimension==='nether';sky.group.visible=!nether;U.uAmbient.value=nether?.14:0;
   if(world.dimension==='end'){
     for(const cloud of sky.clouds)cloud.visible=false;sky.sun.visible=sky.moon.visible=false;sky.group.position.copy(camPos);
-    sky.domeU.uTop.value.setRGB(.03,.015,.06);sky.domeU.uHor.value.setRGB(.13,.08,.18);sky.domeU.uGlowAmt.value=0;sky.starMat.opacity=.9;sky.starPivot.rotation.z+=dt*.01;
-    U.uSky.value=.82;U.uSkyTint.value.setRGB(.9,.86,1);U.uAmbient.value=.22;U.uFogColor.value.copy(sky.domeU.uHor.value);sfx.rain(0);sfx.update(dt);return;
+    // the End's own sky: a deep teal-violet void, an eclipsed star with a slow corona, nebula veils and drifting motes
+    sky.domeU.uTop.value.setRGB(.035,.035,.1);sky.domeU.uHor.value.setRGB(.13,.21,.25);sky.domeU.uGlowAmt.value=0;sky.domeU.uFlat.value=1;sky.starMat.opacity=.95;sky.starPivot.rotation.z+=dt*.006;
+    U.uSky.value=.85;U.uSkyTint.value.setRGB(.86,.92,1);U.uAmbient.value=.25;U.uFogColor.value.copy(sky.domeU.uHor.value);endSkyFrame(dt,camPos);sfx.rain(0);sfx.update(dt);return;
   }
-  sky.sun.visible=sky.moon.visible=true;
+  sky.sun.visible=sky.moon.visible=true;sky.domeU.uFlat.value=0;if(sky.endFx)sky.endFx.visible=false;
   if(nether){
     for(const cloud of sky.clouds)cloud.visible=false;
     scene.background.setRGB(.17,.045,.025);U.uFogColor.value.copy(scene.background);U.uFog.value.set(12,CONFIG.renderDistance*16*.9);U.uSky.value=.35;U.uSkyTint.value.setRGB(1,.65,.45);sfx.rain(0);sfx.update(dt);return;
@@ -5998,6 +6092,9 @@ function migrateMeta(m){
   if(m.v<19){m.blasts=[];m.bombs=[];m.rads=0;m.atomic={};m.v=19;}
   // v20: decorations (armor stands, item frames, paintings, banners per dimension) and the hardcore flag
   if(m.v<20){m.decor={};m.hardcore=!!m.hardcore;m.ocean={};m.v=20;}
+  // v21: End generator 2 (the Shattered Halo). Worlds whose End was already built keep generator 1
+  if(m.v<21){const e=m.endBoss||{},visited=m.dimension==='end'||!!m.dimensions?.end||!!e.defeated||Number.isFinite(e.hp)&&e.hp>0;m.endGen=visited?1:2;m.v=21;}
+  if(m.endGen!==1&&m.endGen!==2)m.endGen=1;
   if(!m.ocean||typeof m.ocean!=='object'||Array.isArray(m.ocean))m.ocean={};
   if(!m.decor||typeof m.decor!=='object'||Array.isArray(m.decor))m.decor={};
   if(!Array.isArray(m.blasts))m.blasts=[];if(!Array.isArray(m.bombs))m.bombs=[];if(!Number.isFinite(m.rads))m.rads=0;if(!m.atomic||typeof m.atomic!=='object'||Array.isArray(m.atomic))m.atomic={};
@@ -7307,7 +7404,7 @@ function exportWorld(){
 }
 function validateWorldFile(data){
  if(!data||data.format!=='Minercraft'||data.version!==1||!data.meta||!data.chunks||Array.isArray(data.chunks))throw Error('Not a Minercraft world export');
- const m=data.meta;if(!Number.isInteger(m.v)||m.v<1||m.v>20||!Number.isFinite(m.seed)||!m.p||!['x','y','z'].every(k=>Number.isFinite(m.p[k])))throw Error('Invalid world metadata');
+ const m=data.meta;if(!Number.isInteger(m.v)||m.v<1||m.v>21||!Number.isFinite(m.seed)||!m.p||!['x','y','z'].every(k=>Number.isFinite(m.p[k])))throw Error('Invalid world metadata');
  if(Math.abs(m.p.x)>500000||Math.abs(m.p.z)>500000||m.p.y<-32||m.p.y>160)throw Error('Player coordinates are outside the supported world');
  if(!Array.isArray(m.inv)||m.inv.length>36)throw Error('Invalid inventory');
  const stack=s=>{if(!s)return;if(!Array.isArray(s)||!itemDef(s[0])||s[0]===0||!Number.isInteger(s[1])||s[1]<1||s[1]>maxStack(s[0])||s[2]!==null&&s[2]!==undefined&&(!Number.isFinite(s[2])||s[2]<1))throw Error('Invalid saved item stack');};
@@ -7612,19 +7709,32 @@ function settleEndSpawn(){
 }
 /* ---- the Starwing ---- */
 MOB_DEFS.starwing={hp:200,w:2.2,h:2,speed:10,color:[40,30,56],hostile:true,flying:true,fireImmune:true,boss:true,loot:[]};
+// The Starwing: a celestial manta. A flat indigo body mapped with constellations, broad swept
+// wings whose glowing leading edges ripple in a slow wave, four cyan eyes under a crown of crystal
+// shards, a crystal spine and a long whip tail ending in a magenta star-barb.
+const SW={ink:[30,26,62],belly:[96,110,150],wing:[40,48,92],wing2:[56,70,120],edge:[120,232,236],star:[236,250,255],eye:[150,255,240],gem:[255,118,226],crys:[160,236,240]};
+const swStars=(P,w,h,R,n=1)=>{for(let i=0;i<w*h/14*n;i++){const x=R()*w|0,y=R()*h|0;P(x,y,R()<.3?SW.edge:SW.star);}for(let k=0;k<3;k++){let x=R()*w|0,y=R()*h|0;for(let s=0;s<4;s++){const nx=clamp(x+((R()*5)|0)-2,0,w-1),ny=clamp(y+((R()*5)|0)-2,0,h-1);P(nx,ny,SW.star);x=nx;y=ny;}}};
+const swWing=(P,w,h,R,mirror)=>{for(let y=0;y<h;y++)for(let x=0;x<w;x++){const t=(mirror?w-1-x:x)/w;P(x,y,[SW.wing[0]+(SW.wing2[0]-SW.wing[0])*t,SW.wing[1]+(SW.wing2[1]-SW.wing[1])*t,SW.wing[2]+(SW.wing2[2]-SW.wing[2])*t]);}
+ rectP(P,0,h-2,w,2,SW.edge);for(let x=2;x<w;x+=4)rectP(P,mirror?w-1-x:x,0,1,h-2,[70,90,150]);swStars(P,w,h-2,R,.7);};
 MOB_SPECS.starwing={scale:2.5,parts:[
- {id:'body',pivot:[0,6,0],box:[-6,-4,-12,12,8,24],c:[38,30,56],f:{top:(P,w,h,R)=>{for(let y=1;y<h;y+=3)rectP(P,w/2-1,y,2,2,[150,80,200]);},bottom:(P,w,h,R)=>{for(let i=0;i<w*h/5;i++)P(R()*w,R()*h,[70,56,96]);}}},
- {id:'neck',pivot:[0,6,12],box:[-3,-3,0,6,6,8],c:[44,34,62]},
- {id:'head',pivot:[0,7,19],box:[-5,-4,0,10,8,10],c:[46,36,66],f:{front:(P,w,h)=>{rectP(P,1,2,3,2,[255,90,230]);rectP(P,6,2,3,2,[255,90,230]);P(2,2,[255,220,250]);P(7,2,[255,220,250]);rectP(P,1,6,8,1,[20,14,28]);}}},
- {id:'hornL',parent:'head',box:[-4,4,1,2,4,2],c:[200,190,220]},
- {id:'hornR',parent:'head',box:[2,4,1,2,4,2],c:[200,190,220]},
- {id:'wingR',pivot:[6,8,2],box:[0,-1,-8,22,2,16],c:[58,40,84],limb:{axis:'z',amp:.55,idle:true,phase:0},f:{top:(P,w,h,R)=>{for(let x=3;x<w;x+=5)rectP(P,x,0,1,h,[90,60,130]);}}},
- {id:'tipR',parent:'wingR',pivot:[22,0,0],box:[0,-.5,-6,18,1,12],c:[74,52,104],rot:[0,0,-.25]},
- {id:'wingL',pivot:[-6,8,2],box:[-22,-1,-8,22,2,16],c:[58,40,84],limb:{axis:'z',amp:.55,idle:true,phase:Math.PI},f:{top:(P,w,h,R)=>{for(let x=1;x<w;x+=5)rectP(P,x,0,1,h,[90,60,130]);}}},
- {id:'tipL',parent:'wingL',pivot:[-22,0,0],box:[-18,-.5,-6,18,1,12],c:[74,52,104],rot:[0,0,.25]},
- {id:'tail',pivot:[0,6,-12],box:[-3,-3,-12,6,6,12],c:[40,32,58],limb:{axis:'y',amp:.25,idle:true,phase:.5}},
- {id:'tail2',parent:'tail',pivot:[0,0,-12],box:[-2,-2,-10,4,4,10],c:[44,34,62]},
- {id:'tail3',parent:'tail2',pivot:[0,0,-10],box:[-1,-1,-8,2,2,8],c:[150,80,200]},
+ {id:'body',pivot:[0,6,0],box:[-7,-3,-11,14,6,22],c:SW.ink,f:{top:(P,w,h,R)=>{swStars(P,w,h,R);rectP(P,w/2-1,0,2,h,[60,52,110]);},bottom:(P,w,h)=>{rectP(P,0,0,w,h,SW.belly);rectP(P,w/2-2,h/2-3,4,6,SW.gem);}}},
+ {id:'spine1',parent:'body',box:[-1,3,-6,2,5,3],c:SW.crys,rot:[-.35,0,0]},
+ {id:'spine2',parent:'body',box:[-1,3,0,2,4,3],c:SW.crys,rot:[-.35,0,0]},
+ {id:'spine3',parent:'body',box:[-.5,3,5,1,3,2],c:SW.crys,rot:[-.35,0,0]},
+ {id:'head',pivot:[0,6,11],box:[-5,-3,0,10,6,8],c:[36,32,72],f:{front:(P,w,h)=>{for(const x of [1,3,6,8]){rectP(P,x,1,1,2,SW.eye);}P(2,1,[255,255,255]);P(7,1,[255,255,255]);rectP(P,2,4,6,1,[14,10,30]);},top:(P,w,h,R)=>swStars(P,w,h,R)}},
+ {id:'finL',parent:'head',box:[-6,-3,4,2,3,7],c:[52,62,110],rot:[0,.25,0],f:{top:(P,w,h)=>rectP(P,0,0,w,h,SW.edge)}},
+ {id:'finR',parent:'head',box:[4,-3,4,2,3,7],c:[52,62,110],rot:[0,-.25,0],f:{top:(P,w,h)=>rectP(P,0,0,w,h,SW.edge)}},
+ {id:'crown1',parent:'head',box:[-1,3,1,2,6,2],c:SW.crys,rot:[-.5,0,0]},
+ {id:'crown2',parent:'head',box:[-4,2,1,2,5,2],c:SW.crys,rot:[-.45,0,.35]},
+ {id:'crown3',parent:'head',box:[2,2,1,2,5,2],c:SW.crys,rot:[-.45,0,-.35]},
+ {id:'wingR',pivot:[7,6,1],box:[0,-1,-10,20,2,18],c:SW.wing,limb:{axis:'z',amp:.42,idle:true,phase:0},f:{top:(P,w,h,R)=>swWing(P,w,h,R,false),bottom:(P,w,h,R)=>swWing(P,w,h,R,false)}},
+ {id:'tipR',parent:'wingR',pivot:[20,0,-2],box:[0,-.5,-7,18,1,11],c:SW.wing2,rot:[0,-.35,-.2],limb:{axis:'z',amp:.3,idle:true,phase:-.9},f:{top:(P,w,h,R)=>swWing(P,w,h,R,false)}},
+ {id:'wingL',pivot:[-7,6,1],box:[-20,-1,-10,20,2,18],c:SW.wing,limb:{axis:'z',amp:.42,idle:true,phase:Math.PI},f:{top:(P,w,h,R)=>swWing(P,w,h,R,true),bottom:(P,w,h,R)=>swWing(P,w,h,R,true)}},
+ {id:'tipL',parent:'wingL',pivot:[-20,0,-2],box:[-18,-.5,-7,18,1,11],c:SW.wing2,rot:[0,.35,.2],limb:{axis:'z',amp:.3,idle:true,phase:Math.PI-.9},f:{top:(P,w,h,R)=>swWing(P,w,h,R,true)}},
+ {id:'tail',pivot:[0,5,-11],box:[-1.5,-1.5,-14,3,3,14],c:SW.ink,limb:{axis:'y',amp:.3,idle:true,phase:.5},f:{top:(P,w,h)=>{for(let y=1;y<h;y+=3)P(1,y,SW.edge);}}},
+ {id:'tail2',parent:'tail',pivot:[0,0,-14],box:[-1,-1,-14,2,2,14],c:[34,30,70],limb:{axis:'y',amp:.35,idle:true,phase:1.2}},
+ {id:'barb',parent:'tail2',pivot:[0,0,-14],box:[-2,-.5,-6,4,1,6],c:SW.gem,f:{top:(P,w,h)=>{rectP(P,0,0,w,h,SW.gem);P(1,1,[255,230,250]);}}},
+ {id:'barb2',parent:'tail2',pivot:[0,0,-14],box:[-.5,-2,-5,1,4,5],c:[220,90,200]},
 ]};
 const bossBar=el('div',null,{position:'fixed',left:'50%',top:g(6),transform:'translateX(-50%)',width:g(182),display:'none',pointerEvents:'none',zIndex:15,textAlign:'center'},document.body);
 const bossName=el('div','sh',{fontSize:g(10),marginBottom:g(2),color:'#fff'},bossBar);bossName.textContent='Starwing';
@@ -13911,7 +14021,7 @@ window.__bc = { checkEndPortalAt, get endPortals(){return world.endPortals;}, ge
        list and the connection handshake (encrypted with ECDH + AES-GCM);
        no gameplay goes through them.
    ========================================================================= */
-const NET_V=11, NET_NS='minercraft-jupixels/v1', NET_MAX=8, NET_STALE=150000;
+const NET_V=12, NET_NS='minercraft-jupixels/v1', NET_MAX=8, NET_STALE=150000;
 const NET_QS=new URLSearchParams(location.search);
 const NET_BROKERS=(NET_QS.get('relay')||'wss://mqtt.eclipseprojects.io:443/mqtt,wss://broker.emqx.io:8084/mqtt,wss://broker.hivemq.com:8884/mqtt,wss://test.mosquitto.org:8081/mqtt').split(',').map(s=>s.trim()).filter(Boolean);
 const NET_RTC={iceServers:[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']},{urls:'stun:stun.cloudflare.com:3478'}]};
@@ -14043,7 +14153,7 @@ function netSnapshot(at){
  if(world.persist){const prefix=chunkPrefix();for(const k of store.keys())if(k.startsWith(prefix)){const rest=k.slice(prefix.length);if(/^-?\d+,-?\d+$/.test(rest))edits[rest]=store.get(k)||'';}}
  for(const [k,m] of world.edits){const cx=Math.floor(k/65536)-32768,cz=(k%65536)-32768;edits[cx+','+cz]=netEncodeEdits(m);}
  const items=itemEntities.filter(e=>e.nid&&!e.fly).map(e=>[e.nid,e.id,e.count,e.d??null,e.en||null,r2(e.pos.x),r2(e.pos.y),r2(e.pos.z)]);
- return {name:world.name,seed:world.seed,lk:!!world.dayLock,gen:world.genVersion||2,ng:world.netherGen||world.genVersion||2,dim:world.dimension||'overworld',mode:world.mp?.mode||player.mode,spawn:world.spawn,day:dayTime,days:dayCount,
+ return {name:world.name,seed:world.seed,lk:!!world.dayLock,gen:world.genVersion||2,ng:world.netherGen||world.genVersion||2,eg:world.endGen||1,dim:world.dimension||'overworld',mode:world.mp?.mode||player.mode,spawn:world.spawn,day:dayTime,days:dayCount,
   w:[weather.type,weather.remaining],diff:CONFIG.difficulty,pvp:!!world.mp?.pvp,blasts:world.blasts||[],signs:[...signTexts],pistons:[...pistonSticky],edits,items,host:net.me,at:at||[player.pos.x,player.pos.y,player.pos.z]};
 }
 
@@ -14432,7 +14542,7 @@ function netEnterWorld(w,dimChange){
  net.me=w.you||net.me;net.dim=w.dim;net.inWorld=true;netClearAvatars();
  const spawn=Array.isArray(w.spawn)&&w.spawn.every(Number.isFinite)?w.spawn:null,at=Array.isArray(w.at)&&w.at.every(Number.isFinite)?w.at:[.5,80,.5];
  const pos=dimChange?at:s?.p&&s.p.every(Number.isFinite)?s.p:spawn||at;
- const meta={v:20,decor:Array.isArray(w.dc)?{[DIMENSIONS.includes(w.dim)?w.dim:'overworld']:w.dc}:{},graves:[],waypoints:{},villages:{},blasts:Array.isArray(w.blasts)?w.blasts.filter(validBlast):[],netherGen:[1,2,3,4,5,6,7,8,9,10,11,12,13,14].includes(w.ng)?w.ng:[1,2,3,4,5,6,7,8,9,10,11,12,13,14].includes(w.gen)?w.gen:12,dayLock:!!w.lk,name:String(w.name||'World').slice(0,32),seed:w.seed|0,mode:w.mode==='creative'?'creative':'survival',generator:[1,2,3,4,5,6,7,8,9,10,11,12,13,14].includes(w.gen)?w.gen:14,dimension:DIMENSIONS.includes(w.dim)?w.dim:'overworld',
+ const meta={v:21,endGen:w.eg===2?2:1,decor:Array.isArray(w.dc)?{[DIMENSIONS.includes(w.dim)?w.dim:'overworld']:w.dc}:{},graves:[],waypoints:{},villages:{},blasts:Array.isArray(w.blasts)?w.blasts.filter(validBlast):[],netherGen:[1,2,3,4,5,6,7,8,9,10,11,12,13,14].includes(w.ng)?w.ng:[1,2,3,4,5,6,7,8,9,10,11,12,13,14].includes(w.gen)?w.gen:12,dayLock:!!w.lk,name:String(w.name||'World').slice(0,32),seed:w.seed|0,mode:w.mode==='creative'?'creative':'survival',generator:[1,2,3,4,5,6,7,8,9,10,11,12,13,14].includes(w.gen)?w.gen:14,dimension:DIMENSIONS.includes(w.dim)?w.dim:'overworld',
   spawn:dimChange?at:spawn,time:+w.day||0,days:w.days|0,weather:{type:Array.isArray(w.w)?w.w[0]:'clear',remaining:1e9},
   p:{x:pos[0],y:pos[1],z:pos[2],yaw:pos[3]||0,pitch:pos[4]||0,fire:0,hp:s?.hp??20,food:s?.food??20,sat:s?.sat??5,xp:s?.xp??0,fly:false},
   inv:s?.inv||[],armor:s?.armor||[],offhand:s?.off||null,sel:s?.sel||0,effects:s?.fx||{},signs:Array.isArray(w.signs)?w.signs:[],pistons:Array.isArray(w.pistons)?w.pistons:[],
