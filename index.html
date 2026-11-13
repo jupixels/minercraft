@@ -89,7 +89,7 @@ img,canvas.px{image-rendering:pixelated;image-rendering:crisp-edges}
 #hotsel{position:absolute;top:calc(var(--g)*-1);width:calc(var(--g)*24);height:calc(var(--g)*24);background-size:100% 100%}
 .hslot{position:absolute;top:calc(var(--g)*3);width:calc(var(--g)*16);height:calc(var(--g)*16)}
 .icon{position:absolute;inset:0;width:100%;height:100%}
-.count{position:absolute;right:calc(var(--g)*-1);bottom:calc(var(--g)*-2);font-size:calc(var(--g)*12);color:#fff;text-shadow:var(--g) var(--g) 0 #3f3f3f;pointer-events:none}
+.count{position:absolute;right:calc(var(--g)*-1);bottom:calc(var(--g)*-1);font-size:calc(var(--g)*9);color:#fff;text-shadow:var(--g) var(--g) 0 #3f3f3f;pointer-events:none}
 #stats{position:absolute;left:50%;bottom:calc(var(--g)*22);width:calc(var(--g)*182);transform:translateX(-50%);height:calc(var(--g)*20)}
 #hearts,#food,#bubbles{position:absolute;display:flex;height:calc(var(--g)*9)}
 #hearts{left:0;top:0} #food{right:0;top:0;flex-direction:row-reverse} #bubbles{right:0;top:calc(var(--g)*-10);flex-direction:row-reverse}
@@ -4265,35 +4265,49 @@ const ICONS = {};
 function shadeCanvas(src, f){ return pxCanvas(16,16,g=>{ g.drawImage(src,0,0); const d=g.getImageData(0,0,16,16); for(let i=0;i<d.data.length;i+=4){ d.data[i]*=f; d.data[i+1]*=f; d.data[i+2]*=f; } g.putImageData(d,0,0); }); }
 function tileCanvasOf(id, face){ const t=FACE_TILE[id*6+face]; const name=Object.keys(TEX).find(n=>TEX[n]===t); return TILE_CANVAS[name]; }
 const TEX_NAME = {};
+// Icons are drawn at the size they are shown: 16 GUI units x the GUI scale x the device pixel ratio
+// (k device pixels per texel), so flat sprites are exact integer nearest-neighbour blow-ups and block
+// icons are crisp isometric cubes built texel by texel (no resampled, smeared textures).
+function iconK(){const g=parseFloat(document.body.style.getPropertyValue('--g'))||2;return clamp(Math.round(g*(window.devicePixelRatio||1)),2,8);}
+const _iconPix=new Map();function tilePixels(c){let d=_iconPix.get(c);if(!d){d=c.getContext('2d').getImageData(0,0,16,16).data;_iconPix.set(c,d);}return d;}
+// project a point of the unit cube into icon units (a 32-unit square): top vertex at (16,2)
+const isoP=(x,y,z)=>[16+14*x-14*z,2+7*x+7*z+14*(1-y)];
+function isoBoxesCanvas(boxes,tileOf,k){
+ const S=16*k,sc=S/32;return pxCanvas(S,S,g=>{
+  const quad=(pts,col)=>{g.fillStyle=col;g.strokeStyle=col;g.beginPath();g.moveTo(pts[0][0]*sc,pts[0][1]*sc);for(let i=1;i<4;i++)g.lineTo(pts[i][0]*sc,pts[i][1]*sc);g.closePath();g.fill();g.lineWidth=.7;g.stroke();};
+  const face=(tile,shade,rect,corner)=>{if(!tile)return;const d=tilePixels(tile),[u0,v0,u1,v1]=rect;
+   for(let v=Math.floor(v0*16);v<Math.ceil(v1*16);v++)for(let u=Math.floor(u0*16);u<Math.ceil(u1*16);u++){const o=(v*16+u)*4;if(d[o+3]<128)continue;
+    const a=Math.max(u/16,u0),b=Math.min((u+1)/16,u1),c=Math.max(v/16,v0),e=Math.min((v+1)/16,v1);if(b<=a||e<=c)continue;
+    quad([corner(a,c),corner(b,c),corner(b,e),corner(a,e)],`rgb(${d[o]*shade|0},${d[o+1]*shade|0},${d[o+2]*shade|0})`);}};
+  for(const [x0,y0,z0,x1,y1,z1] of boxes){
+   face(tileOf(2),1,[x0,z0,x1,z1],(u,v)=>isoP(u,y1,v));                           // top: texel (x,z)
+   face(tileOf(4),.8,[x0,1-y1,x1,1-y0],(u,v)=>isoP(u,1-v,z1));                     // left/front (+z): texel (x, 1-y)
+   face(tileOf(0),.62,[1-z1,1-y1,1-z0,1-y0],(u,v)=>isoP(x1,1-v,1-u));}            // right (+x): texel (1-z, 1-y)
+ });}
+function flatIcon(c,k){return pxCanvas(16*k,16*k,g=>{g.imageSmoothingEnabled=false;g.drawImage(c,0,0,16*k,16*k);});}
 function iconURL(id){
-  if(ICONS[id]) return ICONS[id];
-  let url;
-  if(!BLOCKS[id]){ const it=ITEMS[id]; url = pxCanvas(32,32,g=>g.drawImage(TILE_CANVAS['item_'+it.icon],0,0,32,32)).toDataURL(); }
+  const k=iconK(),key=k+':'+id;
+  if(ICONS[key]) return ICONS[key];
+  let url;const T=f=>TILE_CANVAS[TEX_NAME[FACE_TILE[id*6+f]]];
+  if(!BLOCKS[id]){ const it=ITEMS[id]; url = flatIcon(TILE_CANVAS['item_'+it.icon],k).toDataURL(); }
   else {
     const b=BLOCKS[id];
     if(b.plant || b.model==='torch' || b.model==='flat' || b.liquid){
-      const c = b.liquid ? TILE_CANVAS[b.tex.all] : TILE_CANVAS[TEX_NAME[FACE_TILE[id*6]]];
-      url = pxCanvas(32,32,g=>g.drawImage(c,0,0,32,32)).toDataURL();
+      url = flatIcon(b.liquid ? TILE_CANVAS[b.tex.all] : T(0),k).toDataURL();
     } else if(b.model==='door'||b.model==='door_open'){
-      url = pxCanvas(32,32,g=>{g.imageSmoothingEnabled=false;g.drawImage(TILE_CANVAS.door_top,8,0,16,16);g.drawImage(TILE_CANVAS.door_bottom,8,16,16,16);}).toDataURL();
+      url = pxCanvas(16*k,16*k,g=>{g.imageSmoothingEnabled=false;g.drawImage(TILE_CANVAS.door_top,4*k,0,8*k,8*k);g.drawImage(TILE_CANVAS.door_bottom,4*k,8*k,8*k,8*k);}).toDataURL();
     } else if(b.model==='ladder'){
-      url = pxCanvas(32,32,g=>g.drawImage(TILE_CANVAS.ladder,0,0,32,32)).toDataURL();
+      url = flatIcon(TILE_CANVAS.ladder,k).toDataURL();
     } else if(b.model==='pane'){
-      url = pxCanvas(32,32,g=>g.drawImage(TILE_CANVAS[TEX_NAME[FACE_TILE[id*6]]]||TILE_CANVAS.glass,0,0,32,32)).toDataURL();
+      url = flatIcon(T(0)||TILE_CANVAS.glass,k).toDataURL();
     } else if(SHAPE_CACHE[id]){
-      url = isoShapeIcon(id).toDataURL();
+      url = isoShapeIcon(id,k).toDataURL();
     } else {
-      const top=TILE_CANVAS[TEX_NAME[FACE_TILE[id*6+2]]];
-      const front=TILE_CANVAS[TEX_NAME[FACE_TILE[id*6+(b.facing!==undefined?FACING_FACE[b.facing]:4)]]];
-      const side=TILE_CANVAS[TEX_NAME[FACE_TILE[id*6+0]]];
-      url = pxCanvas(32,32,g=>{
-        g.setTransform(14/16,7/16,-14/16,7/16,16,2); g.drawImage(top,0,0);
-        g.setTransform(14/16,7/16,0,14/16,2,9); g.drawImage(shadeCanvas(front,0.78),0,0);
-        g.setTransform(14/16,-7/16,0,14/16,16,16); g.drawImage(shadeCanvas(side,0.6),0,0);
-      }).toDataURL();
+      const fr=b.facing!==undefined?FACING_FACE[b.facing]:4;
+      url = isoBoxesCanvas(FULL_SHAPE,f=>f===4?T(fr):T(f),k).toDataURL();
     }
   }
-  return ICONS[id]=url;
+  return ICONS[key]=url;
 }
 
 /* =========================================================================
@@ -4389,24 +4403,15 @@ function buildItemArt(){
 }
 /* ---- shape-aware isometric block icons (slabs, stairs, fences, doors ...) ---- */
 const ICON_SHAPE_OVERRIDE={stairs:2,fence:5,pane:5};
-function isoShapeIcon(id){
+function isoShapeIcon(id,k=iconK()){
   const b=BLOCKS[id];let boxes;
   if(b.model==='fence'||b.model==='pane')boxes=CONNECT_CACHE[b.model][5];
   else if(b.model==='stairs')boxes=rotateShape([[0,0,0,1,.5,1],[0,.5,.5,1,1,1]],2);
   else boxes=SHAPE_CACHE[id]||FULL_SHAPE;
   // normalise tall shapes (fences/gates are 1.5 high) into the icon
-  let ymax=1;for(const r of boxes)ymax=Math.max(ymax,r[4]);const k=1/ymax;
-  boxes=boxes.map(r=>[r[0],r[1]*k,r[2],r[3],r[4]*k,r[5]]).sort((a,c)=>(a[0]+a[3]+a[2]+a[5]+a[1]+a[4])-(c[0]+c[3]+c[2]+c[5]+c[1]+c[4]));
-  const tile=(f)=>TILE_CANVAS[TEX_NAME[FACE_TILE[id*6+f]]];
-  const top=tile(2),front=shadeCanvas(tile(4),.78),side=shadeCanvas(tile(0),.6);
-  return pxCanvas(32,32,g=>{g.imageSmoothingEnabled=false;
-    for(const [x0,y0,z0,x1,y1,z1] of boxes){
-      const s=16;
-      g.setTransform(14/16,7/16,-14/16,7/16,16,16-14*y1);g.drawImage(top,x0*s,z0*s,Math.max(.5,(x1-x0)*s),Math.max(.5,(z1-z0)*s),x0*s,z0*s,(x1-x0)*s,(z1-z0)*s);
-      g.setTransform(14/16,7/16,0,14/16,16-14*z1,2+7*z1);g.drawImage(front,x0*s,(1-y1)*s,Math.max(.5,(x1-x0)*s),Math.max(.5,(y1-y0)*s),x0*s,(1-y1)*s,(x1-x0)*s,(y1-y0)*s);
-      g.setTransform(14/16,-7/16,0,14/16,2+14*x1,9+7*x1);g.drawImage(side,(1-z1)*s,(1-y1)*s,Math.max(.5,(z1-z0)*s),Math.max(.5,(y1-y0)*s),(1-z1)*s,(1-y1)*s,(z1-z0)*s,(y1-y0)*s);
-    }
-  });
+  let ymax=1;for(const r of boxes)ymax=Math.max(ymax,r[4]);const s=1/ymax;
+  boxes=boxes.map(r=>[r[0],r[1]*s,r[2],r[3],r[4]*s,r[5]]).sort((a,c)=>(a[0]+a[3]+a[2]+a[5]+a[1]+a[4])-(c[0]+c[3]+c[2]+c[5]+c[1]+c[4]));
+  return isoBoxesCanvas(boxes,f=>TILE_CANVAS[TEX_NAME[FACE_TILE[id*6+f]]],k);
 }
 
 /* =========================================================================
@@ -4887,6 +4892,7 @@ function applyGuiScale(){
   if(s==='auto'){ s = Math.max(1, Math.min(4, Math.floor(Math.min(innerWidth/320, innerHeight/240)))); }
   else s = Math.min(s, Math.max(1, Math.floor(Math.min(innerWidth/320, innerHeight/240))));
   document.body.style.setProperty('--g', s+'px');
+  try{if(hudEls.slots.length)onInventoryChange();}catch(e){}   // icons are drawn for the current scale: refresh them
 }
 addEventListener('resize', applyGuiScale);
 
