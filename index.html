@@ -7541,7 +7541,7 @@ function mountMob(a,mob,msg){
 }
 function mobUse(a,mob){
  if(!mob||mob.dead)return false;const id=a.held,d=ITEMS[id];
- if(mob.kind==='villager'){if(!a.local)return false;openGui('trade',mob);return true;}
+ if(mob.kind==='villager'){if(mob.sleeping){a.toast?.('Shh, this villager is asleep.');return true;}if(!a.local)return false;openGui('trade',mob);return true;}
  if(mob.kind==='boat')return mountMob(a,mob,'W/S to row, A/D to turn, Shift to get out');
  if(id===B.shears&&shearSheep(mob,a))return true;
  if(id===B.bucket&&mob.kind==='cow'){a.consume();a.give(B.milk_bucket,1);sfx.pop();return true;}
@@ -9711,9 +9711,25 @@ function villageOf(x,z){if(!gen?.villageAt||world.dimension&&world.dimension!=='
  for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){const gx=Math.floor(x/C)+dx,gz=Math.floor(z/C)+dz,v=gen.villageAt(gx,gz);if(v&&Math.abs(v.cx-x)<96&&Math.abs(v.cz-z)<96)return {v,key:gx+','+gz};}return null;}
 function villagePhase(){const t=dayTime;return t<.03||t>=.47?'sleep':t<.3?'work':t<.42?'gather':'home';}
 function nearBlock(x,y,z,r,test,ry=2){let best=null,bd=1e9;for(let dy=-ry;dy<=ry;dy++)for(let dz=-r;dz<=r;dz++)for(let dx=-r;dx<=r;dx++){const id=world.getBlock(x+dx,y+dy,z+dz);if(id>0&&test(id)){const d=dx*dx+dz*dz+dy*dy;if(d<bd){bd=d;best=[x+dx,y+dy,z+dz];}}}return best;}
+// Beds: foot ids B.bed..+3 and head ids B.bed_head..+3 by facing; SHAPE_DIR[facing] points from the foot to the head.
+// bedPoseAt finds the bed at/next to a cell and returns where a sleeper lies: feet at the foot end, head on the pillow.
+function bedPoseAt(x,y,z){
+ for(const [dx,dz] of [[0,0],[1,0],[-1,0],[0,1],[0,-1]]){const bx=x+dx,bz=z+dz,id=world.getBlock(bx,y,bz);if(!(id>=B.bed&&id<B.bed+8))continue;
+  const head=id>=B.bed_head,f=BLOCKS[id].facing,u=SHAPE_DIR[f],hx=head?bx:bx+u[0],hz=head?bz:bz+u[1],fid=world.getBlock(hx-u[0],y,hz-u[1]),hid=world.getBlock(hx,y,hz);
+  if(!(hid>=B.bed_head&&hid<B.bed_head+4))return null;const L=MOB_DEFS.villager.h*.9;   // model height (spec scale .9)
+  return {x:hx+.5+u[0]*.32-u[0]*L,z:hz+.5+u[1]*.32-u[1]*L,y:y+.5625+.16,yaw:Math.atan2(-u[0],-u[1]),whole:fid>=B.bed&&fid<B.bed+4};}
+ return null;}
+// wake up: stand beside the bed (or where it was), drop the pose, and forget a bed that is gone
+function wakeVillager(e,lost){if(!e.sleeping&&!lost)return;e.sleeping=false;e.bedPose=null;e.wakeT=8;const p=e.pos;
+ if(lost){e.home=null;}const fx=Math.floor(p.x),fy=Math.floor(p.y),fz=Math.floor(p.z);
+ for(const [dx,dz] of [[0,0],[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1],[1,-1],[-1,1]])for(const dy of [0,1,-1]){const x=fx+dx,y=fy+dy,z=fz+dz,id=world.getBlock(x,y,z),up=world.getBlock(x,y+1,z);
+  if((id===0||!BLOCKS[id]?.solid)&&(up===0||!BLOCKS[up]?.solid)&&!(id>=B.bed&&id<B.bed+8)&&isSolidAt(x,y-1,z)){p.set(x+.5,y,z+.5);e.prev.copy(p);return;}}}
 function villagerAI(e,dt,speed){
  const p=e.pos,phase=villagePhase();e.vT=(e.vT||0)-dt;navCloseDoor(e);
- if(!e.home){const b=nearBlock(Math.floor(p.x),Math.floor(p.y),Math.floor(p.z),4,id=>id>=B.bed&&id<B.bed+8,1);e.home=b||[Math.floor(p.x),Math.floor(p.y),Math.floor(p.z)];}
+ // a sleeper wakes when morning comes, when hurt, or the moment its bed is gone (broken, blown up, replaced, or loaded asleep with no bed)
+e.wakeT=Math.max(0,(e.wakeT||0)-dt);
+ if(e.sleeping){const bed=e.home&&isBedAt(e.home);if(!bed)wakeVillager(e,true);else if(phase!=='sleep'||e.hurt>0||e.threat)wakeVillager(e,false);}
+ if(!e.home){let b=nearBlock(Math.floor(p.x),Math.floor(p.y),Math.floor(p.z),4,id=>id>=B.bed&&id<B.bed+4,1);if(b&&!isBedAt(b))b=null;e.home=b||[Math.floor(p.x),Math.floor(p.y),Math.floor(p.z)];}   // claim the foot of a whole bed
  if(e.job===undefined||e.job===null&&e.vT<-60){const h=e.home;e.job=nearBlock(h[0],h[1],h[2],12,id=>VJOBS.has(id),3);if(!e.job)e.job=null;e.vT=0;}
  if(!e.vil&&e.vil!==false){const f=villageOf(p.x,p.z);e.vil=f?f.key:false;}
  const vil=e.vil?gen.villageAt(...e.vil.split(',').map(Number)):null,center=vil?[vil.cx,0,vil.cz]:e.home;
@@ -9722,7 +9738,7 @@ function villagerAI(e,dt,speed){
  if(threat){villageAlarm(e,threat);e.sleeping=false;const h=e.home;return navYaw(e,h[0]+.5,h[1],h[2]+.5)?MOB_DEFS.villager.speed*1.7:0;}
  let goal=null;
  if(phase==='sleep'){const h=e.home;const d=Math.hypot(h[0]+.5-p.x,h[2]+.5-p.z);
-  if(d<1.4&&Math.abs(h[1]-p.y)<1.5){if(isBedAt(h)){e.sleeping=true;p.x=h[0]+.5;p.z=h[2]+.5;e.vel.x=e.vel.z=0;return 0;}return 0;}goal=h;}
+  if(d<1.4&&Math.abs(h[1]-p.y)<1.5){if(e.wakeT>0)return 0;if(isBedAt(h)){e.sleeping=true;e.bedPose=bedPoseAt(h[0],h[1],h[2]);p.x=h[0]+.5;p.z=h[2]+.5;e.vel.x=e.vel.z=0;return 0;}e.home=null;return speed;}goal=h;}   // no bed here any more: find another
  else{e.sleeping=false;
   if(phase==='work'&&e.job)goal=e.job;
   else if(phase==='gather'){const a=((e.nid||e.home[0]*7+e.home[2])%8)/8*Math.PI*2;goal=[Math.floor(center[0]+Math.cos(a)*4),e.home[1],Math.floor(center[2]+Math.sin(a)*4)];if(vil){const gy=groundY(goal[0],goal[2]);if(gy>0)goal[1]=gy;}}
@@ -9734,7 +9750,7 @@ function villagerAI(e,dt,speed){
   if(e.vT<=0){e.vT=2+Math.random()*3;e.yaw+=(Math.random()-.5)*2;e.moving=Math.random()<.3;}return e.moving?MOB_DEFS.villager.speed*.4:0;}
  return navYaw(e,goal[0]+.5,goal[1],goal[2]+.5)?MOB_DEFS.villager.speed:0;
 }
-function isBedAt(h){const id=world.getBlock(h[0],h[1],h[2]);return id>=B.bed&&id<B.bed+8;}
+function isBedAt(h){const id=world.getBlock(h[0],h[1],h[2]);return id>=B.bed&&id<B.bed+8&&!!bedPoseAt(h[0],h[1],h[2])?.whole;}   // both halves, or it isn't a bed
 function groundY(x,z){for(let y=Math.min(CH-2,110);y>2;y--){const id=world.getBlock(x,y,z);if(id<0)return -1;const b=BLOCKS[id];if(id&&b.solid&&!LEAVES.has(id)&&!b.name.endsWith('_log'))return y+1;if(b?.fluid)return -1;}return -1;}
 // Farmers harvest ripe crops in the village's own fields (never other farms) and replant them.
 function tendCrops(e,vil){
@@ -9749,7 +9765,11 @@ function villageAlarm(e,threat){
 }
 {const _pg=petAndGuardianAI;petAndGuardianAI=function(e,dt,speed){if(e.kind==='guardian'&&e.guardUntil&&performance.now()>e.guardUntil){e.guardR=10;e.guardUntil=0;}return _pg(e,dt,speed);};}
 // sleeping villagers lie down in bed
-{const _ue=updateEntities;updateEntities=function(dt){_ue(dt);for(const e of entities)if(e.kind==='villager'&&e.sleeping&&!e.dead){e.model.g.rotation.set(-Math.PI/2,e.yaw,0,'YXZ');e.model.g.position.y+=.35;}};}
+// (on guests the pose comes from the bed under the synced position; the host's flag 256 says it's asleep)
+{const _ue=updateEntities;updateEntities=function(dt){_ue(dt);for(const e of entities){if(e.kind!=='villager'||!e.sleeping||e.dead)continue;
+  const g=e.model.g.position;if(!e.bedPose||entityClock.tick%20===0)e.bedPose=bedPoseAt(Math.floor(g.x),Math.floor(g.y+.3),Math.floor(g.z))||bedPoseAt(Math.floor(g.x),Math.floor(g.y-.3),Math.floor(g.z));
+  const b=e.bedPose;if(!b){if(net.role!=='client')wakeVillager(e,true);continue;}   // bed gone: wake (guests just draw it standing until the host says so)
+  g.set(b.x,b.y,b.z);e.model.g.rotation.set(-Math.PI/2,b.yaw,0,'YXZ');e.model.head.rotation.set(0,0,0);}};}
 
 /* ---- growth ---- */
 const VPIECES=[['house',.4],['farm',.22],['bighouse',.12],['pen',.1],['lamp',.16]];
