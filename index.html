@@ -6102,8 +6102,10 @@ function migrateMeta(m){
   return m;
 }
 function mobRecord(e){return {kind:e.kind,x:e.pos.x,y:e.pos.y,z:e.pos.z,hp:e.hp,yaw:e.yaw,baby:e.baby,breedCD:e.breedCD,persistent:e.persistent,tamed:!!e.tamed,owner:e.owner||'',sitting:!!e.sitting,saddled:!!e.saddled,shorn:e.shorn||0,size:e.size||1,home:e.home||null,job:e.job||null,stock:e.stock||null,name:e.name||''};}
-function saveMobs(){return entities.filter(e=>!e.dead&&e.kind!=='starwing').map(mobRecord).concat(dormantMobs);}
-function restoreMobs(meta){if(!meta)return;for(const k of meta.mobChunks||[])mobChunks.add(k);for(const m of meta.mobs||[])if(Number.isFinite(m.x)&&Number.isFinite(m.y)&&Number.isFinite(m.z)){if(Math.abs(m.x-player.pos.x)<64&&Math.abs(m.z-player.pos.z)<64&&entities.length<ENTITY_LIMIT)spawnMob(m.kind,m.x,m.y,m.z,m);else dormantMobs.push(m);}}
+function saveMobs(){return entities.filter(e=>!e.dead&&e.kind!=='starwing'&&!(MOB_DEFS[e.kind]?.aquatic&&!e.persistent&&!aquaSpotOk(e.pos.x,e.pos.y,e.pos.z))).map(mobRecord).concat(dormantMobs);}
+// a water mob's saved spot is fine if its body (or the cell under it) is in water; unloaded counts as unknown (true)
+function aquaSpotOk(x,y,z){const id=world.getBlock(Math.floor(x),Math.floor(y+.3),Math.floor(z));if(id<0)return true;const w=i=>i>0&&(BLOCKS[i]?.fluid==='water'||BLOCKS[i]?.aquatic);return w(id)||w(world.getBlock(Math.floor(x),Math.floor(y-.3),Math.floor(z)));}
+function restoreMobs(meta){if(!meta)return;for(const k of meta.mobChunks||[])mobChunks.add(k);for(const m of meta.mobs||[])if(Number.isFinite(m.x)&&Number.isFinite(m.y)&&Number.isFinite(m.z)){if(!MOB_DEFS[m.kind]?.aquatic&&Math.abs(m.x-player.pos.x)<64&&Math.abs(m.z-player.pos.z)<64&&entities.length<ENTITY_LIMIT)spawnMob(m.kind,m.x,m.y,m.z,m);else dormantMobs.push(m);}}   // water mobs wait (dormant) until their chunk is loaded and can be checked for water
 
 function mobScale(e){ return (e.baby>0?.55:1)*(e.size||1)*(e.kind==='guardian'?1.35:1); }
 function mobPhysics(e,dt){
@@ -6280,6 +6282,12 @@ function tickHostile(e,dt,dist){
  if(e.kind==='slime'&&e.onGround&&entityClock.tick%25===0)e.vel.y=7;
  if(e.kind==='spider'&&e.onGround&&e.sees&&entityClock.tick%30===0)e.vel.y=7;
 }
+// Minecraft's rule: a hostile mob may spawn only where block light is 0 and the sky light, after the
+// time of day darkens it (0 at noon, -11 at midnight; rain already dims uSky), is at most a random
+// 0-7. Reads the mesher's light levels, so overhangs, tree canopies and cave mouths that still get
+// sky light stay safe in daylight. (It used to only skip spots with open sky straight above.)
+function hostileSpawnDark(x,y,z){const L=lightLevels(x,y,z);if(!L||L.b>0)return false;if(world.dimension==='nether')return true;
+ const day=clamp((U.uSky.value-.16)/.84,0,1),sky=Math.max(0,L.s-Math.round((1-day)*11));return sky<=Math.floor(Math.random()*8);}
 function tickHostileSpawns(dt){
  combat.spawnT-=dt;if(combat.spawnT>0||CONFIG.difficulty==='peaceful'||world.dimension==='end')return;combat.spawnT=1;
  let count=0;for(const e of entities)if(MOB_DEFS[e.kind].hostile)count++;
@@ -6289,8 +6297,8 @@ function tickHostileSpawns(dt){
    const a=Math.random()*Math.PI*2,r=20+Math.random()*25,x=Math.floor(pp.x+Math.cos(a)*r),z=Math.floor(pp.z+Math.sin(a)*r),c=world.get(x>>4,z>>4);
    if(!c?.meshed||c.dirty)continue;
    const y=attempt<3?gen.heightAt(x,z)+1:Math.floor(8+Math.random()*Math.max(1,pp.y-8));
-   if(y>=CH-2||world.getBlock(x,y,z)!==0||world.getBlock(x,y+1,z)!==0||!isSolidAt(x,y-1,z)||blockLightAt(x,y,z)>0)continue;
-   if(world.dimension!=='nether'&&U.uSky.value>.3&&skyVisible(x,y+1,z))continue;
+   if(y>=CH-2||world.getBlock(x,y,z)!==0||world.getBlock(x,y+1,z)!==0||!isSolidAt(x,y-1,z))continue;
+   if(!hostileSpawnDark(x,y,z))continue;
    const kinds=['zombie','skeleton','spider','creeper'];if(gen.biomeAt(x,z)===8&&Math.random()<.4)kinds[0]='slime';spawnMob(world.dimension==='nether'?'ember_kite':kinds[(Math.random()*4)|0],x+.5,y,z+.5);break;
  }
 }
@@ -7463,7 +7471,7 @@ Object.assign(MOB_DEFS,{
 const SPAWN_EGGS=['pig','cow','sheep','chicken','zombie','skeleton','spider','creeper','ember_kite','wolf','cat','horse','villager','guardian','slime','ghoul','marauder','sentry','drone','juggernaut'];
 SPAWN_EGGS.forEach((kind,i)=>defItem(400+i,'spawn_'+kind,{label:'Spawn '+kind.replaceAll('_',' '),icon:'egg',spawn:kind}));
 const dormantMobs=[];
-function activateDormant(){if(entityClock.tick%20!==0)return;for(let i=dormantMobs.length-1;i>=0&&entities.length<ENTITY_LIMIT;i--){const m=dormantMobs[i];if(Math.abs(m.x-player.pos.x)<48&&Math.abs(m.z-player.pos.z)<48&&world.getBlock(Math.floor(m.x),Math.floor(m.y),Math.floor(m.z))>=0){dormantMobs.splice(i,1);spawnMob(m.kind,m.x,m.y,m.z,m);}}}
+function activateDormant(){if(entityClock.tick%20!==0)return;for(let i=dormantMobs.length-1;i>=0&&entities.length<ENTITY_LIMIT;i--){const m=dormantMobs[i];if(Math.abs(m.x-player.pos.x)<48&&Math.abs(m.z-player.pos.z)<48&&world.getBlock(Math.floor(m.x),Math.floor(m.y),Math.floor(m.z))>=0){dormantMobs.splice(i,1);if(MOB_DEFS[m.kind]?.aquatic&&!m.persistent&&!aquaSpotOk(m.x,m.y,m.z))continue;spawnMob(m.kind,m.x,m.y,m.z,m);}}}   // stranded ocean life from older saves is dropped
 function shearSheep(e,a=localActor()){if(e.kind!=='sheep'||e.shorn>0||e.baby>0)return false;e.shorn=180;e.persistent=true;spawnItem(B.wool,1+((Math.random()*3)|0),e.pos.x,e.pos.y+.5,e.pos.z);a.wear();sfx.blockBreak(B.wool);return true;}
 function tamePet(e,a=localActor()){const wanted=e.kind==='wolf'?B.bone:e.kind==='cat'?B.raw_fish:0;if(!wanted||a.held!==wanted)return false;a.consume();if(Math.random()<.5){e.tamed=true;e.owner=a.name;e.persistent=true;e.hp=MOB_DEFS[e.kind].hp;a.toast(e.kind+' is now your companion');}else a.toast('Your '+e.kind+' is curious. Try again.');return true;}
 function tickAnimalSpecial(e,dt){
@@ -13167,6 +13175,9 @@ function reefWarm(x,z){let y=SEA;while(y>2&&isWater(world.getBlock(x,y,z)))y--;f
 // ocean life far from everyone simply goes (no archive), so the sea doesn't fill the save
 {const _te=tickEntities;tickEntities=function(dt){
  if(net.role!=='client')for(let i=entities.length-1;i>=0;i--){const e=entities[i],d=MOB_DEFS[e.kind];if(d?.aquatic&&!d.hostile&&!e.persistent&&netNearestDist2(e.pos)>72*72)removeMob(e);}
+ // hostile water mobs get the same beached rule as passive ones (which handle it in aquaticAI): 30 s on land with no water in reach and they go
+ if(net.role!=='client'&&entityClock.tick%10===0)for(let i=entities.length-1;i>=0;i--){const e=entities[i],d=MOB_DEFS[e.kind];if(!d?.aquatic||!d.hostile||e.persistent||e.dead)continue;
+  if(aquaSpotOk(e.pos.x,e.pos.y,e.pos.z)){e.landT=0;continue;}e.landT=(e.landT||0)+.5;if(e.landT>30&&!nearestWater(e.pos.x,e.pos.y+.3,e.pos.z))removeMob(e);}
  _te(dt);if(gameState==='loading')return;try{oceanSpawns(dt);}catch(err){if(!OCEAN.warned){OCEAN.warned=true;console.warn('ocean',err);}}};}
 // draw pitch for swimmers; squid ink on hurt
 {const _ue=updateEntities;updateEntities=function(dt){_ue(dt);for(const e of entities){const d=MOB_DEFS[e.kind];if(!(d?.aquatic)||e.dead||e.fling)continue;const g=e.model.g;g.rotation.order='YXZ';g.rotation.x=-(e.pitch||0);}
