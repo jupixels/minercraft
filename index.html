@@ -3669,7 +3669,13 @@ document.addEventListener('keydown', (e)=>{
   keys.add(e.code);
   if(['Space','Tab','F3'].includes(e.code)) e.preventDefault();
 });
-document.addEventListener('keyup', (e)=>{ keys.delete(e.code); });
+document.addEventListener('keyup', (e)=>{ keys.delete(e.code); if(e.key==='Shift'||/^Shift/.test(e.code)){keys.delete('ShiftLeft');keys.delete('ShiftRight');} });
+// Shift is read from the modifier state too: some keyboards, remote desktops and IMEs send Shift with an
+// empty/'Unidentified' code, and a Shift already held when a menu closes or the window regains focus never
+// fires a keydown. Every trusted key/mouse event carries shiftKey, so keep 'ShiftLeft' in step with it.
+function syncShift(e){if(!e.isTrusted||gameState!=='playing'||touchUI?.sneak||PAD?.on)return;
+ if(e.shiftKey)keys.add(keys.has('ShiftRight')?'ShiftRight':'ShiftLeft');else{keys.delete('ShiftLeft');keys.delete('ShiftRight');}}
+for(const t of ['keydown','keyup','mousemove','mousedown','mouseup','wheel'])document.addEventListener(t,e=>{if(t==='keyup'&&(e.key==='Shift'||/^Shift/.test(e.code)))return;syncShift(e);},{passive:true});
 addEventListener('blur', ()=>keys.clear());
 
 /* =========================================================================
