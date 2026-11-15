@@ -5395,7 +5395,7 @@ const sfx = (()=>{
     mob(kind, hurt=false, pos=null){ if(!ok()) return; let k=1;
       if(pos){const c=camera.position,d=Math.hypot(pos.x-c.x,(pos.y+1)-c.y,pos.z-c.z),R=MOB_DEFS[kind]?.boss?32:16;if(d>=R)return;k=Math.pow(1-d/R,1.6);if(k<.02)return;}
       if(playPack('mob/'+kind+'/'+(hurt?'hurt':'say'),.4*k,1))return;
-      const t=ctx.currentTime,f={pig:155,cow:95,sheep:210,chicken:530,piglin:118,piglin_brute:92,zombified_piglin:84,hoglin:62,blaze:330,wither_skeleton:72,magma_cube:54,strider:190,prismoth:620,shardling:400,mossback:70,sporeling:260,cinder_beetle:300,ashwraith:110,frostkit:480,rimewalker:55,enderman:90}[kind]||140;
+      const t=ctx.currentTime,f={pig:155,cow:95,sheep:210,chicken:530,piglin:118,piglin_brute:92,zombified_piglin:84,hoglin:62,blaze:330,wither_skeleton:72,magma_cube:54,strider:190,prismoth:620,shardling:400,mossback:70,sporeling:260,cinder_beetle:300,ashwraith:110,frostkit:480,rimewalker:55,enderman:90,prism_stalker:100,glow_stalker:84,ash_stalker:76,rime_stalker:96}[kind]||140;
       tone(t,.18,hurt?'sawtooth':'triangle',hurt?f*1.7:f,f*.7,.13*k); noise(t,.08,'bandpass',f*4,2,.08*k);
     },
     ui(kind){ if(!ok()) return; const t=ctx.currentTime; if(kind==='chest'){ tone(t,0.25,'triangle',150,95,0.25,0.02); noise(t,0.2,'bandpass',300,3,0.2,0.02); } else { noise(t,0.08,'bandpass',500,1.5,0.25); } },
@@ -14228,11 +14228,12 @@ function enderTeleport(e,cx,cy,cz,r,minD=0){for(let k=0;k<20;k++){const x=Math.f
    if(BLOCKS[f]?.solid&&!BLOCKS[f].liquid&&[0,1,2].every(dy=>world.getBlock(x,y+dy,z)===0)){enderPuff(e.pos.x,e.pos.y,e.pos.z);e.pos.set(x+.5,y,z+.5);e.prev.copy(e.pos);e.vel.set(0,0,0);enderPuff(x+.5,y,z+.5);sfx.mob?.('enderman',false,e.pos);return true;}}}return false;}
 function playerStaresAt(e){const cam=camera.position,hx=e.pos.x,hy=e.pos.y+2.55,hz=e.pos.z,dx=hx-cam.x,dy=hy-cam.y,dz=hz-cam.z,l=Math.hypot(dx,dy,dz);if(l>64||l<.5)return false;
  camera.getWorldDirection(_rd);return (_rd.x*dx+_rd.y*dy+_rd.z*dz)/l>1-.02/Math.max(1,l*.12)&&clearSight(cam.x,cam.y,cam.z,hx,hy,hz);}
-const ENDER_AI={enderman(e,dt,T,dist2){const d=MOB_DEFS.enderman,p=e.pos;e.tpT=(e.tpT??2)-dt;
+const ENDER_KINDS=new Set(['enderman']);   // the Outer Realm adds its stalkers (71c)
+const ENDER_AI={enderman(e,dt,T,dist2){const d=MOB_DEFS[e.kind],p=e.pos;e.tpT=(e.tpT??2)-dt;
  // water and rain hurt: teleport away
  const wet=isWater(world.getBlock(Math.floor(p.x),Math.floor(p.y+.5),Math.floor(p.z)))||weather.type!=='clear'&&weather.strength>.4&&skyVisible(p.x,p.y+3,p.z);
  if(wet){e.wetT=(e.wetT||0)+dt;if(e.wetT>1){e.wetT=0;hurtMob(e,1);enderTeleport(e,p.x,p.y,p.z,16);}return;}
- if(T.pos===player.pos&&T.mode!=='creative'&&!(e.angryT>0)&&entityClock.tick%2===0&&playerStaresAt(e)){e.angryT=30;e.stareT=.9;sfx.mob?.('enderman',true,e.pos);}
+ if(T.pos===player.pos&&T.mode!=='creative'&&!(e.angryT>0)&&entityClock.tick%2===0&&playerStaresAt(e)){e.angryT=30;e.stareT=.9;sfx.mob?.(e.kind,true,e.pos);}
  if(e.stareT>0){e.stareT-=dt;e.vel.x=e.vel.z=0;e.yaw=Math.atan2(T.pos.x-p.x,T.pos.z-p.z);return;}   // freezes and shakes a moment before it comes for you
  if(e.angryT>0&&T.active&&T.mode!=='creative'){const seen=sight(e,T,d);
   if(dist2>36&&e.tpT<=0){e.tpT=2.5+Math.random()*3;enderTeleport(e,T.pos.x,T.pos.y,T.pos.z,5,2.5);return;}
@@ -14248,9 +14249,9 @@ const ENDER_AI={enderman(e,dt,T,dist2){const d=MOB_DEFS.enderman,p=e.pos;e.tpT=(
 {const _th=tickHostile;tickHostile=function(e,dt,dist){const ai=ENDER_AI[e.kind];if(!ai)return _th(e,dt,dist);
  const T=hostileTarget(e.pos);e.attackT=Math.max(0,(e.attackT||0)-dt);e.angryT=Math.max(0,(e.angryT||0)-dt);ai(e,dt,T,e.pos.distanceToSquared(T.pos));applyKnock(e,dt);};}
 // hit one and it's angry (and may blink away first)
-{const _hm=hurtMob;hurtMob=function(e,n,...a){const r=_hm(e,n,...a);if(e?.kind==='enderman'&&!e.dead&&net.role!=='client'){e.angryT=30;if(Math.random()<.35)enderTeleport(e,e.pos.x,e.pos.y,e.pos.z,8);}return r;};}
+{const _hm=hurtMob;hurtMob=function(e,n,...a){const r=_hm(e,n,...a);if(ENDER_KINDS.has(e?.kind)&&!e.dead&&net.role!=='client'){e.angryT=30;if(Math.random()<.35)enderTeleport(e,e.pos.x,e.pos.y,e.pos.z,8);}return r;};}
 // pose: arms forward while carrying; the head shakes and the jaw drops when angry; the carried block in its hands
-{const _ue=updateEntities;updateEntities=function(dt){_ue(dt);for(const e of entities){if(e.kind!=='enderman'||e.dead)continue;const n=e.model.nodes,ang=e.angryT>0||e.stareT>0;
+{const _ue=updateEntities;updateEntities=function(dt){_ue(dt);for(const e of entities){if(!ENDER_KINDS.has(e.kind)||e.dead)continue;const n=e.model.nodes,ang=e.angryT>0||e.stareT>0;
   if(e.carry){n.armL.rotation.x=n.armR.rotation.x=-.55;}
   n.jaw.position.y=ang?-.12:0;if(ang)n.head.rotation.z=Math.sin(performance.now()*.06)*.06;else n.head.rotation.z=0;
   if((e.carry||0)!==(e.carryShown||0)){if(e.carryMesh){e.model.g.remove(e.carryMesh);e.carryMesh=null;}if(e.carry&&BLOCKS[e.carry]){if(!ENDER.carryMat)ENDER.carryMat=new THREE.MeshBasicMaterial({map:atlasTex,vertexColors:true,alphaTest:.5});
@@ -14644,6 +14645,57 @@ function buildRealmCreatureTextures(){
  CREATIVE_TABS[1].items.push(B.prismstone,B.glowcap_turf,B.glowcap_cap,B.cinder_slate,B.rimeglass,B.prism_shard,B.glowcap_sprout,B.emberbloom,B.frostfern);
 }
 
+/* ---- 71c. Stalkers: the realm's endermen, one per biome, and the hearts they carry ----
+   Each stalker runs the enderman AI (ENDER_AI, ENDER_KINDS) with its biome's touch: prism stalkers
+   loose shard volleys when they lose sight of you, glowcap stalkers leave spores, ashen stalkers set you
+   alight and rime stalkers chill you. Killing one may drop its biome's heart: 12%, rising 6% with every
+   kill that didn't (per biome, world.realm.pity). Hearts go on the arena's pedestals (71d). */
+const STALKERS=['prism_stalker','glow_stalker','ash_stalker','rime_stalker'],HEARTS=['prism_heart','glowcap_heart','ashen_heart','rime_heart'];
+const HEART_LABELS=['Prism Heart','Glowcap Heart','Ashen Heart','Rime Heart'];
+HEARTS.forEach((h,i)=>defItem(1054+i,h,{label:HEART_LABELS[i],stack:16,heart:i}));
+STALKERS.forEach((k,i)=>defItem(1067+i,'spawn_'+k,{label:'Spawn '+['Prism','Glowcap','Ashen','Rime'][i]+' Stalker',icon:'egg',spawn:k}));
+const STALK_COL=[{skin:[60,40,84],eye:[255,120,240],acc:[236,214,255]},{skin:[18,48,48],eye:[120,255,220],acc:[60,220,210]},{skin:[30,22,22],eye:[255,140,40],acc:[255,96,30]},{skin:[70,96,120],eye:[150,230,255],acc:[220,246,255]}];
+STALKERS.forEach((k,i)=>{ENDER_KINDS.add(k);const C=STALK_COL[i],dk=C.skin.map(v=>v*.8);
+ MOB_DEFS[k]={hp:55,w:.3,h:3,speed:1.35,color:C.skin,hostile:true,realm:i,stalker:i,loot:[['ender_pearl',1]]};
+ const deco=[
+  [{id:'shL',parent:'body',pivot:[-4,12,0],rot:[0,0,.6],box:[-.75,0,-.75,1.5,5,1.5],c:C.acc},{id:'shR',parent:'body',pivot:[4,12,0],rot:[0,0,-.6],box:[-.75,0,-.75,1.5,4,1.5],c:C.acc},{id:'crown',parent:'head',pivot:[0,8,0],rot:[.2,0,0],box:[-1,0,-1,2,4,2],c:C.acc}],
+  [{id:'cap',parent:'head',pivot:[0,8,0],box:[-5,0,-5,10,2,10],c:C.acc,f:{top:rmSpots([200,255,240],6,2)}},{id:'capT',parent:'head',pivot:[0,10,0],box:[-3,0,-3,6,1.5,6],c:[40,190,180]},{id:'shroom',parent:'body',pivot:[3,10,2],box:[-1.5,0,-1.5,3,1.2,3],c:C.acc}],
+  [{id:'horns',parent:'head',pivot:[0,8,0],box:[-4,0,-1,1,3,1],c:[60,40,36]},{id:'horn2',parent:'head',pivot:[0,8,0],box:[3,0,-1,1,3,1],c:[60,40,36]},{id:'coal',parent:'body',box:[-2,4,2,4,4,.6],c:C.acc}],
+  [{id:'ic1',parent:'head',pivot:[-3,0,3],box:[-.5,-3,-.5,1,3,1],c:C.acc},{id:'ic2',parent:'head',pivot:[2,0,3],box:[-.5,-2,-.5,1,2,1],c:C.acc},{id:'frost',parent:'body',pivot:[0,12,0],box:[-4.5,0,-2.5,9,1.5,5],c:C.acc}]][i];
+ const glow=(P,w,h,R)=>{for(let y=0;y<h;y++)for(let x=0;x<w;x++)P(x,y,vary(C.skin,R,10));for(let n=0;n<w*h/16;n++)P(R()*w|0,R()*h|0,C.acc);};
+ MOB_SPECS[k]={scale:1.05,parts:MOB_SPECS.enderman.parts.map(p=>p.id==='head'?{...p,c:C.skin,f:{front:(P,w,h)=>{rectP(P,0,4,3,1,C.eye);rectP(P,5,4,3,1,C.eye);P(1,4,[255,255,255]);P(6,4,[255,255,255]);}}}:{...p,c:p.id==='jaw'?dk:C.skin,f:p.id==='body'?{all:glow}:p.f}).concat(deco)};
+ ENDER_AI[k]=function(e,dt,T,d2){const atk=e.attackT;ENDER_AI.enderman(e,dt,T,d2);
+  const me=T.pos===player.pos&&T.mode!=='creative';
+  if(e.attackT>atk+.5&&me){   // just landed a blow
+   if(i===1){player.effects.spores=Math.max(player.effects.spores||0,5);}
+   else if(i===2){player.fire=Math.max(player.fire||0,4);}
+   else if(i===3){player.effects.chill=Math.max(player.effects.chill||0,5);}}
+  if(i===0&&e.angryT>0&&!e.sees&&d2<30*30&&(e.volleyT=(e.volleyT??3)-dt)<=0){e.volleyT=4;const p=e.pos,pp=T.pos,dx=pp.x-p.x,dy=pp.y+1-(p.y+2.4),dz=pp.z-p.z,l=Math.hypot(dx,dy,dz)||1;for(const s of [-.12,0,.12]){const c=Math.cos(s),sn=Math.sin(s);spawnArrow(p.x,p.y+2.4,p.z,(dx*c-dz*sn)/l*18,(dy/l+l/600)*18,(dx*sn+dz*c)/l*18,'hostile');}}
+  if(entityClock.tick%7===0&&Math.random()<.5)emitParticle(e.pos.x+(Math.random()-.5)*.6,e.pos.y+1+Math.random()*2,e.pos.z+(Math.random()-.5)*.6,0,i===3?-.4:.4,0,[TEX.amethyst_block,TEX.glowcap_cap,TEX.lava_still,TEX.snow][i]??TEX.smoke,.05,.7);};});
+// realm soil the stalkers will carry about
+{const _es=enderSoft;enderSoft=function(id){return _es(id)||id===B.glowcap_turf||id===B.snow||id===B.prism_shard||id===B.frostfern||id===B.emberbloom||id===B.glowcap_sprout;};}
+// hearts: drop on the host when a stalker dies
+{const _hm=hurtMob;hurtMob=function(e,n,...a){const was=e&&!e.dead&&e.hp>0;const r=_hm(e,n,...a);const d=MOB_DEFS[e?.kind];
+ if(was&&d?.stalker!==undefined&&e.hp<=0&&net.role!=='client'){const b=d.stalker,R=world.realm,pity=(R.pity||(R.pity=[0,0,0,0]));
+  if(Math.random()<.12+.06*pity[b]){pity[b]=0;spawnItem(B[HEARTS[b]],1,e.pos.x,e.pos.y+1,e.pos.z);for(let k=0;k<20;k++)emitParticle(e.pos.x,e.pos.y+1.5,e.pos.z,(Math.random()-.5)*3,Math.random()*3,(Math.random()-.5)*3,TEX['item_'+HEARTS[b]]??TEX.smoke,.4,1.2);
+   const msg='The stalker drops a '+HEART_LABELS[b]+'! Set it on its pedestal in the Heart Arena.';toast(msg);if(net.role==='host')netBroadcast({t:'chat',s:1,m:msg});}
+  else pity[b]=Math.min(15,pity[b]+1);}
+ return r;};}
+// stalkers roam their own biome: up to 3 near the players, in the open as well as the dark
+{const _rs=realmSpawnTick;realmSpawnTick=function(dt){_rs(dt);REALM_SPAWN.st=(REALM_SPAWN.st||0)-dt;if(REALM_SPAWN.st>0||CONFIG.difficulty==='peaceful')return;REALM_SPAWN.st=4;
+ if(entities.filter(e=>MOB_DEFS[e.kind].stalker!==undefined).length>=3||entities.length>=ENTITY_LIMIT-2||Math.random()>.5)return;
+ const pp=netSpawnCenter(),a=Math.random()*Math.PI*2,r=24+Math.random()*28,x=Math.floor(pp.x+Math.cos(a)*r),z=Math.floor(pp.z+Math.sin(a)*r);if(Math.hypot(x,z)<70)return;
+ const b=gen.biomeAt(x,z);if(b<0||!world.get(x>>4,z>>4)?.meshed)return;const y=gen.heightAt(x,z)+1;
+ if([0,1,2].some(dy=>{const id=world.getBlock(x,y+dy,z);return id!==0&&!BLOCKS[id]?.plant;})||!isSolidAt(x,y-1,z))return;spawnMob(STALKERS[b],x+.5,y,z+.5);};}
+ADV_EXTRA.push(['Heart of the Realm','prism_heart','Take a heart from one of the Outer Realm\'s stalkers']);
+function buildStalkerTextures(){
+ const HC=[[[236,170,255],[150,80,210],[255,240,255]],[[80,240,220],[20,120,120],[220,255,250]],[[255,120,40],[150,40,20],[255,230,150]],[[170,230,255],[80,140,200],[250,255,255]]];
+ HEARTS.forEach((h,i)=>{const [c,lo,hi]=HC[i];artTile('item_'+h,T=>{T.rows(['.aa...aa.','abba.abba','abbbabbba','abbbbbbca','.abbbbca.','..abbca..','...aba...','....a....'],{a:T.shade(lo,.6),b:c,c:lo},3,4);T.S(5,6,hi);T.S(6,5,hi);
+  if(i===0){T.S(8,8,hi);T.S(10,7,hi);}else if(i===1){T.S(9,7,[255,255,255]);T.S(7,9,hi);}else if(i===2){T.S(8,9,[255,240,180]);T.S(10,8,[255,200,80]);}else{T.S(9,6,[255,255,255]);T.S(7,10,hi);}});});
+ STALKERS.forEach((k,i)=>{artTile('item_egg_'+k,T=>IC.egg(T,STALK_COL[i].skin,STALK_COL[i].eye,mulberry32(hashStr(k))));ITEMS[B['spawn_'+k]].icon='egg_'+k;});
+ CREATIVE_TABS[3].items.push(...HEARTS.map(h=>B[h]),...STALKERS.map(k=>B['spawn_'+k]));
+}
+
 /* =========================================================================
    68. TEXTURE REFRESH
    Redraws the weakest legacy sprites and block tiles in the newer art style
@@ -14747,7 +14799,7 @@ function buildTextureRefresh(){
 /* =========================================================================
    20. BOOT
    ========================================================================= */
-buildTextures(); buildEntityTextures(); buildEquipmentTextures(); buildFarmTextures(); buildShapeTextures(); buildFluidTextures();buildBiomeTextures();buildRedstoneTextures();buildMagicTextures();buildNetherTextures();buildLivingTextures();buildEngineeringTextures();buildItemArt();buildEndItems();buildCavesCliffsTextures();buildUraniumTextures();buildNetherUpdateTextures();buildWorkshopTextures();buildDecorTextures();buildOceanTextures();buildEndermanTextures();buildPotionTextures();buildRealmCreatureTextures();buildTextureRefresh();
+buildTextures(); buildEntityTextures(); buildEquipmentTextures(); buildFarmTextures(); buildShapeTextures(); buildFluidTextures();buildBiomeTextures();buildRedstoneTextures();buildMagicTextures();buildNetherTextures();buildLivingTextures();buildEngineeringTextures();buildItemArt();buildEndItems();buildCavesCliffsTextures();buildUraniumTextures();buildNetherUpdateTextures();buildWorkshopTextures();buildDecorTextures();buildOceanTextures();buildEndermanTextures();buildPotionTextures();buildRealmCreatureTextures();buildStalkerTextures();buildTextureRefresh();
 for(const n in TEX) TEX_NAME[TEX[n]]=n;
 buildWaveMap();
 buildShapeCache(); buildBlockTables(); makeMaterials(); initFluidMaterial(); makeCrackMats(); makeParticles();

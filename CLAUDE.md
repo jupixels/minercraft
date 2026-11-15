@@ -286,7 +286,7 @@ Two limits on that freedom:
 - **Item ids are global.** Items are also defined outside section 2 (boats at
   452, spawn eggs from 400, and 1024+ in sections 64-65); the test fails if an
   id is defined twice. 256-511 is nearly full, so new items go in 1024-2047
-  (above every block id; the test allows both ranges). Next free: 1071 (1054-1058 reserved for the realm hearts and reward).
+  (above every block id; the test allows both ranges). Next free: 1072 (1058 reserved for the realm reward).
 - **Block IDs are permanent.** Saves store raw IDs, so an id → name pair
   never changes. The id space is split three ways:
   - `0–255`: the original blocks. Frozen; the test hashes them.
