@@ -14066,6 +14066,31 @@ function buildTextureRefresh(){
   for(const [name,c,stem] of [['pumpkin_top',[198,118,24],[104,84,40]],['carved_pumpkin_top',[198,118,24],[104,84,40]],['jack_o_lantern_top',[198,118,24],[104,84,40]],['melon_top',[120,150,36],[96,112,40]]])if(TEX[name]!==undefined)makeTile(name,(P,R)=>{
     for(let y=0;y<16;y++)for(let x=0;x<16;x++){const dx=x-7.5,dy=y-7.5,a=Math.atan2(dy,dx),rib=Math.cos(a*8)>.72,edge=Math.max(Math.abs(dx),Math.abs(dy))>7;P(x,y,vary(edge?[c[0]*.78,c[1]*.78,c[2]*.78]:rib?[c[0]*.84,c[1]*.84,c[2]*.84]:c,R,10));}
     for(const [x,y] of [[7,7],[8,7],[7,8],[8,8],[8,6],[9,6]])P(x,y,vary(stem,R,12));});
+  // ---- tools and weapons: hand-drawn heads and blades with a two-tone wooden handle, per material
+  const TM={wooden:[[150,108,60],[196,148,88],[100,70,36]],stone:[[132,132,132],[176,176,176],[86,86,90]],iron:[[214,214,218],[250,250,252],[150,150,158]],
+   golden:[[238,196,56],[255,240,140],[184,128,20]],diamond:[[70,224,210],[176,255,246],[24,140,132]],netherite:[[80,70,76],[124,112,118],[46,40,44]]};
+  const HANDLE={h:[96,68,38],H:[154,112,62]};
+  const handle=(T,x0,y0,x1,y1)=>{const n=Math.max(Math.abs(x1-x0),Math.abs(y1-y0));for(let k=0;k<=n;k++){const x=Math.round(x0+(x1-x0)*k/n),y=Math.round(y0+(y1-y0)*k/n);T.S(x,y,HANDLE.H);T.S(x+1,y,HANDLE.h);}};
+  const HEAD={
+   pickaxe:{at:[2,1],h:[1,13,8,6],g:['.LLLLLLL....','LmmmmmmmLL..','.DDDDDmmmmD.','......DDmmD.','........DmmD','........DmmD','.........DmD','.........DD.']},
+   axe:{at:[3,1],h:[1,13,11,3],g:['.LLLL......','LmmmmL.....','LmmmmmL..DD','LmmmmmmD.D.','.LmmmmD....','..DmmD.....','...DD......']},
+   shovel:{at:[8,0],h:[1,13,9,5],g:['....LL.','...LmmL','..LmmmD','.LmmmmD','LmmmmD.','LmmmD..','.DDD...']},
+   hoe:{at:[5,1],h:[1,13,10,4],g:['.LLLLLL..','LmmmmmmmD','.DD...DmD','.......DD']}};
+  for(const m in TM){const [mc,ml,md]=TM[m],pal={m:mc,L:ml,D:md};
+   for(const k in HEAD){const name='item_'+m+'_'+k;if(!TILE_CANVAS[name])continue;const H=HEAD[k];
+    artTile(name,T=>{handle(T,...H.h);H.g.forEach((r,y)=>{for(let x=0;x<r.length;x++)if(pal[r[x]])T.S(H.at[0]+x,H.at[1]+y,T.shade(pal[r[x]],1+(T.R()-.5)*.05));});});}
+   const sw='item_'+m+'_sword';if(TILE_CANVAS[sw])artTile(sw,T=>{   // blade with a lit edge and a dark spine, crossguard, wrapped grip, pommel
+    for(let k=0;k<9;k++){const x=5+k,y=10-k;T.S(x,y,mc);T.S(x+1,y,ml);T.S(x,y-1,ml);T.S(x+1,y+1,md);}T.S(14,1,ml);T.S(13,1,ml);
+    for(const [x,y] of [[2,9],[3,10],[4,11],[5,12],[6,13],[3,9]])T.S(x,y,m==='wooden'?[84,60,32]:md);T.S(4,10,m==='wooden'?[84,60,32]:md);
+    for(const [x,y,c] of [[3,12,HANDLE.H],[2,13,HANDLE.h],[4,11,HANDLE.H]])T.S(x,y,c);T.S(1,14,ml);T.S(2,14,md);});}
+  // ingots, gems, coal, stick, apple
+  const ingot=(name,c,l,d)=>{if(TILE_CANVAS[name])artTile(name,T=>T.rows(['....LLLLLLL.','...LLLLLLLLm','..mmmmmmmmmD','.mmmmmmmmmDD','mmmmmmmmmDD.','DDDDDDDDDD..'],{L:l,m:c,D:d},2,5));};
+  ingot('item_iron_ingot',[206,208,212],[244,246,248],[140,142,150]);ingot('item_gold_ingot',[236,190,48],[255,236,128],[176,120,16]);ingot('item_copper_ingot',[214,128,82],[246,176,128],[150,80,48]);
+  if(TILE_CANVAS.item_diamond)artTile('item_diamond',T=>T.rows(['...LLLLL...','..LwLLLmL..','.LLLmmmmmD.','LmmmmmmmmmD','.DmmmmmmmD.','..DmmmmmD..','...DmmmD...','....DmD....','.....D.....'],{L:[160,250,240],w:[255,255,255],m:[60,214,200],D:[24,130,126]},2,3));
+  if(TILE_CANVAS.item_emerald)artTile('item_emerald',T=>T.rows(['...LLL...','..LwLmL..','.LLmmmmD.','.LmmmmmD.','.LmmmmmD.','.LmmmmmD.','.DmmmmDD.','..DmmDD..','...DDD...'],{L:[150,250,170],w:[240,255,240],m:[52,200,96],D:[20,120,52]},3,3));
+  if(TILE_CANVAS.item_coal)artTile('item_coal',T=>T.rows(['....aab...','..aabbbba.','.abbcbbbba','abbbbbcbba','abcbbbbbba','.abbbbbba.','..aabbba..','....aa....'],{a:[28,28,32],b:[54,54,60],c:[120,120,132]},3,4));
+  if(TILE_CANVAS.item_stick)artTile('item_stick',T=>{for(let k=0;k<11;k++){T.S(3+k,13-k,[150,108,58]);T.S(4+k,13-k,[104,72,38]);}T.S(8,8,[188,140,80]);T.S(11,5,[188,140,80]);});
+  if(TILE_CANVAS.item_apple)artTile('item_apple',T=>{T.ell(8,9.5,5.4,4.9,(x,y,dx,dy)=>dx<-.35&&dy<-.35?[255,140,130]:dx+dy>.75?[140,16,20]:dy>.45?[170,22,26]:[214,36,40]);T.S(6,7,[255,220,210]);T.rows(['..b','.b.','b..'],{b:[96,62,30]},7,2);T.rows(['gg.','ggg','.g.'],{g:[80,168,52]},9,2);});
   // ---- Nether tiles (wrapped Voronoi cells so they tile seamlessly)
   const cells=(R,n)=>{const S=[];for(let i=0;i<n;i++)S.push([R()*16,R()*16,R()]);return (x,y)=>{let d1=1e9,d2=1e9,bi=0;for(let i=0;i<S.length;i++){let dx=Math.abs(x+.5-S[i][0]),dy=Math.abs(y+.5-S[i][1]);dx=Math.min(dx,16-dx);dy=Math.min(dy,16-dy);const d=Math.hypot(dx,dy);if(d<d1){d2=d1;d1=d;bi=i;}else if(d<d2)d2=d;}return {e:d2-d1,v:S[bi][2],d:d1};};};
   const netherrack=(P,R)=>{const C=cells(R,11);for(let y=0;y<16;y++)for(let x=0;x<16;x++){const c=C(x,y);P(x,y,c.e<.7?vary([62,20,24],R,8):vary(c.v<.33?[150,58,56]:c.v<.66?[118,42,42]:[96,32,34],R,12));}};
