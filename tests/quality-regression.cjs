@@ -208,7 +208,10 @@ assert.equal(context.migrate({v:1,p:{}}).generator,1);assert.equal(context.migra
  assert.equal(at(r.gate.x,r.gate.y+1,r.gate.z),0,'return gate opening');assert.equal(at(r.gate.x+3,r.gate.y+1,r.gate.z),B.obsidian,'return gate frame');
  assert(r.heightAt(Math.floor(r.arrival.x),Math.floor(r.arrival.z))===r.arrival.y-1,'arrival floor');
  const seen=new Set();for(let i=0;i<400;i++){const a=i/400*Math.PI*2,x=Math.round(Math.cos(a)*300),z=Math.round(Math.sin(a)*300);seen.add(r.biomeAt(x,z));}assert.equal(seen.size,4,'all four realm biomes');
- assert.equal(digest(r.genChunk(5,-3)),digest(make(12345,B,1,'outerend').genChunk(5,-3)),'realm generator is deterministic');}
+ assert.equal(digest(r.genChunk(5,-3)),digest(make(12345,B,1,'outerend').genChunk(5,-3)),'realm generator is deterministic');
+ // realm generator 1 has shipped: these chunks must stay byte-identical
+ for(const [x,z,h] of [[0,0,"9b87898e1d51dc47ae43d009b99313dbff5270630799fed891d5d9ee7108dadc"],[2,-1,"c80f8a2cd65d519c61f9aebf8d680ea6ac4c78207a127d619062dbee103ba8bf"],[-1,3,"21972b2ff89dcb5356fed8b7544400b4c1accdc0ad5b0445c3a1564650603f8a"],[8,0,"3cd1d889dd4d61888f0768d8e02a68ddd51f96c5c00509cc1b696d162e8ff7b1"],[0,9,"dd870442b7f5e276fad5dd3ccfcba99f83b5d9404e8af1045666db0dfa1a5463"],[-9,1,"fab219e81f1358a1a5f2af30281f1d513266f43b9a37a0d81e232372a95ecb28"],[1,-8,"418dc5a1b2146fb65e22669117e9f3ee07b221f8f9705d827aa1a0ba2c8610d0"],[20,20,"11d9be2eaae697ffb93bd6209e078f7470312f1794c91b81bdececaf489e9a96"]])
+  assert.equal(digest(make(12345,B,1,'outerend').genChunk(x,z)),h,`realm generator 1 chunk ${x},${z}`);}
 // Gun-wielding mobs spawn naturally only for a player holding a gun plus ammo it can fire (or a loaded magazine).
 {const PISTOL=1,P_AMMO=2,R_AMMO=3,SNIPER=4,HEAVY=5,DU=6;
  vm.runInContext(`globalThis.GUNS={${PISTOL}:{ammo:[${P_AMMO}]},${SNIPER}:{ammo:[${HEAVY},${DU}]}};`+source.slice(source.indexOf('function armedWith('),source.indexOf('// unarmed patrols that wandered in'))+';globalThis.armedWith=armedWith;',context);
