@@ -3543,7 +3543,7 @@ function updatePlayer(dt){
   else if(p.sneaking) speed = 1.31;
   else if(p.sprinting) speed = 5.612;
   if(!p.flying&&!p.inWater&&blockAtFeet(-.1)===B.soul_sand)speed*=.6;
-  if(player.effects?.speed>0)speed*=1.2;
+  if(player.effects?.speed>0)speed*=1.4;
   if(!p.flying)speed*=atomicMoveFactor();
   const control = p.flying ? 10 : (p.onGround ? 18 : (p.inWater? (inLava()?5:11) : 4));
   const k = 1-Math.exp(-control*dt);
@@ -5551,6 +5551,7 @@ function updateHeld(dt){
   held.equip=Math.min(1, held.equip+dt*5);
   held.lightT-=dt; if(held.lightT<=0){ held.lightT=0.25; held.target=localBrightness(); }
   held.light += ((held.target||1)-held.light)*Math.min(1,dt*6);
+  held.drink=lerp(held.drink||0,potionUse>0?1:0,Math.min(1,dt*12));
 }
 const _hq=new THREE.Quaternion(), _hq2=new THREE.Quaternion(), _he=new THREE.Euler(), _hv=new THREE.Vector3(), DEG=Math.PI/180;
 function hRot(q, x, y, z){ q.multiply(_hq2.setFromEuler(_he.set(x*DEG, y*DEG, z*DEG, 'XYZ'))); return q; }
@@ -5561,7 +5562,10 @@ function renderHeld(){
   const hv=Math.hypot(player.vel.x,player.vel.z), bobA = (CONFIG.bob && player.onGround) ? Math.min(hv/5.6,1) : 0;
   const bx=Math.sin(player.bob)*0.035*bobA, by=-Math.abs(Math.cos(player.bob))*0.03*bobA;
   const eq=(1-held.equip)*0.6;
-  if(held.kind==='arm'){
+  if(held.drink>.01&&held.kind!=='arm'){   // drinking: the bottle tips up toward the mouth with a little glug wobble
+    const k=held.drink,w=Math.sin(performance.now()*.025)*.02*k;
+    m.position.set(0.56-0.3*k+bx, -0.52+0.2*k+w+by-eq, -0.72-0.25*k);_hq.identity();hRot(_hq,0,-45+20*k,0);hRot(_hq,-35*k,0,0);hRot(_hq,0,0,30*k);m.quaternion.copy(_hq);m.scale.setScalar(.6);}
+  else if(held.kind==='arm'){
     // bare hand: shoulder at the lower right, the fist jabs forward and sweeps in toward the crosshair
     const f=Math.sin(sp*Math.PI), g2=Math.sin(p*Math.PI);
     m.position.set(0.62 - 0.22*f + bx, -0.6 + 0.07*f + by - eq, -0.22 - 0.3*g2);
@@ -6161,7 +6165,7 @@ function hurtMob(e,amount){
 function attackMob(){
  const e=raycastMob();if(!e)return false;
  if(combat.cooldown>0)return true;combat.cooldown=.6;
- const tool=ITEMS[inv.heldId()],base=tool?.tool==='sword'?3+tool.tier:tool?.tool==='axe'?2+tool.tier:1;const bonus=(inv.held()?.en?.sharpness||0)+(player.effects?.strength>0?3:0);
+ const tool=ITEMS[inv.heldId()],base=tool?.tool==='sword'?3+tool.tier:tool?.tool==='axe'?2+tool.tier:1;const bonus=(inv.held()?.en?.sharpness||0)+(player.effects?.strength>0?4:0);
  const crit=player.vel.y<-.5&&!player.onGround&&!player.inWater&&!player.flying;
  if(hurtMob(e,Math.floor((base+bonus)*(crit?1.5:1)))){wearHeld(tool?.tool==='sword'?1:2);player.exh+=.1;if(crit){toast('Critical hit!');for(let i=0;i<8;i++)emitParticle(e.pos.x,e.pos.y+1,e.pos.z,(Math.random()-.5)*2,2,(Math.random()-.5)*2,TEX.item_diamond);}}
  return true;
@@ -7141,7 +7145,12 @@ document.addEventListener('keydown',e=>{
        bookshelf levels, fueled timed batches and actual survival effects.
    ========================================================================= */
 const ENCHANTMENTS={efficiency:{label:'Efficiency',tool:true,max:3},unbreaking:{label:'Unbreaking',any:true,max:3},sharpness:{label:'Sharpness',sword:true,max:3},protection:{label:'Protection',armor:true,max:3},fortune:{label:'Fortune',tool:true,max:3},silk_touch:{label:'Silk Touch',tool:true,max:1}};
-const BREW={};let potionUse=0;
+const BREW={};let potionUse=0;const POTION_TIME=1.0;
+// a small ring under the crosshair fills while you drink
+let _drinkRing=null;function drinkRing(k){if(!_drinkRing){_drinkRing=el('div',null,{position:'fixed',left:'50%',top:'50%',width:g(18),height:g(18),margin:`${g(6)} 0 0 ${g(-9)}`,borderRadius:'50%',pointerEvents:'none',zIndex:5,display:'none'},document.body);}
+ if(k<=0){if(_drinkRing.style.display!=='none')_drinkRing.style.display='none';return;}_drinkRing.style.display='block';const c=POTION_COL[ITEMS[inv.heldId()]?.effect]||'#c060ff';
+ _drinkRing.style.background=`conic-gradient(${c} ${k*360}deg, rgba(0,0,0,.35) 0)`;_drinkRing.style.mask=_drinkRing.style.webkitMask='radial-gradient(circle, transparent 52%, #000 54%)';}
+const POTION_COL={speed:'#7fd8f0',strength:'#e0503c',healing:'#ff5a84',night_vision:'#7a68e0',fire_resistance:'#f0a038'};
 const effectHud=el('div','sh',{position:'fixed',right:g(5),top:g(38),fontSize:g(10),textAlign:'right',pointerEvents:'none'},document.body);
 function enchantHeld(name,desk=null){
  const st=inv.held(),d=st&&ITEMS[st.id],en=ENCHANTMENTS[name];if(!d?.durability||!en)return false;
@@ -7179,7 +7188,10 @@ function magicInteract(){
 function tickMagic(dt){
  U.uNightVision.value=player.effects?.night_vision>0?1:0;
  if(player.effects)for(const key in player.effects){player.effects[key]=Math.max(0,player.effects[key]-dt);if(player.effects[key]===0)delete player.effects[key];}
- const st=inv.held(),effect=ITEMS[st?.id]?.effect;if(mouse.right&&effect){potionUse+=dt;if(potionUse>=1.2){potionUse=0;drinkPotion(st.id);}}else potionUse=0;
+ const st=inv.held(),effect=ITEMS[st?.id]?.effect;
+ if(mouse.right&&effect&&gameState==='playing'){if(potionUse===0)sfx.splash?.();potionUse+=dt;if(Math.floor(potionUse/.28)!==Math.floor((potionUse-dt)/.28))sfx.burp?.();if(potionUse>=POTION_TIME){potionUse=0;drinkPotion(st.id);}}
+ else{if(potionUse>0&&potionUse<POTION_TIME*.5&&effect&&!tickMagic.hinted){tickMagic.hinted=1;toast('Hold right-click to drink');}potionUse=0;}
+ drinkRing(potionUse/POTION_TIME);
  if(entityClock.tick%20===0){effectHud.innerHTML='';for(const [key,time] of Object.entries(player.effects||{})){const row=el('div',null,null,effectHud),img=el('img',null,{width:g(12),height:g(12),verticalAlign:'middle',marginRight:g(3)},row);img.src=iconURL(B[({speed:'speed_potion',strength:'strength_potion',night_vision:'night_vision_potion',fire_resistance:'fire_resistance_potion',wither:'bone',dolphins_grace:'raw_fish',pressure:'prismarine_shard'})[key]]??B.glass_bottle);const text=el('span',null,null,row);text.textContent=key.replaceAll('_',' ')+' '+Math.ceil(time)+'s';}effectHud.style.display=gameState==='title'?'none':'block';}
  for(const c of world.containers.values()){
   if(c.type!=='brewing'||world.getBlock(c.x,c.y,c.z)<0)continue;
@@ -14287,7 +14299,7 @@ function raycastAvatar(){
 function attackPlayer(){
  if(!net.role||!(net.role==='host'?world.mp?.pvp:net.pvp)||player.mode==='spectator')return false;
  const a=raycastAvatar();if(!a)return false;if(combat.cooldown>0)return true;combat.cooldown=.6;
- const tool=ITEMS[inv.heldId()],base=tool?.tool==='sword'?3+tool.tier:tool?.tool==='axe'?2+tool.tier:1,bonus=(inv.held()?.en?.sharpness||0)+(player.effects?.strength>0?3:0);
+ const tool=ITEMS[inv.heldId()],base=tool?.tool==='sword'?3+tool.tier:tool?.tool==='axe'?2+tool.tier:1,bonus=(inv.held()?.en?.sharpness||0)+(player.effects?.strength>0?4:0);
  const crit=player.vel.y<-.5&&!player.onGround&&!player.inWater&&!player.flying,dmg=Math.min(20,Math.floor((base+bonus)*(crit?1.5:1)));
  if(net.role==='host'){const peer=netJoined().find(p=>p.name===a.name);if(peer)netSendPeer(peer,{t:'hurt',a:dmg,c:'pvp',x:player.pos.x,z:player.pos.z});}
  else netSend({t:'pvp',n:a.name,a:dmg});
