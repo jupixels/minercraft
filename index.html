@@ -7772,26 +7772,62 @@ const SW={ink:[30,26,62],belly:[96,110,150],wing:[40,48,92],wing2:[56,70,120],ed
 const swStars=(P,w,h,R,n=1)=>{for(let i=0;i<w*h/14*n;i++){const x=R()*w|0,y=R()*h|0;P(x,y,R()<.3?SW.edge:SW.star);}for(let k=0;k<3;k++){let x=R()*w|0,y=R()*h|0;for(let s=0;s<4;s++){const nx=clamp(x+((R()*5)|0)-2,0,w-1),ny=clamp(y+((R()*5)|0)-2,0,h-1);P(nx,ny,SW.star);x=nx;y=ny;}}};
 const swWing=(P,w,h,R,mirror)=>{for(let y=0;y<h;y++)for(let x=0;x<w;x++){const t=(mirror?w-1-x:x)/w;P(x,y,[SW.wing[0]+(SW.wing2[0]-SW.wing[0])*t,SW.wing[1]+(SW.wing2[1]-SW.wing[1])*t,SW.wing[2]+(SW.wing2[2]-SW.wing[2])*t]);}
  rectP(P,0,h-2,w,2,SW.edge);for(let x=2;x<w;x+=4)rectP(P,mirror?w-1-x:x,0,1,h-2,[70,90,150]);swStars(P,w,h-2,R,.7);};
+// The Starwing (rebuilt): a long-necked celestial wyrm. Three-segment neck, a skull with a hinged jaw,
+// swept horns and a crystal crest; wings with three bones each (arm, forearm, finger) carrying their own
+// membrane panels; a five-segment tail ending in a star-barb; tucked hind legs. Wingbeats ripple out along
+// the bones and the tail and neck undulate (starwingAnimate); the jaw opens when it attacks.
+const swMem=(mirror)=>(P,w,h,R)=>{for(let y=0;y<h;y++)for(let x=0;x<w;x++){const t=y/h;P(x,y,[SW.wing[0]+(SW.wing2[0]-SW.wing[0])*t,SW.wing[1]+(SW.wing2[1]-SW.wing[1])*t,SW.wing[2]+(SW.wing2[2]-SW.wing[2])*t]);}
+ rectP(P,0,h-1,w,1,SW.edge);for(let x=3;x<w;x+=5)rectP(P,mirror?w-1-x:x,0,1,h-1,[64,82,136]);swStars(P,w,h-1,R,.8);};
+const swBone={all:(P,w,h)=>{rectP(P,0,0,w,h,[52,46,96]);rectP(P,0,0,w,1,SW.edge);}};
+const swWingParts=(s)=>{const m=s<0,n=m?'L':'R',sx=v=>v*s;   // s = +1 right wing, -1 left wing (boxes mirrored)
+ const box=(x0,y0,z0,w,h,d)=>m?[-x0-w,y0,z0,w,h,d]:[x0,y0,z0,w,h,d];
+ return [
+  {id:'wing'+n,pivot:[sx(6),7,4],box:box(0,-1,-1.5,16,2,3),c:[52,46,96],f:swBone},
+  {id:'mem1'+n,parent:'wing'+n,box:box(0,-.25,-16,16,.5,14.5),c:SW.wing,f:{top:swMem(m),bottom:swMem(m)}},
+  {id:'fore'+n,parent:'wing'+n,pivot:[sx(16),0,0],box:box(0,-1,-1,14,2,2),c:[52,46,96],f:swBone},
+  {id:'mem2'+n,parent:'fore'+n,box:box(0,-.25,-14,14,.5,13),c:SW.wing2,f:{top:swMem(m),bottom:swMem(m)}},
+  {id:'tip'+n,parent:'fore'+n,pivot:[sx(14),0,0],rot:[0,-.35*s,0],box:box(0,-.5,-.75,11,1,1.5),c:[60,54,108],f:swBone},
+  {id:'mem3'+n,parent:'tip'+n,box:box(0,-.2,-9,11,.4,8.5),c:SW.wing2,f:{top:swMem(m),bottom:swMem(m)}},
+  {id:'claw'+n,parent:'tip'+n,pivot:[sx(11),0,0],box:box(0,-.5,-.5,2,1,1),c:SW.crys}];};
 MOB_SPECS.starwing={scale:2.5,parts:[
- {id:'body',pivot:[0,6,0],box:[-7,-3,-11,14,6,22],c:SW.ink,f:{top:(P,w,h,R)=>{swStars(P,w,h,R);rectP(P,w/2-1,0,2,h,[60,52,110]);},bottom:(P,w,h)=>{rectP(P,0,0,w,h,SW.belly);rectP(P,w/2-2,h/2-3,4,6,SW.gem);}}},
- {id:'spine1',parent:'body',box:[-1,3,-6,2,5,3],c:SW.crys,rot:[-.35,0,0]},
- {id:'spine2',parent:'body',box:[-1,3,0,2,4,3],c:SW.crys,rot:[-.35,0,0]},
- {id:'spine3',parent:'body',box:[-.5,3,5,1,3,2],c:SW.crys,rot:[-.35,0,0]},
- {id:'head',pivot:[0,6,11],box:[-5,-3,0,10,6,8],c:[36,32,72],f:{front:(P,w,h)=>{for(const x of [1,3,6,8]){rectP(P,x,1,1,2,SW.eye);}P(2,1,[255,255,255]);P(7,1,[255,255,255]);rectP(P,2,4,6,1,[14,10,30]);},top:(P,w,h,R)=>swStars(P,w,h,R)}},
- {id:'finL',parent:'head',box:[-6,-3,4,2,3,7],c:[52,62,110],rot:[0,.25,0],f:{top:(P,w,h)=>rectP(P,0,0,w,h,SW.edge)}},
- {id:'finR',parent:'head',box:[4,-3,4,2,3,7],c:[52,62,110],rot:[0,-.25,0],f:{top:(P,w,h)=>rectP(P,0,0,w,h,SW.edge)}},
- {id:'crown1',parent:'head',box:[-1,3,1,2,6,2],c:SW.crys,rot:[-.5,0,0]},
- {id:'crown2',parent:'head',box:[-4,2,1,2,5,2],c:SW.crys,rot:[-.45,0,.35]},
- {id:'crown3',parent:'head',box:[2,2,1,2,5,2],c:SW.crys,rot:[-.45,0,-.35]},
- {id:'wingR',pivot:[7,6,1],box:[0,-1,-10,20,2,18],c:SW.wing,limb:{axis:'z',amp:.42,idle:true,phase:0},f:{top:(P,w,h,R)=>swWing(P,w,h,R,false),bottom:(P,w,h,R)=>swWing(P,w,h,R,false)}},
- {id:'tipR',parent:'wingR',pivot:[20,0,-2],box:[0,-.5,-7,18,1,11],c:SW.wing2,rot:[0,-.35,-.2],limb:{axis:'z',amp:.3,idle:true,phase:-.9},f:{top:(P,w,h,R)=>swWing(P,w,h,R,false)}},
- {id:'wingL',pivot:[-7,6,1],box:[-20,-1,-10,20,2,18],c:SW.wing,limb:{axis:'z',amp:.42,idle:true,phase:Math.PI},f:{top:(P,w,h,R)=>swWing(P,w,h,R,true),bottom:(P,w,h,R)=>swWing(P,w,h,R,true)}},
- {id:'tipL',parent:'wingL',pivot:[-20,0,-2],box:[-18,-.5,-7,18,1,11],c:SW.wing2,rot:[0,.35,.2],limb:{axis:'z',amp:.3,idle:true,phase:Math.PI-.9},f:{top:(P,w,h,R)=>swWing(P,w,h,R,true)}},
- {id:'tail',pivot:[0,5,-11],box:[-1.5,-1.5,-14,3,3,14],c:SW.ink,limb:{axis:'y',amp:.3,idle:true,phase:.5},f:{top:(P,w,h)=>{for(let y=1;y<h;y+=3)P(1,y,SW.edge);}}},
- {id:'tail2',parent:'tail',pivot:[0,0,-14],box:[-1,-1,-14,2,2,14],c:[34,30,70],limb:{axis:'y',amp:.35,idle:true,phase:1.2}},
- {id:'barb',parent:'tail2',pivot:[0,0,-14],box:[-2,-.5,-6,4,1,6],c:SW.gem,f:{top:(P,w,h)=>{rectP(P,0,0,w,h,SW.gem);P(1,1,[255,230,250]);}}},
- {id:'barb2',parent:'tail2',pivot:[0,0,-14],box:[-.5,-2,-5,1,4,5],c:[220,90,200]},
+ {id:'body',pivot:[0,6,0],box:[-6,-4,-10,12,8,20],c:SW.ink,f:{top:(P,w,h,R)=>{swStars(P,w,h,R);rectP(P,w/2-1,0,2,h,[60,52,110]);},bottom:(P,w,h)=>{rectP(P,0,0,w,h,SW.belly);for(let y=1;y<h;y+=3)rectP(P,1,y,w-2,1,[70,84,124]);}}},
+ {id:'core',parent:'body',box:[-2,-4.6,-3,4,1,6],c:SW.gem},
+ {id:'spine1',parent:'body',box:[-1,3.5,-7,2,4,2],c:SW.crys,rot:[-.4,0,0]},
+ {id:'spine2',parent:'body',box:[-1,3.5,-2,2,5,2],c:SW.crys,rot:[-.4,0,0]},
+ {id:'spine3',parent:'body',box:[-1,3.5,3,2,4,2],c:SW.crys,rot:[-.4,0,0]},
+ {id:'neck1',pivot:[0,7,10],box:[-3.5,-3.5,0,7,7,6],c:[34,30,70],f:{top:(P,w,h,R)=>swStars(P,w,h,R)}},
+ {id:'neck2',parent:'neck1',pivot:[0,.5,6],box:[-3,-3,0,6,6,6],c:[36,32,72],f:{top:(P,w,h,R)=>swStars(P,w,h,R)}},
+ {id:'neck3',parent:'neck2',pivot:[0,.5,6],box:[-2.5,-2.5,0,5,5,5],c:[38,34,76]},
+ {id:'head',parent:'neck3',pivot:[0,.5,5],box:[-4.5,-2.5,0,9,6,8],c:[40,36,80],f:{top:(P,w,h,R)=>swStars(P,w,h,R),front:(P,w,h)=>{for(const x of [1,2,6,7])rectP(P,x,1,1,2,SW.eye);rectP(P,2,4,5,1,[14,10,30]);}}},
+ {id:'snout',parent:'head',box:[-3,-1.5,8,6,3,6],c:[44,40,86],f:{top:(P,w,h)=>{P(1,h-1,[20,14,40]);P(w-2,h-1,[20,14,40]);}}},
+ {id:'jaw',parent:'head',pivot:[0,-2.5,2],box:[-2.5,-1.5,0,5,1.5,11],c:[32,28,64],f:{top:(P,w,h)=>{for(let y=1;y<h;y+=2){P(0,y,[230,240,255]);P(w-1,y,[230,240,255]);}}}},
+ {id:'hornL',parent:'head',pivot:[-3.5,3,1],rot:[-.7,-.3,0],box:[-1,0,-7,2,2,8],c:[200,196,228]},
+ {id:'hornR',parent:'head',pivot:[3.5,3,1],rot:[-.7,.3,0],box:[-1,0,-7,2,2,8],c:[200,196,228]},
+ {id:'crest1',parent:'head',pivot:[0,3.5,3],rot:[-.9,0,0],box:[-.75,0,-1,1.5,6,2],c:SW.crys},
+ {id:'crest2',parent:'head',pivot:[-1.8,3.2,2],rot:[-.8,0,.35],box:[-.6,0,-1,1.2,4.5,1.6],c:SW.crys},
+ {id:'crest3',parent:'head',pivot:[1.8,3.2,2],rot:[-.8,0,-.35],box:[-.6,0,-1,1.2,4.5,1.6],c:SW.crys},
+ ...swWingParts(1),...swWingParts(-1),
+ {id:'tail1',pivot:[0,6,-10],box:[-3,-3,-8,6,6,8],c:SW.ink,f:{top:(P,w,h)=>{for(let y=1;y<h;y+=3)P(w/2,y,SW.edge);}}},
+ {id:'tail2',parent:'tail1',pivot:[0,0,-8],box:[-2.5,-2.5,-8,5,5,8],c:[34,30,70]},
+ {id:'tail3',parent:'tail2',pivot:[0,0,-8],box:[-2,-2,-8,4,4,8],c:[36,32,72]},
+ {id:'tail4',parent:'tail3',pivot:[0,0,-8],box:[-1.5,-1.5,-7,3,3,7],c:[38,34,76]},
+ {id:'tail5',parent:'tail4',pivot:[0,0,-7],box:[-1,-1,-6,2,2,6],c:[42,38,84]},
+ {id:'barb',parent:'tail5',pivot:[0,0,-6],box:[-2.5,-.5,-5,5,1,5],c:SW.gem,f:{top:(P,w,h)=>{rectP(P,0,0,w,h,SW.gem);P(2,1,[255,230,250]);}}},
+ {id:'barb2',parent:'tail5',pivot:[0,0,-6],box:[-.5,-2.5,-4,1,5,4],c:[220,90,200]},
+ {id:'legL',pivot:[-4,3,-6],rot:[.9,0,0],box:[-1.5,-6,-1.5,3,6,3],c:[34,30,70]},
+ {id:'legR',pivot:[4,3,-6],rot:[.9,0,0],box:[-1.5,-6,-1.5,3,6,3],c:[34,30,70]},
+ {id:'footL',parent:'legL',pivot:[0,-6,0],box:[-1.5,-1,-1,3,1,4],c:SW.crys},
+ {id:'footR',parent:'legR',pivot:[0,-6,0],box:[-1.5,-1,-1,3,1,4],c:SW.crys},
 ]};
+// wingbeats ripple out along the bones (each segment lags the one before), the neck and tail undulate,
+// the body bobs with the beat, and the jaw opens when it swoops or spits a void orb
+function starwingAnimate(e,dt){const n=e.model?.nodes;if(!n?.wingR)return;const t=(e.age||0),beat=e.state==='swoop'?5.2:3.1,a=t*beat;
+ for(const [s,k] of [[1,'R'],[-1,'L']]){n['wing'+k].rotation.z=s*(Math.sin(a)*.62+.1);n['fore'+k].rotation.z=s*Math.sin(a-.7)*.42;n['tip'+k].rotation.z=s*Math.sin(a-1.3)*.34;}
+ n.body.position.y=(6+Math.sin(a+Math.PI)*1.6)/16;
+ n.neck1.rotation.x=Math.sin(t*1.3)*.12-.08;n.neck2.rotation.x=Math.sin(t*1.3-.6)*.12;n.neck3.rotation.x=Math.sin(t*1.3-1.2)*.1+.08;n.neck1.rotation.y=Math.sin(t*.7)*.15;
+ for(let i=1;i<=5;i++)n['tail'+i].rotation.y=Math.sin(t*2.1-i*.7)*(.1+i*.035);
+ const open=e.state==='swoop'||(e.shotT!==undefined&&e.shotT<.4)?.55:Math.max(0,Math.sin(t*.9))*.12;e.jawK=lerp(e.jawK||0,open,Math.min(1,dt*8));n.jaw.rotation.x=e.jawK;}
+{const _ue=updateEntities;updateEntities=function(dt){_ue(dt);for(const e of entities)if(e.kind==='starwing'&&!e.dead)starwingAnimate(e,dt);};}
 const bossBar=el('div',null,{position:'fixed',left:'50%',top:g(6),transform:'translateX(-50%)',width:g(182),display:'none',pointerEvents:'none',zIndex:15,textAlign:'center'},document.body);
 const bossName=el('div','sh',{fontSize:g(10),marginBottom:g(2),color:'#fff'},bossBar);bossName.textContent='Starwing';
 const bossTrack=el('div',null,{height:g(5),background:'#2a1030',border:`${g(1)} solid #000`},bossBar);
