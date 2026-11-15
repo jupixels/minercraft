@@ -191,6 +191,12 @@ Two limits on that freedom:
   host builds the End gate once the Starwing is dead (`realmPlaceGate`, from a `tickEndPortals` wrapper);
   `realmTravel` handles both arches. `realmSkyFrame` (called from the End branch of `updateSky`) tints the
   sky, fog and motes by `REALM_SKY[biome]`. Blocks 1002-1012 (realm ground/flora, pedestals).
+  71b creatures (`REALM_MOBS`, `MOB_DEFS[k].realm` = biome; passive AI in a `petAndGuardianAI` wrapper,
+  hostile in `REALM_AI`, interactions in `REALM_USE` via `mobUse`, spawning `realmSpawnTick`), 71c stalkers
+  (enderman variants in `ENDER_KINDS`, `MOB_DEFS[k].stalker`; hearts 1054-1057 with `world.realm.pity`),
+  71d the ritual and Elder Dragon (`realmArenaTick`, `elderTick` from a `tickBoss` wrapper, `RITUAL`
+  bolts/rings sent to guests as `rfx`; dragon health in `world.realm.dragon`), 71e the Starweave Mantle
+  (1058, survival flight on `MANTLE.light`, no fall damage, dropped once per world via `realm.reward`).
 - Section 68 (just before BOOT) is the texture refresh: `buildTextureRefresh()`
   runs after every other texture builder and redraws weak legacy tiles in
   place (bread, meats, nuggets, armour icons, pillar/pumpkin/melon/deepslate
@@ -286,7 +292,7 @@ Two limits on that freedom:
 - **Item ids are global.** Items are also defined outside section 2 (boats at
   452, spawn eggs from 400, and 1024+ in sections 64-65); the test fails if an
   id is defined twice. 256-511 is nearly full, so new items go in 1024-2047
-  (above every block id; the test allows both ranges). Next free: 1072 (1058 reserved for the realm reward).
+  (above every block id; the test allows both ranges). Next free: 1072.
 - **Block IDs are permanent.** Saves store raw IDs, so an id → name pair
   never changes. The id space is split three ways:
   - `0–255`: the original blocks. Frozen; the test hashes them.
