@@ -14380,7 +14380,8 @@ function buildPotionTextures(){
    blends sky colour, fog and drifting motes by the biome under the player.
    ========================================================================= */
 function normRealm(r){r=r&&typeof r==='object'&&!Array.isArray(r)?r:{};const g=r.gate,d=r.dragon||{};
- return {gate:g&&[g.x,g.y,g.z].every(Number.isInteger)?{x:g.x,y:g.y,z:g.z}:null,dragon:{defeated:!!d.defeated,hp:Number.isFinite(d.hp)?Math.max(0,d.hp):0},reward:!!r.reward,visited:!!r.visited};}
+ return {gate:g&&[g.x,g.y,g.z].every(Number.isInteger)?{x:g.x,y:g.y,z:g.z}:null,dragon:{defeated:!!d.defeated,active:!!d.active,hp:Number.isFinite(d.hp)?Math.max(0,d.hp):0},reward:!!r.reward,visited:!!r.visited,
+  pity:Array.isArray(r.pity)&&r.pity.length===4?r.pity.map(v=>Math.max(0,Math.min(15,v|0))):[0,0,0,0]};}
 const REALM_MAP=['#dcd9a5','#c4a6e6','#2a8c84','#4a3e40','#e6eef6'];   // hub, then the four biomes
 const REALM_NAMES=['Prism Barrens','Glowcap Jungle','Ashen Rift','Rimeglass Expanse'];
 // per biome (hub last): sky horizon and zenith, fog start and end as fractions of the view distance, mote colour and drift
@@ -14696,6 +14697,168 @@ function buildStalkerTextures(){
  CREATIVE_TABS[3].items.push(...HEARTS.map(h=>B[h]),...STALKERS.map(k=>B['spawn_'+k]));
 }
 
+/* ---- 71d. The Heart Arena ritual and the Elder Dragon ----
+   Right-click a heart pedestal with its biome's heart (the statue behind it shows which) to kindle it
+   (world.setBlock, so guests can do it too). When all four burn, the host starts the summoning: beams
+   rise from the pedestals for six seconds, the pedestals go dark and the Elder Dragon bursts out above
+   the arena. Three phases: I circles and breathes void bolts and dives; II (below 2/3) also rains
+   shards round its foes and calls stalkers and hunters to its side; III (below 1/3) lands, stomps
+   shockwaves across the arena floor and charges. Its health is saved in world.realm.dragon, so it
+   returns where it left off; guests get its health in 'realm' messages and its bolts as 'rfx'. */
+MOB_DEFS.elder_dragon={hp:600,w:2.6,h:3,speed:12,color:[40,24,60],hostile:true,flying:true,fireImmune:true,boss:true,loot:[]};
+defItem(1071,'spawn_elder_dragon',{label:'Spawn Elder Dragon',icon:'egg',spawn:'elder_dragon'});
+const ED={ink:[34,22,52],ink2:[52,34,78],bone:[226,218,196],bone2:[176,166,146],core:[255,236,255],horn:[[236,170,255],[80,240,220],[255,120,40],[170,230,255]],mem:[70,40,110],mem2:[110,60,150]};
+const edScales=(P,w,h,R)=>{for(let y=0;y<h;y++)for(let x=0;x<w;x++)P(x,y,vary((x+(y&1))%3===0?ED.ink2:ED.ink,R,10));};
+const edMem=(P,w,h,R)=>{for(let y=0;y<h;y++)for(let x=0;x<w;x++){const t=y/h;P(x,y,vary([ED.mem[0]+(ED.mem2[0]-ED.mem[0])*t,ED.mem[1]+(ED.mem2[1]-ED.mem[1])*t,ED.mem[2]+(ED.mem2[2]-ED.mem[2])*t],R,8));}for(let x=2;x<w;x+=5)rectP(P,x,0,1,h,ED.bone2);rectP(P,0,h-1,w,1,[200,120,255]);};
+const edWing=(s,n,big)=>{const m=s<0,box=(x0,y0,z0,w,h,d)=>m?[-x0-w,y0,z0,w,h,d]:[x0,y0,z0,w,h,d],k=big?1:.6,sx=v=>v*s;
+ return [{id:'w'+n,pivot:[sx(6),big?14:12,big?5:-4],box:box(0,-1,-1,14*k,2,2),c:ED.bone2,limb:{axis:'z',amp:(big?.55:.45)*-s,idle:true,phase:big?0:.8}},
+  {id:'wm'+n,parent:'w'+n,box:box(0,-.25,-16*k,14*k,.5,15*k),c:ED.mem,f:{top:edMem,bottom:edMem}},
+  {id:'wf'+n,parent:'w'+n,pivot:[sx(14*k),0,0],rot:[0,-.25*s,0],box:box(0,-.75,-.75,13*k,1.5,1.5),c:ED.bone2},
+  {id:'wn'+n,parent:'wf'+n,box:box(0,-.2,-14*k,13*k,.4,13*k),c:ED.mem2,f:{top:edMem,bottom:edMem}},
+  {id:'wc'+n,parent:'wf'+n,pivot:[sx(13*k),0,0],box:box(0,-.5,-.5,2,1,1),c:ED.bone}];};
+MOB_SPECS.elder_dragon={scale:2.6,parts:[
+ {id:'body',pivot:[0,10,0],box:[-6,-5,-10,12,10,20],c:ED.ink,f:{all:edScales,bottom:(P,w,h,R)=>{for(let y=0;y<h;y++)for(let x=0;x<w;x++)P(x,y,vary(y%3===0?ED.bone2:ED.bone,R,8));}}},
+ {id:'core',parent:'body',box:[-2.5,-5.6,-3,5,1,6],c:ED.core},
+ {id:'pl1',parent:'body',box:[-4,5,-8,8,1.5,5],c:ED.bone},{id:'pl2',parent:'body',box:[-4.5,5,-2,9,1.5,5],c:ED.bone},{id:'pl3',parent:'body',box:[-4,5,4,8,1.5,5],c:ED.bone},
+ {id:'sp1',parent:'body',pivot:[0,6.5,-6],rot:[-.5,0,0],box:[-.75,0,-.75,1.5,4,1.5],c:ED.horn[0]},{id:'sp2',parent:'body',pivot:[0,6.5,0],rot:[-.5,0,0],box:[-.75,0,-.75,1.5,5,1.5],c:ED.horn[1]},{id:'sp3',parent:'body',pivot:[0,6.5,6],rot:[-.5,0,0],box:[-.75,0,-.75,1.5,4,1.5],c:ED.horn[2]},
+ {id:'neck1',pivot:[0,12,10],box:[-3.5,-3.5,0,7,7,6],c:ED.ink2,f:{all:edScales}},
+ {id:'neck2',parent:'neck1',pivot:[0,1,6],box:[-3,-3,0,6,6,6],c:ED.ink,f:{all:edScales}},
+ {id:'neck3',parent:'neck2',pivot:[0,1,6],box:[-2.5,-2.5,0,5,5,5],c:ED.ink2,f:{all:edScales}},
+ {id:'head',parent:'neck3',pivot:[0,1,5],box:[-4,-3,0,8,6,8],c:ED.bone,f:{side:(P,w,h)=>{rectP(P,1,1,2,1,[255,60,200]);P(1,1,[255,230,250]);},top:(P,w,h,R)=>{for(let y=0;y<h;y++)for(let x=0;x<w;x++)P(x,y,vary(x===Math.floor(w/2)?ED.bone2:ED.bone,R,8));}}},
+ {id:'snout',parent:'head',box:[-3,-3,8,6,3.5,6],c:ED.bone,f:{front:(P,w)=>{P(1,0,[30,20,30]);P(w-2,0,[30,20,30]);}}},
+ {id:'jaw',parent:'head',pivot:[0,-3,2],box:[-3,-2,0,6,2,11],c:ED.bone2,f:{top:(P,w,h)=>{for(let y=1;y<h;y+=2){P(0,y,[255,255,250]);P(w-1,y,[255,255,250]);}}}},
+ {id:'hA',parent:'head',pivot:[-3,3,1],rot:[-.9,0,-.4],box:[-.75,0,-.75,1.5,6,1.5],c:ED.horn[0]},
+ {id:'hB',parent:'head',pivot:[3,3,1],rot:[-.9,0,.4],box:[-.75,0,-.75,1.5,6,1.5],c:ED.horn[1]},
+ {id:'hC',parent:'head',pivot:[-3.5,1,0],rot:[-1.2,0,-1],box:[-.6,0,-.6,1.2,5,1.2],c:ED.horn[2]},
+ {id:'hD',parent:'head',pivot:[3.5,1,0],rot:[-1.2,0,1],box:[-.6,0,-.6,1.2,5,1.2],c:ED.horn[3]},
+ ...edWing(1,'R',true),...edWing(-1,'L',true),...edWing(1,'R2',false),...edWing(-1,'L2',false),
+ {id:'tail1',pivot:[0,9,-10],box:[-3,-3,-7,6,6,7],c:ED.ink,f:{all:edScales}},
+ {id:'tail2',parent:'tail1',pivot:[0,0,-7],box:[-2.5,-2.5,-7,5,5,7],c:ED.ink2,f:{all:edScales}},
+ {id:'tail3',parent:'tail2',pivot:[0,0,-7],box:[-2,-2,-7,4,4,7],c:ED.ink,f:{all:edScales}},
+ {id:'tail4',parent:'tail3',pivot:[0,0,-7],box:[-1.5,-1.5,-6,3,3,6],c:ED.ink2},
+ {id:'tail5',parent:'tail4',pivot:[0,0,-6],box:[-1,-1,-6,2,2,6],c:ED.ink},
+ {id:'blade',parent:'tail5',pivot:[0,0,-6],box:[-4,-.5,-5,8,1,5],c:ED.horn[0],f:{top:(P,w,h)=>{rectP(P,0,0,w,h,ED.horn[0]);for(let x=0;x<w;x+=2)P(x,h-1,ED.core);}}},
+ {id:'legFL',pivot:[-5,6,6],box:[-1.5,-8,-1.5,3,8,3],c:ED.ink2,limb:{phase:0,amp:.3}},{id:'legFR',pivot:[5,6,6],box:[-1.5,-8,-1.5,3,8,3],c:ED.ink2,limb:{phase:Math.PI,amp:.3}},
+ {id:'legBL',pivot:[-5,6,-6],box:[-2,-8,-2,4,8,4],c:ED.ink,limb:{phase:Math.PI,amp:.3}},{id:'legBR',pivot:[5,6,-6],box:[-2,-8,-2,4,8,4],c:ED.ink,limb:{phase:0,amp:.3}}]};
+const RITUAL={t:0,beams:null,on:false,bolts:[],rings:[],netT:0,minT:0,boltMat:null,boltGeo:null};
+function realmPedestals(){return world.dimension==='outerend'&&gen?.pedestals?gen.pedestals:[];}
+// kindling a pedestal
+{const _tp=tryPlace;tryPlace=function(repeat=false){
+ if(!repeat&&target&&!player.sneaking&&world.dimension==='outerend'&&(target.id===B.realm_pedestal||target.id===B.realm_pedestal_lit)){
+  const ped=realmPedestals().find(p=>p.x===target.x&&p.y===target.y&&p.z===target.z);if(!ped)return _tp(repeat);
+  if(target.id===B.realm_pedestal_lit){toast('This pedestal already burns with the '+HEART_LABELS[ped.b]+'.');return true;}
+  const held=ITEMS[inv.heldId()];if(held?.heart===undefined){toast('The pedestal before the '+REALM_NAMES[ped.b]+' statue waits for a '+HEART_LABELS[ped.b]+'.');return true;}
+  if(held.heart!==ped.b){toast('That heart belongs to another pedestal. This one waits for a '+HEART_LABELS[ped.b]+'.');return true;}
+  if(realmDragon()){toast('The Elder Dragon is already here!');return true;}
+  if(player.mode!=='creative')inv.consumeHeld();world.setBlock(ped.x,ped.y,ped.z,B.realm_pedestal_lit);swing();sfx.explode?.(6,.3);
+  for(let i=0;i<30;i++)emitParticle(ped.x+.5,ped.y+1,ped.z+.5,(Math.random()-.5)*2,Math.random()*4,(Math.random()-.5)*2,TEX['item_'+HEARTS[ped.b]]??TEX.smoke,.3,1.4);
+  const lit=realmPedestals().filter(p=>p===ped||world.getBlock(p.x,p.y,p.z)===B.realm_pedestal_lit).length;
+  toast(lit<4?`The ${HEART_LABELS[ped.b]} kindles (${lit}/4).`:'All four hearts burn. The arena trembles…');awardAdvancement('Heart of the Realm',B[HEARTS[ped.b]]);return true;}
+ return _tp(repeat);};}
+function realmDragon(){return entities.find(e=>e.kind==='elder_dragon'&&!e.dead);}
+function realmTargets(){const out=[];if(_hostTarget.active&&player.mode==='survival'&&player.health>0)out.push(_hostTarget);_hostTarget.mode=player.mode;_hostTarget.active=['playing','inventory','chat'].includes(gameState);
+ if(net.role==='host')for(const peer of net.peers.values())if(peer.name&&peer.v&&!(peer.flags&8)&&peer.mode!=='creative')out.push(peer.target);return out;}
+// the summoning, the dragon's return and the guests' boss bar
+function realmArenaTick(dt){
+ if(world.dimension!=='outerend'||!gen?.pedestals)return;const peds=gen.pedestals,host=net.role!=='client';
+ if(RITUAL.on){RITUAL.t+=dt;realmBeams(RITUAL.t);if(RITUAL.t>=6){RITUAL.on=false;realmBeams(-1);if(host){for(const p of peds)world.setBlock(p.x,p.y,p.z,B.realm_pedestal);elderSpawn(MOB_DEFS.elder_dragon.hp,true);}}
+  if(Math.random()<dt*3)sfx.explode?.(20,.2);return;}
+ if(!host){const e=realmDragon();if(e){e.hp=world.realm.dragon.hp||e.hp;elderBar(e);}return;}
+ const dr=realmDragon();
+ if(!dr&&peds.every(p=>world.getBlock(p.x,p.y,p.z)===B.realm_pedestal_lit)){RITUAL.on=true;RITUAL.t=0;toast('The hearts flare. Something vast stirs beneath the arena…');if(net.role==='host')netBroadcast({t:'rfx',k:'ritual'});return;}
+ if(!dr&&world.realm.dragon.active&&world.realm.dragon.hp>0&&Math.hypot(player.pos.x,player.pos.z)<120&&gameState==='playing')elderSpawn(world.realm.dragon.hp,false);
+ if(dr){world.realm.dragon.hp=Math.max(0,dr.hp);RITUAL.netT-=dt;if(RITUAL.netT<=0&&net.role==='host'){RITUAL.netT=.5;netBroadcast({t:'realm',r:world.realm});}}
+}
+function realmBeams(t){
+ if(t<0){if(RITUAL.beams){scene.remove(RITUAL.beams);RITUAL.beams.geometry.dispose();RITUAL.beams=null;}return;}
+ if(!RITUAL.beams){const g=new THREE.BufferGeometry(),pos=[],col=[];for(const p of gen.pedestals){pos.push(p.x+.5,p.y+1,p.z+.5,.5,92,.5);const c=ED.horn[p.b].map(v=>v/255);col.push(...c,...c);}
+  g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
+  RITUAL.beams=new THREE.LineSegments(g,new THREE.LineBasicMaterial({vertexColors:true,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false}));RITUAL.beams.frustumCulled=false;scene.add(RITUAL.beams);}
+ RITUAL.beams.material.opacity=.4+.6*Math.abs(Math.sin(t*6));
+ for(const p of gen.pedestals)if(Math.random()<.5){const k=Math.random();emitParticle(p.x+.5+(.5-p.x-.5)*k,p.y+1+(91-p.y)*k,p.z+.5+(.5-p.z-.5)*k,0,0,0,TEX['item_'+HEARTS[p.b]]??TEX.smoke,0,.5);}
+}
+function elderSpawn(hp,fresh){
+ for(let i=entities.length-1;i>=0&&entities.length>=ENTITY_LIMIT;i--){const m=entities[i];if(!m.persistent&&!m.tamed&&riding!==m)removeMob(m);}
+ const e=spawnMob('elder_dragon',.5,fresh?70:92,.5,{persistent:true});if(!e)return null;e.hp=hp;e.phase=hp>400?1:hp>200?2:3;e.ang=0;e.state='circle';e.stT=0;e.breathT=3;e.diveT=10;e.rainT=5;e.stompT=4;e.chargeT=8;e.contactT=0;
+ world.realm.dragon.hp=hp;world.realm.dragon.active=true;if(fresh){e.vel.set(0,14,0);toast('THE ELDER DRAGON HAS AWAKENED');sfx.explode?.(10,1);for(let i=0;i<60;i++)emitParticle(.5,64,.5,(Math.random()-.5)*10,Math.random()*10,(Math.random()-.5)*10,TEX.obsidian??TEX.smoke,.6,2);}
+ return e;}
+function elderBar(e){bossBarFor(e,'THE ELDER DRAGON','DEVOURER OF THE FOUR · PHASE '+['I','II','III'][(e.phase||1)-1],MOB_DEFS.elder_dragon.hp,true);}
+// void bolts: glowing projectiles in the colour of a biome; host bolts hurt, guest copies are cosmetic
+function elderBolt(x,y,z,vx,vy,vz,b,real=true,fall=false){
+ if(!RITUAL.boltGeo){RITUAL.boltGeo=new THREE.BoxGeometry(.45,.45,.45);}const m=new THREE.Mesh(RITUAL.boltGeo,new THREE.MeshBasicMaterial({color:new THREE.Color(...ED.horn[b].map(v=>v/255)),transparent:true,opacity:.9,blending:THREE.AdditiveBlending,depthWrite:false}));
+ m.position.set(x,y,z);scene.add(m);RITUAL.bolts.push({m,v:new THREE.Vector3(vx,vy,vz),b,real,age:0,fall});
+ if(real&&net.role==='host')netBroadcast({t:'rfx',k:'bolt',a:[r2(x),r2(y),r2(z),r2(vx),r2(vy),r2(vz),b,fall?1:0]});}
+function elderBoltsTick(dt){
+ for(let i=RITUAL.bolts.length-1;i>=0;i--){const o=RITUAL.bolts[i],p=o.m.position;o.age+=dt;o.v.y-=(o.fall?20:2)*dt;p.addScaledVector(o.v,dt);o.m.rotation.x+=dt*5;o.m.rotation.y+=dt*4;
+  if(Math.random()<.6)emitParticle(p.x,p.y,p.z,0,0,0,TEX['item_'+HEARTS[o.b]]??TEX.smoke,0,.4);
+  let hit=o.age>6;const id=world.getBlock(Math.floor(p.x),Math.floor(p.y),Math.floor(p.z));if(id>0&&BLOCKS[id]?.solid)hit=true;
+  if(o.real&&!hit)for(const T of realmTargets())if(T.pos.distanceToSquared(_tmpV3.set(p.x,p.y-1,p.z))<(o.fall?2.2:1.4)){hit=true;break;}
+  if(hit){if(o.real)for(const T of realmTargets()){const d2=T.pos.distanceToSquared(_tmpV3.set(p.x,p.y-1,p.z));if(d2<(o.fall?6:3)){T.hurt(o.fall?7:6,'elder_dragon',p);if(T===_hostTarget){if(o.b===1)player.effects.spores=Math.max(player.effects.spores||0,4);else if(o.b===2)player.fire=Math.max(player.fire||0,3);else if(o.b===3)player.effects.chill=Math.max(player.effects.chill||0,4);}}}
+   for(let k=0;k<14;k++)emitParticle(p.x,p.y,p.z,(Math.random()-.5)*5,Math.random()*4,(Math.random()-.5)*5,TEX['item_'+HEARTS[o.b]]??TEX.smoke,.5,.9);
+   scene.remove(o.m);o.m.material.dispose();RITUAL.bolts.splice(i,1);}}
+ for(let i=RITUAL.rings.length-1;i>=0;i--){const r=RITUAL.rings[i];r.age+=dt;const R=2+r.age*16;r.m.scale.set(R,R,1);r.m.material.opacity=Math.max(0,.9-r.age/1.4);
+  if(r.real)for(const T of realmTargets()){if(r.hit.has(T))continue;const d=Math.hypot(T.pos.x-r.x,T.pos.z-r.z);if(Math.abs(d-R)<1.3&&Math.abs(T.pos.y-r.y)<1.6){r.hit.add(T);T.hurt(8,'elder_dragon',{x:r.x,y:r.y,z:r.z});if(T===_hostTarget){const l=d||1;player.kbx=(player.kbx||0)+(T.pos.x-r.x)/l*10;player.kbz=(player.kbz||0)+(T.pos.z-r.z)/l*10;player.vel.y=Math.max(player.vel.y,7);}}}
+  if(r.age>1.4){scene.remove(r.m);r.m.geometry.dispose();RITUAL.rings.splice(i,1);}}
+}
+const _tmpV3=new THREE.Vector3();
+function elderRing(x,y,z,real=true){const m=new THREE.Mesh(new THREE.RingGeometry(.85,1,48),new THREE.MeshBasicMaterial({color:0xd8a0ff,transparent:true,opacity:.9,side:THREE.DoubleSide,blending:THREE.AdditiveBlending,depthWrite:false}));
+ m.rotation.x=-Math.PI/2;m.position.set(x,y+.15,z);scene.add(m);RITUAL.rings.push({m,x,y,z,age:0,real,hit:new Set()});sfx.explode?.(Math.hypot(player.pos.x-x,player.pos.z-z),.6);
+ if(real&&net.role==='host')netBroadcast({t:'rfx',k:'ring',a:[r2(x),r2(y),r2(z)]});}
+// the fight (host)
+function elderTick(e,dt){
+ const p=e.pos,hpF=e.hp/MOB_DEFS.elder_dragon.hp,targets=realmTargets();let T=null,bd=1e9;for(const t of targets){const d=p.distanceToSquared(t.pos);if(d<bd){bd=d;T=t;}}
+ const newPhase=hpF>2/3?1:hpF>1/3?2:3;if(newPhase!==e.phase){e.phase=newPhase;toast(newPhase===2?'The Elder Dragon screams: the realm answers its call!':'The Elder Dragon crashes down into the arena!');sfx.explode?.(8,.8);if(newPhase===3){e.state='land';}e.minT=0;}
+ elderBar(e);e.stT+=dt;e.contactT=Math.max(0,e.contactT-dt);e.breath=Math.max(0,(e.breath||0)-dt);
+ const fly=(tx,ty,tz,sp)=>{const dx=tx-p.x,dy=ty-p.y,dz=tz-p.z,l=Math.hypot(dx,dy,dz)||1,k=Math.min(1,dt*3);e.vel.x+=(dx/l*sp-e.vel.x)*k;e.vel.y+=(dy/l*sp-e.vel.y)*k;e.vel.z+=(dz/l*sp-e.vel.z)*k;if(Math.hypot(e.vel.x,e.vel.z)>.5)e.yaw=Math.atan2(e.vel.x,e.vel.z);return l;};
+ const breath=(n,spread)=>{if(!T)return;e.breath=1;const hx=p.x+Math.sin(e.yaw)*5,hy=p.y+3,hz=p.z+Math.cos(e.yaw)*5;for(let i=0;i<n;i++)setTimeout(()=>{if(e.dead||!T)return;const dx=T.pos.x-hx+(Math.random()-.5)*spread,dy=T.pos.y+1-hy,dz=T.pos.z-hz+(Math.random()-.5)*spread,l=Math.hypot(dx,dy,dz)||1;elderBolt(hx,hy,hz,dx/l*20,dy/l*20+l*.05,dz/l*20,(Math.random()*4)|0);},i*140);};
+ if(e.phase<3||e.state==='land'){
+  if(e.state==='dive'&&T){const l=fly(T.pos.x,T.pos.y+1,T.pos.z,24);if(l<4&&e.contactT<=0){e.contactT=1;T.hurt(10,'elder_dragon',p);e.state='climb';e.stT=0;}if(e.stT>3){e.state='climb';e.stT=0;}}
+  else if(e.state==='climb'){fly(p.x+Math.sin(e.yaw)*10,95,p.z+Math.cos(e.yaw)*10,16);if(e.stT>1.5){e.state='circle';e.stT=0;}}
+  else if(e.state==='land'){const l=fly(.5,61.5,.5,14);if(l<2||p.y<62){e.state='ground';e.stT=0;p.y=61;e.vel.set(0,0,0);elderRing(p.x,61,p.z);}}
+  else{e.ang+=dt*(e.phase===1?.32:.42);const R=e.phase===1?34:40;fly(Math.cos(e.ang)*R,86+Math.sin(e.stT*.7)*4,Math.sin(e.ang)*R,e.phase===1?13:17);
+   e.breathT-=dt;if(e.breathT<=0&&T&&bd<60*60){e.breathT=e.phase===1?3.5:4;breath(e.phase===1?5:7,e.phase===1?2:3);}
+   e.diveT-=dt;if(e.diveT<=0&&T){e.diveT=e.phase===1?11:9;e.state='dive';e.stT=0;}
+   if(e.phase===2){e.rainT-=dt;if(e.rainT<=0){e.rainT=5;for(const t of targets)for(let i=0;i<5;i++){const x=t.pos.x+(Math.random()-.5)*10,z=t.pos.z+(Math.random()-.5)*10;elderBolt(x,t.pos.y+22+Math.random()*6,z,0,-4,0,(Math.random()*4)|0,true,true);}}
+    e.minT-=dt;if(e.minT<=0){e.minT=30;const near=entities.filter(m=>MOB_DEFS[m.kind].realm!==undefined&&MOB_DEFS[m.kind].hostile&&m.pos.distanceToSquared(p)<80*80).length;
+     if(near<4)for(let i=0;i<3;i++){const a=Math.random()*6.28,x=Math.cos(a)*14,z=Math.sin(a)*14,b=(Math.random()*4)|0;const m=spawnMob(Math.random()<.5?STALKERS[b]:['shardling','sporeling','ashwraith','rimewalker'][b],x+.5,61,z+.5);if(m){m.angryT=30;enderPuff?.(x+.5,61,z+.5);}}}}}
+  p.addScaledVector(e.vel,dt);if(p.y<62&&e.state!=='land'&&e.state!=='ground')p.y=62;return;}
+ // phase III, on the ground
+ if(e.state!=='ground'&&e.state!=='charge'){e.state='ground';}
+ const gy=61;if(!T){e.vel.x*=.9;e.vel.z*=.9;}
+ else if(e.state==='charge'){const dx=T.pos.x-p.x,dz=T.pos.z-p.z,l=Math.hypot(dx,dz)||1;e.vel.x=e.cv[0];e.vel.z=e.cv[1];if(l<4&&e.contactT<=0){e.contactT=1;T.hurt(12,'elder_dragon',p);}if(e.stT>1.6){e.state='ground';e.stT=0;}}
+ else{const dx=T.pos.x-p.x,dz=T.pos.z-p.z,l=Math.hypot(dx,dz)||1;e.yaw=Math.atan2(dx,dz);const sp=l>5?4.5:0;e.vel.x=dx/l*sp;e.vel.z=dz/l*sp;
+  if(l<4.5&&e.contactT<=0){e.contactT=1.3;e.breath=.6;T.hurt(9,'elder_dragon',p);}
+  e.stompT-=dt;if(e.stompT<=0&&l<18){e.stompT=4.5;elderRing(p.x,gy,p.z);}
+  e.chargeT-=dt;if(e.chargeT<=0&&l>6){e.chargeT=8;e.state='charge';e.stT=0;e.cv=[dx/l*15,dz/l*15];}
+  e.breathT-=dt;if(e.breathT<=0&&l<24){e.breathT=3;breath(6,4);}}
+ p.x+=e.vel.x*dt;p.z+=e.vel.z*dt;if(Math.hypot(p.x,p.z)>21){const a=Math.atan2(p.z,p.x);p.x=Math.cos(a)*21;p.z=Math.sin(a)*21;if(e.state==='charge'){e.state='ground';e.stT=0;}}
+ p.y+=(gy-p.y)*Math.min(1,dt*6);e.walk+=Math.hypot(e.vel.x,e.vel.z)*dt*1.2;
+}
+{const _tb=tickBoss;tickBoss=function(e,dt){if(e.kind!=='elder_dragon')return _tb(e,dt);if(world.dimension!=='outerend'){removeMob(e);return;}if(net.role==='client')return;elderTick(e,dt);};}
+{const _te=tickEndPortals;tickEndPortals=function(dt){_te(dt);realmArenaTick(dt);if(RITUAL.bolts.length||RITUAL.rings.length)elderBoltsTick(dt);};}
+// the body language: wings beat, the neck seeks its prey, the tail sweeps, the jaw opens to breathe
+{const _ue=updateEntities;updateEntities=function(dt){_ue(dt);for(const e of entities){if(e.kind!=='elder_dragon')continue;const n=e.model.nodes,t=performance.now()/1000,gr=e.state==='ground'||e.state==='charge';
+  for(const k of ['neck1','neck2','neck3'])n[k].rotation.y=Math.sin(t*1.3+k.length)*.12;n.neck1.rotation.x=gr?.35:-.1;n.head.rotation.x=gr?-.3:.15;
+  n.jaw.rotation.x=e.breath>0||e.dead?.55:.08+Math.sin(t*2)*.04;
+  for(let i=1;i<=5;i++)n['tail'+i].rotation.y=Math.sin(t*2.2-i*.6)*.18;n.tail1.rotation.x=gr?.1:-.08;
+  const fold=gr?1:0;for(const [w,s] of [['wR',-1],['wL',1],['wR2',-1],['wL2',1]]){n[w].rotation.y=s*fold*.9;n['wf'+w.slice(1)].rotation.y=(w.includes('R')?-.25:.25)+s*fold*1.4;}
+  }};}
+// guests: copies of the host's bolts, rings and summoning
+function realmClientFx(m){if(m.k==='bolt'&&Array.isArray(m.a)){const a=m.a.map(Number);if(a.every(Number.isFinite))elderBolt(a[0],a[1],a[2],a[3],a[4],a[5],clamp(a[6]|0,0,3),false,!!a[7]);}
+ else if(m.k==='ring'&&Array.isArray(m.a)){const a=m.a.map(Number);if(a.every(Number.isFinite))elderRing(a[0],a[1],a[2],false);}
+ else if(m.k==='ritual'){RITUAL.on=true;RITUAL.t=0;toast('The hearts flare. Something vast stirs beneath the arena…');}}
+function onElderDefeated(e){
+ const R=world.realm;R.dragon={defeated:true,active:false,hp:0};bossBarHide();RITUAL.bolts.forEach(o=>{scene.remove(o.m);});RITUAL.bolts.length=0;
+ for(let i=0;i<20;i++)spawnXP(60,e.pos.x+(Math.random()-.5)*5,e.pos.y+1,e.pos.z+(Math.random()-.5)*5);
+ for(let i=0;i<80;i++)emitParticle(e.pos.x,e.pos.y+2,e.pos.z,(Math.random()-.5)*12,Math.random()*12,(Math.random()-.5)*12,TEX['item_'+HEARTS[i%4]]??TEX.smoke,.4,2.5);
+ sfx.explode?.(5,1.2);awardAdvancement('The Elder Falls',B.realm_pedestal_lit);
+ toast('The Elder Dragon falls! The Heart Arena grows still.');realmReward(e);if(net.role==='host')netBroadcast({t:'realm',r:world.realm});saveWorld();
+}
+function realmReward(e){}
+{const _hm=hurtMob;hurtMob=function(e,n,...a){const was=e&&!e.dead&&e.hp>0&&e.kind==='elder_dragon';const r=_hm(e,n,...a);if(was&&e.hp<=0&&net.role!=='client')onElderDefeated(e);return r;};}
+ADV_EXTRA.push(['The Elder Falls','realm_pedestal_lit','Defeat the Elder Dragon in the Heart Arena']);
+function buildElderTextures(){artTile('item_egg_elder_dragon',T=>IC.egg(T,ED.ink,[236,170,255],mulberry32(hashStr('elder_dragon'))));ITEMS[B.spawn_elder_dragon].icon='egg_elder_dragon';CREATIVE_TABS[3].items.push(B.spawn_elder_dragon);}
+
 /* =========================================================================
    68. TEXTURE REFRESH
    Redraws the weakest legacy sprites and block tiles in the newer art style
@@ -14799,7 +14962,7 @@ function buildTextureRefresh(){
 /* =========================================================================
    20. BOOT
    ========================================================================= */
-buildTextures(); buildEntityTextures(); buildEquipmentTextures(); buildFarmTextures(); buildShapeTextures(); buildFluidTextures();buildBiomeTextures();buildRedstoneTextures();buildMagicTextures();buildNetherTextures();buildLivingTextures();buildEngineeringTextures();buildItemArt();buildEndItems();buildCavesCliffsTextures();buildUraniumTextures();buildNetherUpdateTextures();buildWorkshopTextures();buildDecorTextures();buildOceanTextures();buildEndermanTextures();buildPotionTextures();buildRealmCreatureTextures();buildStalkerTextures();buildTextureRefresh();
+buildTextures(); buildEntityTextures(); buildEquipmentTextures(); buildFarmTextures(); buildShapeTextures(); buildFluidTextures();buildBiomeTextures();buildRedstoneTextures();buildMagicTextures();buildNetherTextures();buildLivingTextures();buildEngineeringTextures();buildItemArt();buildEndItems();buildCavesCliffsTextures();buildUraniumTextures();buildNetherUpdateTextures();buildWorkshopTextures();buildDecorTextures();buildOceanTextures();buildEndermanTextures();buildPotionTextures();buildRealmCreatureTextures();buildStalkerTextures();buildElderTextures();buildTextureRefresh();
 for(const n in TEX) TEX_NAME[TEX[n]]=n;
 buildWaveMap();
 buildShapeCache(); buildBlockTables(); makeMaterials(); initFluidMaterial(); makeCrackMats(); makeParticles();
@@ -15300,6 +15463,7 @@ function netClientOnMsg(link,m,attempt){
  if(net.host!==link)return;
  switch(m.t){
   case 'realm':world.realm=normRealm(m.r);REALM.key='';break;
+  case 'rfx':realmClientFx(m);break;
   case 'dim':netEnterWorld(m,true);netChat(`${m.host} led everyone to ${m.dim==='nether'?'the Nether':m.dim==='end'?'the End':m.dim==='groundzero'?'Ground Zero':m.dim==='outerend'?'the Outer Realm':'the Overworld'}`,'#ffff55');break;
   case 'ps':if(Array.isArray(m.l)){const live=new Set();for(const r of m.l){if(!Array.isArray(r)||typeof r[0]!=='string'||r[0]===net.me)continue;live.add(r[0]);netAvatarState(r[0],r[1],r[2],r[3],r[4],r[5],r[6],r[7],r[8]|0,r[9]|0);}
    for(const name of [...net.avatars.keys()])if(!live.has(name))netDropAvatar(name);}break;
