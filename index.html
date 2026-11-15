@@ -6346,11 +6346,11 @@ function tickProjectiles(dt){
    if(e.owner!=='voidorb'&&e.owner!=='smallfire')e.vel.y-=12*dt;const steps=Math.max(1,Math.ceil(e.vel.length()*dt/.15)),sd=dt/steps;
    for(let k=0;k<steps;k++){
      e.pos.addScaledVector(e.vel,sd);const p=e.pos,id=world.getBlock(Math.floor(p.x),Math.floor(p.y),Math.floor(p.z));
-     if(id<0||BLOCKS[id]?.solid){if(id===B.star_glass&&world.dimension==='end'&&e.owner==='player'){const bx=Math.floor(p.x),by=Math.floor(p.y),bz=Math.floor(p.z);world.setBlock(bx,by,bz,0);explode(bx+.5,by+.5,bz+.5,3);e.age=31;break;}if(e.owner==='egg'){eggImpact(e);e.age=31;}else if(e.owner==='fireball'||e.owner==='voidorb'){explode(e.pos.x,e.pos.y,e.pos.z,2);e.age=31;}else if(e.owner==='smallfire'){for(let k=0;k<5;k++)emitParticle(p.x,p.y,p.z,(Math.random()-.5)*2,Math.random()*2,(Math.random()-.5)*2,TEX.smoke);e.age=31;}else e.stuck=true;break;}
+     if(id<0||BLOCKS[id]?.solid){if(id===B.star_glass&&world.dimension==='end'&&e.owner==='player'){const bx=Math.floor(p.x),by=Math.floor(p.y),bz=Math.floor(p.z);world.setBlock(bx,by,bz,0);explode(bx+.5,by+.5,bz+.5,3);e.age=31;break;}if(e.owner==='egg'||e.owner==='pearl'){(e.owner==='pearl'?pearlImpact:eggImpact)(e);e.age=31;}else if(e.owner==='fireball'||e.owner==='voidorb'){explode(e.pos.x,e.pos.y,e.pos.z,2);e.age=31;}else if(e.owner==='smallfire'){for(let k=0;k<5;k++)emitParticle(p.x,p.y,p.z,(Math.random()-.5)*2,Math.random()*2,(Math.random()-.5)*2,TEX.smoke);e.age=31;}else e.stuck=true;break;}
      if(e.owner==='hostile'||e.owner==='fireball'||e.owner==='voidorb'||e.owner==='smallfire'){
        const pp=player.pos,big=e.owner==='voidorb'?.5:0;if(Math.abs(p.x-pp.x)<PW+.08+big&&Math.abs(p.z-pp.z)<PW+.08+big&&p.y>pp.y-big&&p.y<pp.y+PH+big){const hit=mobDamage(e.owner==='arrow'||e.owner==='hostile'?4:e.owner==='smallfire'?5:6,e.owner==='fireball'||e.owner==='smallfire'?'fire':e.owner==='voidorb'?'starwing':'arrow',{x:pp.x-e.vel.x,z:pp.z-e.vel.z});if(hit&&(e.owner==='fireball'||e.owner==='smallfire')&&!player.effects?.fire_resistance)player.fire=5;if(e.owner==='voidorb')explode(p.x,p.y,p.z,1);e.age=31;break;}
        if(netProjectileHit(e,p)){if(e.owner==='voidorb')explode(p.x,p.y,p.z,1);e.age=31;break;}
-     }else for(const m of entities){const d=MOB_DEFS[m.kind],s=mobScale(m);if(!m.dead&&Math.abs(p.x-m.pos.x)<d.w*s&&Math.abs(p.z-m.pos.z)<d.w*s&&p.y>m.pos.y&&p.y<m.pos.y+d.h*s){if(e.owner==='egg')eggImpact(e);else hurtMob(m,6);e.age=31;break;}}
+     }else for(const m of entities){const d=MOB_DEFS[m.kind],s=mobScale(m);if(!m.dead&&Math.abs(p.x-m.pos.x)<d.w*s&&Math.abs(p.z-m.pos.z)<d.w*s&&p.y>m.pos.y&&p.y<m.pos.y+d.h*s){if(e.owner==='egg')eggImpact(e);else if(e.owner==='pearl'){hurtMob(m,1);pearlImpact(e);}else hurtMob(m,6);e.age=31;break;}}
      if(e.age>30)break;
    }
    e.mesh.position.copy(e.pos);if(!e.stuck)e.mesh.lookAt(e.pos.x+e.vel.x,e.pos.y+e.vel.y,e.pos.z+e.vel.z);
@@ -14057,6 +14057,86 @@ COMMANDS.push(['/singularity','[seconds|stop]','Summon a black hole in the sky w
 ADV_EXTRA.push(['Event Horizon','obsidian','Get within 35 blocks of a singularity and live to see it collapse'],['Storm Chaser','leaves','Stay within 22 blocks of a tornado for ten seconds']);
 
 /* =========================================================================
+   69. ENDERMEN & ENDER PEARLS
+   Tall, neutral wanderers: they turn hostile when you look at their head or
+   hit them, then teleport close and strike hard. They pick up and put down
+   soft blocks, flee water and rain by teleporting, spawn rarely at night in
+   the Overworld and often in the End, and drop ender pearls (throw one to
+   teleport; pearl + blaze powder makes an eye of ender). Host-simulated like
+   every mob; guests see the model and its anger.
+   ========================================================================= */
+defItem(1039,'ender_pearl',{label:'Ender Pearl',stack:16});
+defItem(1040,'spawn_enderman',{label:'Spawn Enderman',icon:'egg',spawn:'enderman'});
+MOB_DEFS.enderman={hp:40,w:.3,h:2.9,speed:1.3,color:[22,18,26],hostile:true,loot:[['ender_pearl',1]]};
+const ENDER_EYE=[230,90,255];
+MOB_SPECS.enderman={parts:[
+ {id:'legL',pivot:[-2,30,0],box:[-1,-30,-1,2,30,2],c:[20,16,24],limb:{phase:0,amp:.45}},
+ {id:'legR',pivot:[2,30,0],box:[-1,-30,-1,2,30,2],c:[20,16,24],limb:{phase:Math.PI,amp:.45}},
+ {id:'body',pivot:[0,30,0],box:[-4,0,-2,8,12,4],c:[24,20,28]},
+ {id:'armL',pivot:[-5,41,0],box:[-1,-30,-1,2,30,2],c:[20,16,24],limb:{phase:Math.PI,amp:.18}},
+ {id:'armR',pivot:[5,41,0],box:[-1,-30,-1,2,30,2],c:[20,16,24],limb:{phase:0,amp:.18}},
+ {id:'head',pivot:[0,42,0],box:[-4,0,-4,8,8,8],c:[26,22,30],f:{front:(P,w,h)=>{rectP(P,0,4,3,1,ENDER_EYE);rectP(P,5,4,3,1,ENDER_EYE);P(1,4,[255,220,255]);P(6,4,[255,220,255]);}}},
+ {id:'jaw',parent:'head',pivot:[0,0,0],box:[-4,-2,-4,8,2,8],c:[22,18,26]},
+]};
+const ENDER={spawnT:0,carryMat:null,soft:null};
+function enderSoft(id){if(!ENDER.soft)ENDER.soft=new Set([B.grass,B.dirt,B.sand,B.gravel,B.mycelium,B.clay,B.pumpkin,B.melon,B.red_mushroom,B.brown_mushroom,B.dandelion,B.poppy,B.cactus,B.tnt,B.grass_taiga,B.red_sand].filter(Boolean));return ENDER.soft.has(id);}
+function enderPuff(x,y,z){for(let i=0;i<14;i++)emitParticle(x+(Math.random()-.5)*.8,y+Math.random()*2.6,z+(Math.random()-.5)*.8,(Math.random()-.5)*1.5,(Math.random()-.3)*1.5,(Math.random()-.5)*1.5,TEX.portal??TEX.smoke,.1,.8+Math.random()*.6);}
+// teleport to a dry, open, solid-floored spot within r of (cx,cz); returns true on success
+function enderTeleport(e,cx,cy,cz,r,minD=0){for(let k=0;k<20;k++){const x=Math.floor(cx+(Math.random()-.5)*2*r),z=Math.floor(cz+(Math.random()-.5)*2*r);if(Math.hypot(x+.5-cx,z+.5-cz)<minD)continue;
+  for(let y=Math.min(CH-4,Math.floor(cy)+8);y>Math.max(1,Math.floor(cy)-10);y--){const f=world.getBlock(x,y-1,z);if(f<0)break;
+   if(BLOCKS[f]?.solid&&!BLOCKS[f].liquid&&[0,1,2].every(dy=>world.getBlock(x,y+dy,z)===0)){enderPuff(e.pos.x,e.pos.y,e.pos.z);e.pos.set(x+.5,y,z+.5);e.prev.copy(e.pos);e.vel.set(0,0,0);enderPuff(x+.5,y,z+.5);sfx.mob?.('enderman',false,e.pos);return true;}}}return false;}
+function playerStaresAt(e){const cam=camera.position,hx=e.pos.x,hy=e.pos.y+2.55,hz=e.pos.z,dx=hx-cam.x,dy=hy-cam.y,dz=hz-cam.z,l=Math.hypot(dx,dy,dz);if(l>64||l<.5)return false;
+ camera.getWorldDirection(_rd);return (_rd.x*dx+_rd.y*dy+_rd.z*dz)/l>1-.02/Math.max(1,l*.12)&&clearSight(cam.x,cam.y,cam.z,hx,hy,hz);}
+const ENDER_AI={enderman(e,dt,T,dist2){const d=MOB_DEFS.enderman,p=e.pos;e.tpT=(e.tpT??2)-dt;
+ // water and rain hurt: teleport away
+ const wet=isWater(world.getBlock(Math.floor(p.x),Math.floor(p.y+.5),Math.floor(p.z)))||weather.type!=='clear'&&weather.strength>.4&&skyVisible(p.x,p.y+3,p.z);
+ if(wet){e.wetT=(e.wetT||0)+dt;if(e.wetT>1){e.wetT=0;hurtMob(e,1);enderTeleport(e,p.x,p.y,p.z,16);}return;}
+ if(T.pos===player.pos&&T.mode!=='creative'&&!(e.angryT>0)&&entityClock.tick%2===0&&playerStaresAt(e)){e.angryT=30;e.stareT=.9;sfx.mob?.('enderman',true,e.pos);}
+ if(e.stareT>0){e.stareT-=dt;e.vel.x=e.vel.z=0;e.yaw=Math.atan2(T.pos.x-p.x,T.pos.z-p.z);return;}   // freezes and shakes a moment before it comes for you
+ if(e.angryT>0&&T.active&&T.mode!=='creative'){const seen=sight(e,T,d);
+  if(dist2>36&&e.tpT<=0){e.tpT=2.5+Math.random()*3;enderTeleport(e,T.pos.x,T.pos.y,T.pos.z,5,2.5);return;}
+  chase(e,T,3.4);if(melee(e,T,dist2,6)!==false&&e.attackT===1)e.attackT=1.25;if(!seen&&e.tpT<=0&&dist2<64*64){e.tpT=3;enderTeleport(e,T.pos.x,T.pos.y,T.pos.z,6,2.5);}return;}
+ // calm: wander, now and then pick up or put down a soft block, and teleport about
+ e.aiT=(e.aiT||0)-dt;if(e.aiT<=0){e.aiT=2+Math.random()*3;e.yaw+=(Math.random()-.5)*2.5;e.moving=Math.random()<.6;}
+ const sp=e.moving?d.speed*.6:0;e.vel.x=Math.sin(e.yaw)*sp;e.vel.z=Math.cos(e.yaw)*sp;
+ if(Math.random()<dt*.012)enderTeleport(e,p.x,p.y,p.z,20);
+ if(net.role!=='client'&&Math.random()<dt*.05){const x=Math.floor(p.x+Math.sin(e.yaw)*1.4),z=Math.floor(p.z+Math.cos(e.yaw)*1.4),y=Math.floor(p.y);
+  if(!e.carry){for(const yy of [y-1,y]){const id=world.getBlock(x,yy,z);if(id>0&&enderSoft(id)&&world.getBlock(x,yy+1,z)===0){world.setBlock(x,yy,z,0);e.carry=id===B.grass||id===B.grass_taiga?B.grass:id;break;}}}
+  else if(Math.random()<.4){for(const yy of [y,y+1]){if(world.getBlock(x,yy,z)===0&&BLOCKS[world.getBlock(x,yy-1,z)]?.solid){world.setBlock(x,yy,z,e.carry);e.carry=0;break;}}}}
+}};
+{const _th=tickHostile;tickHostile=function(e,dt,dist){const ai=ENDER_AI[e.kind];if(!ai)return _th(e,dt,dist);
+ const T=hostileTarget(e.pos);e.attackT=Math.max(0,(e.attackT||0)-dt);e.angryT=Math.max(0,(e.angryT||0)-dt);ai(e,dt,T,e.pos.distanceToSquared(T.pos));applyKnock(e,dt);};}
+// hit one and it's angry (and may blink away first)
+{const _hm=hurtMob;hurtMob=function(e,n,...a){const r=_hm(e,n,...a);if(e?.kind==='enderman'&&!e.dead&&net.role!=='client'){e.angryT=30;if(Math.random()<.35)enderTeleport(e,e.pos.x,e.pos.y,e.pos.z,8);}return r;};}
+// pose: arms forward while carrying; the head shakes and the jaw drops when angry; the carried block in its hands
+{const _ue=updateEntities;updateEntities=function(dt){_ue(dt);for(const e of entities){if(e.kind!=='enderman'||e.dead)continue;const n=e.model.nodes,ang=e.angryT>0||e.stareT>0;
+  if(e.carry){n.armL.rotation.x=n.armR.rotation.x=-.55;}
+  n.jaw.position.y=ang?-.12:0;if(ang)n.head.rotation.z=Math.sin(performance.now()*.06)*.06;else n.head.rotation.z=0;
+  if((e.carry||0)!==(e.carryShown||0)){if(e.carryMesh){e.model.g.remove(e.carryMesh);e.carryMesh=null;}if(e.carry&&BLOCKS[e.carry]){if(!ENDER.carryMat)ENDER.carryMat=new THREE.MeshBasicMaterial({map:atlasTex,vertexColors:true,alphaTest:.5});
+    const m=new THREE.Mesh(heldMeshFor(e.carry).mesh.geometry,ENDER.carryMat);m.scale.setScalar(.5);m.position.set(0,1.62,.42);e.model.g.add(m);e.carryMesh=m;}e.carryShown=e.carry||0;}
+  if(e.carryMesh)e.carryMesh.material.color.copy(e.model.mat.color);}};}
+// spawning: rare at night in the Overworld (dark spots only), common in the End on end stone
+{const _ths=tickHostileSpawns;tickHostileSpawns=function(dt){_ths(dt);if(net.role==='client'||CONFIG.difficulty==='peaceful')return;
+ ENDER.spawnT-=dt;if(ENDER.spawnT>0)return;const dim=world.dimension||'overworld';ENDER.spawnT=dim==='end'?2:5;
+ const n=entities.filter(e=>e.kind==='enderman').length;if(entities.length>=ENTITY_LIMIT-2)return;const pp=netSpawnCenter();
+ if(dim==='end'){if(n<8&&Math.random()<.55)spawnNear('enderman',pp,18,44,1);}
+ else if(dim==='overworld'&&isNightTime()&&n<3&&Math.random()<.12){for(let k=0;k<6;k++){const a=Math.random()*6.283,r=24+Math.random()*24,x=Math.floor(pp.x+Math.cos(a)*r),z=Math.floor(pp.z+Math.sin(a)*r),c=world.get(x>>4,z>>4);if(!c?.meshed)continue;
+   const y=gen.heightAt(x,z)+1;if(y<2||y>=CH-4||[0,1,2].some(dy=>world.getBlock(x,y+dy,z)!==0)||!isSolidAt(x,y-1,z)||!hostileSpawnDark(x,y,z))continue;spawnMob('enderman',x+.5,y,z+.5);break;}}};}
+// ender pearls: throw to teleport where it lands (2 damage on landing, like a hard fall)
+function throwPearl(){camera.getWorldDirection(_rd);const e=spawnArrow(camera.position.x+_rd.x*.4,camera.position.y+_rd.y*.4,camera.position.z+_rd.z*.4,_rd.x*16,_rd.y*16+1.5,_rd.z*16,'pearl');if(!e)return false;
+ if(!ENDER.pearlMat){const t=new THREE.CanvasTexture(TILE_CANVAS.item_ender_pearl);t.magFilter=t.minFilter=THREE.NearestFilter;ENDER.pearlMat=new THREE.MeshBasicMaterial({map:t,transparent:true,alphaTest:.5});}
+ e.mesh.geometry=new THREE.PlaneGeometry(.3,.3);e.mesh.material=ENDER.pearlMat;if(player.mode!=='creative')inv.consumeHeld();sfx.shoot?.();return true;}
+function pearlImpact(e){const p=e.pos;let x=p.x-e.vel.x*.02,y=p.y,z=p.z-e.vel.z*.02;for(let k=0;k<4&&isSolidAt(Math.floor(x),Math.floor(y),Math.floor(z));k++)y+=1;
+ enderPuff(player.pos.x,player.pos.y,player.pos.z);player.pos.set(x,y,z);player.vel.set(0,0,0);player.fallStart=null;enderPuff(x,y,z);if(player.mode==='survival')damage(2,'fall');}
+{const _li=livingInteract;livingInteract=function(){if(inv.heldId()===B.ender_pearl)return throwPearl();return _li();};}
+{const _ue=updateEntities;updateEntities=function(dt){_ue(dt);for(const pr of projectiles)if(pr.owner==='pearl'&&pr.mesh)pr.mesh.quaternion.copy(camera.quaternion);};}
+function buildEndermanTextures(){
+ artTile('item_ender_pearl',T=>{T.ell(8,8.5,5,5,(x,y,dx,dy)=>{const r=dx*dx+dy*dy;return r<.18?[18,60,52]:dx<-.3&&dy<-.3?[150,250,220]:r>.7?[20,96,80]:[42,150,124];});T.S(6,6,[230,255,245]);T.S(9,10,[16,50,44]);T.S(10,9,[16,50,44]);});
+ artTile('item_egg_enderman',T=>IC.egg(T,[22,18,26],[200,80,240],mulberry32(hashStr('enderman'))));ITEMS[B.spawn_enderman].icon='egg_enderman';
+ shapeless([B.ender_pearl,B.blaze_powder],B.eye_of_ender);
+ CREATIVE_TABS[3].items.push(B.ender_pearl,B.spawn_enderman);
+}
+/* =========================================================================
    68. TEXTURE REFRESH
    Redraws the weakest legacy sprites and block tiles in the newer art style
    (artTile outlines, top-left light, bottom-right shade). Runs after every
@@ -14159,7 +14239,7 @@ function buildTextureRefresh(){
 /* =========================================================================
    20. BOOT
    ========================================================================= */
-buildTextures(); buildEntityTextures(); buildEquipmentTextures(); buildFarmTextures(); buildShapeTextures(); buildFluidTextures();buildBiomeTextures();buildRedstoneTextures();buildMagicTextures();buildNetherTextures();buildLivingTextures();buildEngineeringTextures();buildItemArt();buildEndItems();buildCavesCliffsTextures();buildUraniumTextures();buildNetherUpdateTextures();buildWorkshopTextures();buildDecorTextures();buildOceanTextures();buildTextureRefresh();
+buildTextures(); buildEntityTextures(); buildEquipmentTextures(); buildFarmTextures(); buildShapeTextures(); buildFluidTextures();buildBiomeTextures();buildRedstoneTextures();buildMagicTextures();buildNetherTextures();buildLivingTextures();buildEngineeringTextures();buildItemArt();buildEndItems();buildCavesCliffsTextures();buildUraniumTextures();buildNetherUpdateTextures();buildWorkshopTextures();buildDecorTextures();buildOceanTextures();buildEndermanTextures();buildTextureRefresh();
 for(const n in TEX) TEX_NAME[TEX[n]]=n;
 buildWaveMap();
 buildShapeCache(); buildBlockTables(); makeMaterials(); initFluidMaterial(); makeCrackMats(); makeParticles();

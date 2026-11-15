@@ -172,6 +172,11 @@ Two limits on that freedom:
     instanced atlas-textured debris (`CX.deb`, `cxDebTick`). Mobs are dragged
     with section 59's `e.fling` (`cxGrab`). Wind on the player goes through
     `player.kbx/kbz` plus `vel.y`.
+- Section 69 (before 68) is endermen and ender pearls: `MOB_DEFS/MOB_SPECS.enderman`,
+  `ENDER_AI` (neutral until stared at via `playerStaresAt` or hit; `enderTeleport`,
+  block carrying in `e.carry`), spawns in a `tickHostileSpawns` wrapper (rare at
+  night in the Overworld, common in the End), `throwPearl`/`pearlImpact` (projectile
+  owner `'pearl'`), items 1039 `ender_pearl` and 1040 `spawn_enderman`.
 - Section 68 (just before BOOT) is the texture refresh: `buildTextureRefresh()`
   runs after every other texture builder and redraws weak legacy tiles in
   place (bread, meats, nuggets, armour icons, pillar/pumpkin/melon/deepslate
@@ -267,7 +272,7 @@ Two limits on that freedom:
 - **Item ids are global.** Items are also defined outside section 2 (boats at
   452, spawn eggs from 400, and 1024+ in sections 64-65); the test fails if an
   id is defined twice. 256-511 is nearly full, so new items go in 1024-2047
-  (above every block id; the test allows both ranges). Next free: 1039.
+  (above every block id; the test allows both ranges). Next free: 1041.
 - **Block IDs are permanent.** Saves store raw IDs, so an id → name pair
   never changes. The id space is split three ways:
   - `0–255`: the original blocks. Frozen; the test hashes them.
