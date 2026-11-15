@@ -3539,13 +3539,13 @@ function updatePlayer(dt){
   const wl=Math.hypot(wx,wz); if(wl>0){ wx/=wl; wz/=wl; }
   let speed = 4.317*(stick?clamp(touchMove.mag*1.15,.3,1):1);
   if(p.flying) speed = p.sprinting? 21.6 : 10.9;
-  else if(p.inWater) speed = 2.2;
+  else if(p.inWater) speed = inLava()?1.6:3.1;   // water: brisk wading; lava stays thick
   else if(p.sneaking) speed = 1.31;
   else if(p.sprinting) speed = 5.612;
   if(!p.flying&&!p.inWater&&blockAtFeet(-.1)===B.soul_sand)speed*=.6;
   if(player.effects?.speed>0)speed*=1.2;
   if(!p.flying)speed*=atomicMoveFactor();
-  const control = p.flying ? 10 : (p.onGround ? 18 : (p.inWater? 6 : 4));
+  const control = p.flying ? 10 : (p.onGround ? 18 : (p.inWater? (inLava()?5:11) : 4));
   const k = 1-Math.exp(-control*dt);
   p.vel.x += (wx*speed + (p.kbx||0) - p.vel.x)*k;
   p.vel.z += (wz*speed + (p.kbz||0) - p.vel.z)*k;
@@ -3557,8 +3557,8 @@ function updatePlayer(dt){
     const vy = (jump?1:0) - ((keys.has('ShiftLeft')||keys.has('ShiftRight'))?1:0);
     p.vel.y += (vy*8 - p.vel.y)*(1-Math.exp(-10*dt));
   } else if(p.inWater){
-    p.vel.y -= 9*dt; p.vel.y *= Math.pow(0.4, dt*2.5);
-    if(jump){ p.vel.y = Math.min(p.vel.y + 26*dt, 3.2);
+    const lav=inLava();p.vel.y -= (lav?9:7)*dt; p.vel.y *= Math.pow(lav?0.4:0.6, dt*2.5);   // water: lighter drag than lava
+    if(jump){ p.vel.y = Math.min(p.vel.y + (lav?26:34)*dt, lav?3.2:4.3);
       // hop out of water onto a ledge
       const fx=pos.x+wx*0.5, fz=pos.z+wz*0.5;
       if(wl>0 && isSolidAt(Math.floor(fx),Math.floor(pos.y+0.4),Math.floor(fz)) && !isSolidAt(Math.floor(fx),Math.floor(pos.y+1.4),Math.floor(fz))) p.vel.y=6.5;
@@ -12966,12 +12966,13 @@ const waterAt=(x,y,z)=>isWater(world.getBlock(Math.floor(x),Math.floor(y),Math.f
 const OCEAN={t:0,spawnT:0,beams:new Map(),spears:[],hud:null,mapCache:new Map(),eyeT:0,elderT:0};
 /* ---- swimming ---- */
 const SWIM_H=.6;
+function inLava(){const p=player.pos,f=world.getBlock(Math.floor(p.x),Math.floor(p.y),Math.floor(p.z)),b=world.getBlock(Math.floor(p.x),Math.floor(p.y+1),Math.floor(p.z));return BLOCKS[f]?.fluid==='lava'||BLOCKS[b]?.fluid==='lava';}
 function swimMove(dt){
  const p=player,pos=p.pos;p.fallStart=null;p.onGround=false;
  const pitch=p.pitch,yaw=p.yaw,grace=p.effects?.dolphins_grace>0?1.7:1;
  let fwd=(keys.has('KeyW')?1:0)-(keys.has('KeyS')?1:0),str=(keys.has('KeyD')?1:0)-(keys.has('KeyA')?1:0);if(touchMove.active&&!fwd&&!str){fwd=touchMove.f;str=touchMove.s;}
  const cp=Math.cos(pitch),dx=-Math.sin(yaw)*cp*fwd+Math.cos(yaw)*str,dz=-Math.cos(yaw)*cp*fwd-Math.sin(yaw)*str,dy=Math.sin(pitch)*fwd+(keys.has('Space')?.6:0)-((keys.has('ShiftLeft')||keys.has('ShiftRight'))?.6:0);
- const sp=5.4*grace*atomicMoveFactor(),k=1-Math.exp(-5*dt);
+ const sp=5.6*grace*atomicMoveFactor(),k=1-Math.exp(-7*dt);   // sprint-swim: quick to respond, like water
  p.vel.x+=(dx*sp-p.vel.x)*k;p.vel.y+=(dy*sp-p.vel.y)*k;p.vel.z+=(dz*sp-p.vel.z)*k;
  if(!waterAt(pos.x,pos.y+SWIM_H+.05,pos.z)&&p.vel.y>0)p.vel.y*=.4;   // don't leap out of the surface while swimming
  const steps=Math.max(1,Math.ceil(Math.max(Math.abs(p.vel.x),Math.abs(p.vel.y),Math.abs(p.vel.z))*dt/.3)),sd=dt/steps;
@@ -12989,7 +12990,7 @@ function roomToStand(){const p=player.pos;return collectBoxes(p.x-PW+.001,p.y+.0
  if(p.swimming){p.inWater=body;const eyeB=world.getBlock(Math.floor(pos.x),Math.floor(pos.y+.45),Math.floor(pos.z));p.eyeInWater=isWater(eyeB);if(!body)p.sprinting=false;swimMove(dt);if(!body&&!keys.has('KeyW')&&!roomToStand()){p.vel.y-=20*dt;}return;}
  const r=_up(dt);
  // treading water: Space rises, Shift sinks, otherwise a slow drift down; a little faster than before
- if(p.inWater&&!p.flying){const jump=keys.has('Space'),down=keys.has('ShiftLeft')||keys.has('ShiftRight');if(!jump&&!down)p.vel.y=Math.max(p.vel.y,-1.1);if(down)p.vel.y=Math.max(-3,p.vel.y-6*dt);}
+ if(p.inWater&&!p.flying){const jump=keys.has('Space'),down=keys.has('ShiftLeft')||keys.has('ShiftRight'),lav=inLava();if(!jump&&!down)p.vel.y=Math.max(p.vel.y,lav?-1.1:-1.7);if(down)p.vel.y=Math.max(lav?-3:-4.2,p.vel.y-(lav?6:12)*dt);}
  return r;};}
 {const _uc=updateCamera;updateCamera=function(dt){const p=player;p.swimK=lerp(p.swimK||0,p.swimming?1:0,1-Math.exp(-dt*10));
  _uc(dt);if(p.swimK>.01&&cameraMode===0)camera.position.y+=(lerp(p.eye,.42,p.swimK)-p.eye);};}
