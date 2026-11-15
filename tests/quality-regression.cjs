@@ -36,6 +36,8 @@ assert.equal(digest(JSON.stringify(BLOCKS.slice(512,985).map(b=>[b.id,b.name])))
 // Fire appended 985.
 // Workshop blocks (986-989: anvil, campfire, lectern, bell) and the Ocean Update (990-1001) appended after it.
 assert.equal(digest(JSON.stringify(BLOCKS.slice(512,1002).map(b=>[b.id,b.name]))),'a3afdbe904de5e098c502f20bd88aa0854578878bed78d328c3ec3c1ae78e6fa','workshop/ocean block IDs/names changed');
+// The Outer Realm (1002-1012): biome ground and flora, glowcap caps, rimeglass and the heart pedestals.
+assert.equal(digest(JSON.stringify(BLOCKS.slice(512,1013).map(b=>[b.id,b.name]))),'f4df6cddb652d02ac70b0f1ade2ae7a68a288d8c91750e550bba842869e7afcd','Outer Realm block IDs/names changed');
 assert.equal(digest(JSON.stringify(BLOCKS.slice(512,986).map(b=>[b.id,b.name]))),'10cb8d79105bb50214acdf16499379886733a8834a8d3b2eea72963e39b86d38','fire block ID/name changed');
 // Items live in 256-511 and, since that range filled up, in 1024-2047 (above every block id).
 for(const id of Object.keys(ITEMS).map(Number))assert((id>=256&&id<512||id>=1024&&id<2048)&&!BLOCKS[id],'item ids live in 256-511 or 1024-2047');
@@ -190,7 +192,7 @@ for(const seed of [42,-98765]){
 // Legacy metadata must retain generator and equipment, including offhand enchants.
 vm.runInContext(source.slice(source.indexOf('function migrateMeta('),source.indexOf('function mobRecord('))+';globalThis.migrate=migrateMeta;',context);
 const equipment=[315,1,123,{fortune:2}],old={v:12,generator:2,inv:[equipment],offhand:[384,1,200,null],p:{x:1,y:70,z:2}};
-const migrated=context.migrate(old);assert.equal(migrated.v,21);assert.equal(migrated.endGen,2,'unvisited End gets generator 2');assert.equal(context.migrate({v:20,generator:14,endBoss:{defeated:true},p:{}}).endGen,1,'a fought-over End keeps generator 1');assert.equal(context.migrate({v:20,generator:14,dimension:'end',p:{}}).endGen,1);assert.equal(JSON.stringify([migrated.decor,migrated.hardcore]),'[{},false]');assert.equal(JSON.stringify([migrated.blasts,migrated.bombs,migrated.rads]),'[[],[],0]');assert.equal(JSON.stringify([migrated.graves,migrated.waypoints,migrated.villages]),'[[],{},{}]');assert.equal(migrated.netherGen,10);assert.equal(context.migrate({v:16,generator:4,dimensions:{nether:{}},p:{}}).netherGen,4);assert.equal(migrated.dayLock,false);assert.equal(migrated.generator,2);assert.deepEqual(migrated.inv[0],equipment);assert.equal(migrated.offhand[2],200);
+const migrated=context.migrate(old);assert.equal(migrated.v,22);assert.equal(JSON.stringify([migrated.realm,migrated.realmGen]),'[{},1]','v22 adds the Outer Realm record');assert.equal(migrated.endGen,2,'unvisited End gets generator 2');assert.equal(context.migrate({v:20,generator:14,endBoss:{defeated:true},p:{}}).endGen,1,'a fought-over End keeps generator 1');assert.equal(context.migrate({v:20,generator:14,dimension:'end',p:{}}).endGen,1);assert.equal(JSON.stringify([migrated.decor,migrated.hardcore]),'[{},false]');assert.equal(JSON.stringify([migrated.blasts,migrated.bombs,migrated.rads]),'[[],[],0]');assert.equal(JSON.stringify([migrated.graves,migrated.waypoints,migrated.villages]),'[[],{},{}]');assert.equal(migrated.netherGen,10);assert.equal(context.migrate({v:16,generator:4,dimensions:{nether:{}},p:{}}).netherGen,4);assert.equal(migrated.dayLock,false);assert.equal(migrated.generator,2);assert.deepEqual(migrated.inv[0],equipment);assert.equal(migrated.offhand[2],200);
 assert.equal(context.migrate({v:15,generator:8,p:{}}).generator,8);assert.equal(context.migrate({v:15,generator:9,p:{}}).generator,9);
 assert.equal(context.migrate({v:1,p:{}}).generator,1);assert.equal(context.migrate({v:12,p:{}}).generator,2);
 // The End: generator 1 stays byte-identical for Ends already built; generator 2 (the Shattered Halo) keeps the progression hooks.
@@ -200,6 +202,13 @@ assert.equal(context.migrate({v:1,p:{}}).generator,1);assert.equal(context.migra
  assert.equal(e2.pillars.length,8);for(const p of e2.pillars){assert.equal(at(p.x,p.top+1,p.z),B.star_glass,'crystal on spire');assert.notEqual(at(p.x,p.top,p.z),0,'spire top under the crystal');}
  assert(e2.heightAt(0,0)>=55,'central dais for the exit portal');assert.equal(at(100,48,0),B.obsidian,'arrival platform');
  assert.equal(digest(e2.genChunk(3,-2)),digest(make(12345,B,2,'end').genChunk(3,-2)),'End generator 2 is deterministic');}
+// The Outer Realm (realm generator 1): four biomes round the hub, the arena's statues and pedestals, the return gate.
+{const r=make(12345,B,1,'outerend'),at=(x,y,z)=>r.genChunk(Math.floor(x/16),Math.floor(z/16))[(x&15)+((z&15)<<4)+(y<<8)];
+ assert.equal(r.statues.length,4);for(const p of r.pedestals)assert.equal(at(p.x,p.y,p.z),B.realm_pedestal,'heart pedestal');
+ assert.equal(at(r.gate.x,r.gate.y+1,r.gate.z),0,'return gate opening');assert.equal(at(r.gate.x+3,r.gate.y+1,r.gate.z),B.obsidian,'return gate frame');
+ assert(r.heightAt(Math.floor(r.arrival.x),Math.floor(r.arrival.z))===r.arrival.y-1,'arrival floor');
+ const seen=new Set();for(let i=0;i<400;i++){const a=i/400*Math.PI*2,x=Math.round(Math.cos(a)*300),z=Math.round(Math.sin(a)*300);seen.add(r.biomeAt(x,z));}assert.equal(seen.size,4,'all four realm biomes');
+ assert.equal(digest(r.genChunk(5,-3)),digest(make(12345,B,1,'outerend').genChunk(5,-3)),'realm generator is deterministic');}
 // Gun-wielding mobs spawn naturally only for a player holding a gun plus ammo it can fire (or a loaded magazine).
 {const PISTOL=1,P_AMMO=2,R_AMMO=3,SNIPER=4,HEAVY=5,DU=6;
  vm.runInContext(`globalThis.GUNS={${PISTOL}:{ammo:[${P_AMMO}]},${SNIPER}:{ammo:[${HEAVY},${DU}]}};`+source.slice(source.indexOf('function armedWith('),source.indexOf('// unarmed patrols that wandered in'))+';globalThis.armedWith=armedWith;',context);

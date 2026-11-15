@@ -182,6 +182,15 @@ Two limits on that freedom:
   `damage`, `mobPhysics`/`tickHostile`/`tickProjectiles` (Chronoshell, host-side),
   a Space keydown hook (Skyhop/Blinking), Echo Sight via mob material depthTest,
   and the Brewing Guide panel (a `buildGui` wrapper for the brewing stand).
+- Section 71 (before 68) is the Outer Realm: dimension `'outerend'` (chunk prefix `o.c.`, fixed arrival
+  like the End), generator `makeRealmGen` in worldgen-src (`world.realmGen` 1; four sector biomes round
+  the hub: 0 Prism Barrens east, 1 Glowcap Jungle south, 2 Ashen Rift west, 3 Rimeglass Expanse north;
+  `gen.statues`, `gen.pedestals`, `gen.arrival`, `gen.gate`). `realmGatewayCells(B)` (worldgen-src) is the
+  arch shared by the End gateway and the realm's return gate. `world.realm` (meta v22, `normRealm`) holds
+  the End gate position, dragon state and reward flag; guests get it as `rl` and `'realm'` messages. The
+  host builds the End gate once the Starwing is dead (`realmPlaceGate`, from a `tickEndPortals` wrapper);
+  `realmTravel` handles both arches. `realmSkyFrame` (called from the End branch of `updateSky`) tints the
+  sky, fog and motes by `REALM_SKY[biome]`. Blocks 1002-1012 (realm ground/flora, pedestals).
 - Section 68 (just before BOOT) is the texture refresh: `buildTextureRefresh()`
   runs after every other texture builder and redraws weak legacy tiles in
   place (bread, meats, nuggets, armour icons, pillar/pumpkin/melon/deepslate
@@ -287,8 +296,8 @@ Two limits on that freedom:
     reorder, rename or remove one. The test pins a hash of the existing
     range; after appending, extend that pinned range on purpose.
     `BLOCK_ID_LIMIT` (1024) is the ceiling for the mesher's lookup tables.
-    Blocks now run to 1001 (anvil/campfire/lectern/bell 986-989, ocean
-    990-1001): only 22 block ids are left, so prefer records (like decor),
+    Blocks now run to 1012 (anvil/campfire/lectern/bell 986-989, ocean
+    990-1001, Outer Realm 1002-1012): only 11 block ids are left, so prefer records (like decor),
     items or block metadata over new block ids.
 - **Chunks store 16-bit ids** (`Uint16Array`; the mesher's padded volume too).
   Generators 1–3 still emit `Uint8Array` (their hashes depend on it) and
@@ -310,8 +319,8 @@ Two limits on that freedom:
   Features that span chunks (tunnels, villages) are planned from world
   coordinates per cell and cached, so every chunk agrees on them.
 - **Saves migrate forward.** World metadata carries a version `v` (currently
-  21: decor, hardcore, ocean, endGen). When you change the save shape, bump it and add
-  a step to `migrateMeta()` so old saves load, and raise the `m.v>21` limit in
+  22: decor, hardcore, ocean, endGen, realm). When you change the save shape, bump it and add
+  a step to `migrateMeta()` so old saves load, and raise the `m.v>22` limit in
   `validateWorldFile()` (it used to stop at 18, so v19 exports could not be
   imported). Metadata and settings live in `localStorage` (`bc.*` keys;
   per-world `bc.w<slot>.*`); chunk edit lists and backups (`bigKey()`) live in

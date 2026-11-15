@@ -349,6 +349,7 @@ function makeGen(seed, B, version=1,dimension='overworld'){
   if(dimension==='nether')return version>=10?makeNether10(seed,B):makeNetherGen(seed,B,version);
   if(dimension==='end')return version>=2?makeEnd2(seed,B):makeEndGen(seed,B);
   if(dimension==='groundzero')return makeZeroGen(seed,B);
+  if(dimension==='outerend')return makeRealmGen(seed,B);
   const N = makeNoise(seed), N2 = makeNoise(seed+101), N3 = makeNoise(seed+202);
   const smooth = (a,b,x)=>{ const t=Math.min(1,Math.max(0,(x-a)/(b-a))); return t*t*(3-2*t); };
   const CHEESE=.36;   // generator 4 cavern threshold: lower = bigger caves
@@ -1592,6 +1593,128 @@ function makeEnd2(seed,B){
  return {genChunk,heightAt,biomeAt:()=>0,mountainAt:()=>0,BIOME_NAMES:['The End'],pillars,endGen:2};
 }
 
+/* The Outer Realm (realm generator 1), reached through the gateway that opens in the End once the
+   Starwing falls. A floating continent around a central hub holding the ruined Heart Arena; four huge
+   biomes fan out from it as noise-warped sectors: the Prism Barrens (east), the Glowcap Jungle (south),
+   the Ashen Rift (west) and the Rimeglass Expanse (north). Void rifts and lakes cut the continent and
+   islets drift above it. Arrival is on the hub, south of the arena, beside the return gateway. */
+// The gateway arch (shared by the End's gateway and the realm's return gate): cells [dx,dy,dz,id] round a
+// 5-wide, 7-tall opening in the x-y plane, standing on a 9×5 dais at dy=0. Opening cells are listed as 0.
+function realmGatewayCells(B){
+ const out=[],OB=B.obsidian,CR=B.crying_obsidian||OB,PU=B.purpur_pillar||B.purpur_block||OB,AM=B.amethyst_block||CR,BR=B.end_stone_bricks||OB;
+ for(let dz=-2;dz<=2;dz++)for(let dx=-4;dx<=4;dx++)out.push([dx,0,dz,Math.abs(dx)===4||Math.abs(dz)===2?B.polished_blackstone_bricks||BR:BR]);
+ for(let dy=1;dy<=9;dy++)for(let dx=-4;dx<=4;dx++){const ax=Math.abs(dx);let id=-1;
+  if(ax<=2&&dy<=7)id=0;
+  else if(ax===3&&dy<=8)id=dy%3===0?CR:OB;
+  else if(dy===8&&ax<=2)id=ax===0?AM:CR;
+  else if(dy===9&&ax<=3)id=ax===0?AM:OB;
+  else if(ax===4&&dy<=6)id=dy===6?AM:PU;
+  if(id>=0)out.push([dx,dy,0,id]);}
+ for(const s of [-1,1]){out.push([3*s,1,-1,OB],[3*s,1,1,OB],[3*s,2,-1,CR],[3*s,2,1,CR]);}   // buttresses
+ out.push([0,10,0,AM]);
+ return out;}
+function makeRealmGen(seed,B){
+ const N=makeNoise(seed^0x4ea1b),N2=makeNoise(seed^0x19c3f),N3=makeNoise(seed^0x7d02e),TAU=Math.PI*2;
+ const hash=(x,z,s)=>{let h=Math.imul(x|0,0x27d4eb2d)^Math.imul(z|0,0x165667b1)^Math.imul(s|0,0x9e3779b1)^seed;h=Math.imul(h^h>>>15,0x85ebca6b);h=Math.imul(h^h>>>13,0xc2b2ae35);return ((h^h>>>16)>>>0)/4294967296;};
+ const smooth=(a,b,x)=>{const t=Math.min(1,Math.max(0,(x-a)/(b-a)));return t*t*(3-2*t);};
+ const HUB=44,MOAT=60,AY=60,ARENA=24;
+ const BIOME_NAMES=['Prism Barrens','Glowcap Jungle','Ashen Rift','Rimeglass Expanse'];
+ const statues=[],pedestals=[];for(let i=0;i<4;i++){const a=i*TAU/4,c=Math.cos(a),s=Math.sin(a);statues.push({b:i,x:Math.round(c*16),z:Math.round(s*16),y:AY+1,a});pedestals.push({b:i,x:Math.round(c*12),z:Math.round(s*12),y:AY+1});}
+ const arrival={x:.5,y:AY+1,z:34.5},gate={x:0,y:AY,z:39};
+ function sector(x,z){const a=Math.atan2(z,x)+N.n2(x/320,z/320)*.55+N2.n2(x/90,z/90)*.1,s=a/(TAU/4)+.5,fl=Math.floor(s);return {i:((fl%4)+4)%4,f:s-fl};}
+ function hb(i,x,z){
+  if(i===0){const t=N2.n2(x/70,z/70)*.5+.5;return 62+Math.floor(t*5)*3+N3.n2(x/11,z/11)*.8;}   // terraced mesas
+  if(i===1)return 61+N2.fbm2(x/60,z/60,3)*6+N3.n2(x/14,z/14)*1.5;                            // rolling jungle hills
+  if(i===2){const r=1-Math.abs(N2.n2(x/45,z/45));return 56+r*r*16+N3.n2(x/9,z/9)*2;}          // jagged ash ridges
+  return 61+N2.n2(x/110,z/110)*4+Math.max(0,N3.n2(x/20,z/20))*3;}                              // wind-smoothed snowfields
+ function biomeAt(x,z){return Math.hypot(x,z)<MOAT?-1:sector(x,z).i;}
+ function colAt(x,z){
+  const d=Math.hypot(x,z);
+  if(d<HUB+N.n2(x/12,z/12)*2){const t=d/HUB;return {top:AY,bottom:Math.floor(AY-5-Math.pow(1-t,.55)*26-(hash(x>>1,z>>1,3)<.15?hash(x>>1,z>>1,4)*8:0)),b:-1,hub:true,d};}
+  if(d<MOAT+N.n2(x/16,z/16)*3){for(let i=0;i<4;i++){const a=i*TAU/4,c=Math.cos(a),s=Math.sin(a),pr=x*c+z*s,pp=Math.abs(-x*s+z*c),w=2.6+N2.n2(x/7,z/7)*.5;
+    if(pr>0&&pp<w)return {top:AY,bottom:AY-2-(pp<w-1.2?2:0),b:-1,bridge:true,d};}return null;}
+  const S=sector(x,z);let h=hb(S.i,x,z);const bd=Math.min(S.f,1-S.f)*(TAU/4)*d;
+  if(bd<14){const j=(S.f<.5?S.i+3:S.i+1)%4,w=.5-.5*bd/14;h=h*(1-w)+hb(j,x,z)*w;}
+  h=AY+(h-AY)*smooth(MOAT,MOAT+30,d);
+  let m=(d-MOAT-N2.n2(x/20,z/20)*3)/6;
+  if(d>MOAT+24){const rv=Math.abs(N3.n2(x/140,z/140)+N.n2(x/37,z/37)*.12);m=Math.min(m,(rv-.045)*14);const lk=N.fbm2(x/260+40,z/260,3);m=Math.min(m,(lk+.42)*5);}
+  if(m<=0)return null;
+  const th=Math.min(1,m),top=Math.floor(h-(1-th)*2);
+  return {top,bottom:Math.floor(top-3-th*(14+N3.n2(x/25,z/25)*7)-(hash(x>>1,z>>1,5)<.12?hash(x>>1,z>>1,6)*12*th:0)),b:S.i,d};}
+ function heightAt(x,z){const c=colAt(x,z);return c?c.top:0;}
+ const TOP=[B.prismstone,B.glowcap_turf,B.cinder_slate,B.snow],SUB=[B.prismstone,B.end_stone,B.blackstone,B.packed_ice],BODY=[B.end_stone,B.end_stone,B.basalt,B.end_stone];
+ const FLORA=[B.prism_shard,B.glowcap_sprout,B.emberbloom,B.frostfern],FLORA_P=[.045,.1,.035,.06];
+ function islet(gx,gz){const C=48;if(hash(gx,gz,41)>.34)return null;const x=gx*C+8+hash(gx,gz,42)*(C-16),z=gz*C+8+hash(gx,gz,43)*(C-16);if(Math.hypot(x,z)<MOAT+10)return null;
+  return {x,z,y:Math.floor(80+hash(gx,gz,44)*18),r:3+hash(gx,gz,45)*5,b:sector(x,z).i};}
+ function genChunk(cx,cz){
+  const d=new Uint16Array(16*16*128),I=(x,y,z)=>x+(z<<4)+(y<<8),ox=cx*16,oz=cz*16;
+  const inC=(x,z)=>x>=ox&&x<ox+16&&z>=oz&&z<oz+16,set=(x,y,z,id)=>{if(inC(x,z)&&y>0&&y<CH)d[I(x-ox,y,z-oz)]=id;},get=(x,y,z)=>inC(x,z)&&y>=0&&y<CH?d[I(x-ox,y,z-oz)]:-1;
+  for(let z=0;z<16;z++)for(let x=0;x<16;x++){
+   const wx=ox+x,wz=oz+z,col=colAt(wx,wz);if(!col)continue;
+   const v=hash(wx,wz,7),n=N2.n2(wx/9,wz/9),b=col.b;
+   for(let y=Math.max(1,col.bottom);y<=col.top;y++){let id;
+    if(b<0)id=y===col.top?B.end_stone:y>col.top-3?B.end_stone:(hash(wx,y,wz)<.04?B.obsidian:B.end_stone);
+    else id=y===col.top?TOP[b]:y>col.top-4?SUB[b]:BODY[b];
+    d[I(x,y,z)]=id;}
+   const T=col.top;
+   if(b===0){if(n>.55)d[I(x,T,z)]=B.amethyst_block;else if(n<-.6)d[I(x,T,z)]=B.purpur_block;}
+   else if(b===1){if(n>.5)d[I(x,T,z)]=B.moss_block;}
+   else if(b===2){if(T<59&&n<.1)d[I(x,T,z)]=B.magma_block;else if(n>.45)d[I(x,T,z)]=B.smooth_basalt||B.basalt;else if(v>.985)d[I(x,T,z)]=B.crying_obsidian;}
+   else if(b===3){if(n>.5)d[I(x,T,z)]=B.blue_ice;else if(n<-.5)d[I(x,T,z)]=B.rimeglass;}
+   if(b>=0&&v<FLORA_P[b]&&T+1<CH&&d[I(x,T,z)]===TOP[b]||b===1&&v<FLORA_P[1]&&d[I(x,T,z)]===B.moss_block)d[I(x,T+1,z)]=FLORA[b];
+   // the hub: the Heart Arena's paved floor, broken rings and the outer terrace
+   if(col.hub){const r=col.d,an=Math.atan2(wz,wx);
+    if(r<ARENA){d[I(x,T,z)]=r<3?(hash(wx,wz,8)<.3?B.crying_obsidian:B.obsidian):Math.floor(r)%6===0?B.polished_blackstone_bricks:hash(wx,wz,9)<.14?B.end_stone:B.end_stone_bricks;}
+    if(r>=ARENA-2&&r<ARENA){const seg=Math.floor((an+Math.PI)/TAU*40),gap=[0,1,2,3].some(i=>{let da=an-i*TAU/4;da=Math.atan2(Math.sin(da),Math.cos(da));return Math.abs(da)*r<3;}),hw=gap?0:hash(seg,0,10)<.2?0:1+Math.floor(hash(seg,1,11)*6);
+     for(let k=1;k<=hw;k++)d[I(x,T+k,z)]=k===hw&&hw>3?B.purpur_block:B.end_stone_bricks;}
+    for(let k=0;k<12;k++){const a=k*TAU/12+TAU/24,px=Math.cos(a)*28,pz=Math.sin(a)*28;if(Math.hypot(wx+.5-px,wz+.5-pz)<1.3){const ph=hash(k,2,12)<.3?2:5+Math.floor(hash(k,3,13)*7);for(let y=1;y<=ph;y++)d[I(x,T+y,z)]=y===ph&&ph>4?B.purpur_block:B.purpur_pillar;}}}
+  }
+  if(Math.abs(cx)<=3&&Math.abs(cz)<=3){
+   // statues: a 3×3 plinth with a tall figure of each biome's stone, and a heart pedestal in front of each
+   const SM=[B.amethyst_block,B.glowcap_cap,B.gilded_blackstone||B.blackstone,B.packed_ice];
+   for(const s of statues){const tx=-Math.sin(s.a),tz=Math.cos(s.a),P=(u,y,id)=>set(Math.round(s.x+tx*u),y,Math.round(s.z+tz*u),id);
+    for(let u=-1;u<=1;u++)for(let w=-1;w<=1;w++)set(s.x+u,AY+1,s.z+w,B.polished_blackstone_bricks);
+    for(let y=AY+2;y<=AY+4;y++){P(-1,y,SM[s.b]);P(1,y,SM[s.b]);}
+    for(let y=AY+5;y<=AY+7;y++)for(let u=-1;u<=1;u++)P(u,y,B.obsidian);
+    for(let y=AY+3;y<=AY+7;y++){P(-2,y,SM[s.b]);P(2,y,SM[s.b]);}
+    for(let u=-1;u<=1;u++){P(u,AY+8,SM[s.b]);P(u,AY+9,u===0?B.crying_obsidian:SM[s.b]);}}
+   for(const p of pedestals){for(let u=-1;u<=1;u++)for(let w=-1;w<=1;w++)set(p.x+u,AY,p.z+w,B.obsidian);set(p.x,AY+1,p.z,B.realm_pedestal);}
+   for(const [dx,dy,dz,id] of realmGatewayCells(B))set(gate.x+dx,gate.y+dy,gate.z+dz,id);
+  }
+  // biome features, planned per cell from world coordinates so neighbouring chunks agree
+  const C=20,g0x=Math.floor((ox-9)/C),g1x=Math.floor((ox+24)/C),g0z=Math.floor((oz-9)/C),g1z=Math.floor((oz+24)/C);
+  for(let gz=g0z;gz<=g1z;gz++)for(let gx=g0x;gx<=g1x;gx++){
+   const fx=Math.floor(gx*C+3+hash(gx,gz,21)*(C-6)),fz=Math.floor(gz*C+3+hash(gx,gz,22)*(C-6)),col=colAt(fx,fz);if(!col||col.b<0||col.top<col.bottom+3)continue;
+   const h1=hash(gx,gz,23),h2=hash(gx,gz,24),h3=hash(gx,gz,25),base=col.top;
+   if(col.b===0&&h1<.5){   // crystal spire: a twisting purpur shaft banded with amethyst
+    const H=8+Math.floor(h2*18),R0=1.2+h3*1.8;
+    for(let y=0;y<H;y++){const t=y/H,rr=R0*(1-t*.8)+.35,ox2=Math.cos(h2*9+y*.3)*t*1.2,oz2=Math.sin(h2*9+y*.3)*t*1.2,id=t>.82?B.amethyst_block:(y%4===0?B.amethyst_block:B.purpur_block);
+     for(let dz=-3;dz<=3;dz++)for(let dx=-3;dx<=3;dx++)if(Math.hypot(dx-ox2,dz-oz2)<=rr)set(fx+dx,base+y,fz+dz,id);}}
+   else if(col.b===1&&h1<.62){   // giant glowcap: a pale stem under a glowing dome with shroomlight gills
+    const H=6+Math.floor(h2*10),CR=3+Math.floor(h3*3.5),thick=h3>.5;
+    for(let y=1;y<=H;y++)for(let dz=0;dz<=(thick?1:0);dz++)for(let dx=0;dx<=(thick?1:0);dx++)set(fx+dx,base+y,fz+dz,B.warped_stem);
+    const cy=base+H,ccx=fx+(thick?.5:0),ccz=fz+(thick?.5:0);
+    for(let dy=0;dy<=Math.ceil(CR*.6);dy++)for(let dz=-CR-1;dz<=CR+1;dz++)for(let dx=-CR-1;dx<=CR+1;dx++){const x=Math.round(ccx+dx),z=Math.round(ccz+dz),e=Math.hypot(x-ccx,z-ccz)/CR,top=1-Math.pow(dy/(CR*.6+.01),2);
+     if(e<=Math.sqrt(Math.max(0,top))+.08&&e>Math.sqrt(Math.max(0,top))-.5-(dy===0?1:0)){if(get(x,cy+dy,z)===0||!inC(x,z))set(x,cy+dy,z,dy===0&&e>.6&&hash(x,z,26)<.35?B.shroomlight:B.glowcap_cap);}}}
+   else if(col.b===2&&h1<.55){   // basalt organ: a cluster of hexagonal columns, sometimes round a magma vent
+    const n=3+Math.floor(h2*5);for(let k=0;k<n;k++){const a=k/n*TAU+h3*3,rr=k===0?0:1.5+hash(gx*7+k,gz,27)*2.5,px=Math.round(fx+Math.cos(a)*rr),pz=Math.round(fz+Math.sin(a)*rr),H=3+Math.floor(hash(gx,gz*7+k,28)*12);
+     for(let y=0;y<H;y++){set(px,base+y,pz,y===H-1&&k%2?B.polished_basalt||B.basalt:B.basalt);if(k===0&&h3<.4)set(px,base,pz,B.magma_block);}}
+    if(h3<.25)for(let y=1;y<=4;y++)set(fx,base+y,fz,y===4?B.crying_obsidian:B.obsidian);}
+   else if(col.b===3&&h1<.42){   // ice spike: packed ice wrapped in rimeglass, banded with blue ice
+    const H=10+Math.floor(h2*h2*28),R0=1.4+h3*2.2;
+    for(let y=-2;y<H;y++){const t=Math.max(0,y)/H,rr=R0*Math.pow(1-t,1.3)+.3;for(let dz=-4;dz<=4;dz++)for(let dx=-4;dx<=4;dx++){const dd=Math.hypot(dx,dz);if(dd<=rr)set(fx+dx,base+y,fz+dz,dd>rr-1?(y%7===3?B.blue_ice:B.rimeglass):B.packed_ice);}}}
+  }
+  // floating islets
+  const IC=48,i0x=Math.floor((ox-9)/IC),i1x=Math.floor((ox+24)/IC),i0z=Math.floor((oz-9)/IC),i1z=Math.floor((oz+24)/IC);
+  for(let gz=i0z;gz<=i1z;gz++)for(let gx=i0x;gx<=i1x;gx++){const s=islet(gx,gz);if(!s)continue;
+   for(let dz=-9;dz<=9;dz++)for(let dx=-9;dx<=9;dx++){const x=Math.floor(s.x)+dx,z=Math.floor(s.z)+dz;if(!inC(x,z))continue;const dd=Math.hypot(x-s.x,z-s.z)+N.n2(x/4,z/4)*.9;if(dd>=s.r)continue;
+    const t=1-dd/s.r,bot=Math.floor(s.y-1-Math.pow(t,.7)*s.r*2);for(let y=bot;y<=s.y;y++)set(x,y,z,y===s.y?TOP[s.b]:y>s.y-3?SUB[s.b]:BODY[s.b]);
+    if(hash(x,z,46)<FLORA_P[s.b]*1.5)set(x,s.y+1,z,FLORA[s.b]);}}
+  return d;
+ }
+ return {genChunk,heightAt,biomeAt,mountainAt:()=>0,BIOME_NAMES,statues,pedestals,arrival,gate,realmGen:1,colAt};
+}
+
 /* Ground Zero (the Atomic Age boss dimension, reached through a Fission Gate): an abandoned
    atomic test site. Wind-blown desert flats pocked with glassed craters, a "doom town" of blasted
    houses, steel test towers, half-buried bunkers and pools of glowing sludge. At the origin is the
@@ -2360,6 +2483,19 @@ for(const [c,col,hi] of CORALS)xb(c+'_coral',dyeLabel(c)+' Coral',{...XAQUA,cora
  const br=(x,y,dx,len)=>{for(let k=0;k<len;k++){P(Math.round(x),Math.round(y),k===len-1?hi:vary(col,R,12));x+=dx;y-=1;if(R()<.3)dx=-dx*.8;}};br(8,15,0,7);br(8,11,.7,5);br(8,11,-.7,5);br(8,8,.5,4);br(8,8,-.5,5);}]);
 xb('dead_coral_block','Dead Coral Block',{...XSTONE,hardness:1.5},['fn',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++){const r=R();P(x,y,r<.15?[160,154,148]:r>.85?[96,92,88]:vary([128,122,116],R,12));}}]);
 xb('wet_sponge','Wet Sponge',{hardness:.6,sound:'grass',tool:'hoe'},['fn',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++)P(x,y,vary([160,150,50],R,16));for(let i=0;i<14;i++){const x=R()*15|0,y=R()*15|0;P(x,y,[96,88,24]);P(x+1,y,[110,100,30]);}for(let i=0;i<8;i++)P(R()*16|0,R()*16|0,[180,200,220]);}]);
+// The Outer Realm (1002-1012): ground, flora and fungus blocks for its four biomes, and the arena's heart pedestals.
+const XREALM={...XSTONE,hardness:2.2};
+xb('prismstone','Prismstone',XREALM,['fn',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++){const f=((x+y*2)%7===0)||((x*3-y)%11===0);P(x,y,vary(f?[236,214,250]:(x>>2)+(y>>2)&1?[196,170,222]:[178,152,210],R,12));}}]);
+xb('prism_shard','Prism Shard',{...XPLANT,sound:'glass',light:7},['fn',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++)P(x,y,[0,0,0],0);for(const [cx,h,w] of [[8,13,2],[4,8,1],[12,9,1]])for(let j=0;j<h;j++){const ww=Math.max(0,Math.round(w*(1-j/h)+.4));for(let k=-ww;k<=ww;k++)P(cx+k,15-j,j>h-3?[255,240,255]:k===-ww?[250,200,255]:vary([214,150,250],R,14));}}]);
+xb('glowcap_turf','Glowcap Turf',{hardness:.8,sound:'grass',tool:'shovel'},{top:['fn',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++){const r=R();P(x,y,r<.07?[120,255,220]:vary(r<.5?[34,104,100]:[26,86,92],R,14));}}],bottom:'end_stone',side:['fn',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++){const d=4+Math.round(Math.sin(x*1.3)*1.2);P(x,y,y<d?vary(R()<.08?[120,255,220]:[30,96,96],R,14):vary([219,222,158],R,14));}}]});
+xb('glowcap_cap','Glowcap Cap',{hardness:1,sound:'wood',tool:'axe',light:12},['fn',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++){const s=((x-4)**2+(y-5)**2<5)||((x-11)**2+(y-10)**2<6)||((x-12)**2+(y-3)**2<3);P(x,y,s?[200,255,236]:vary([40,190,190],R,22));}}]);
+xb('glowcap_sprout','Glowcap Sprout',{...XPLANT,light:7},['fn',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++)P(x,y,[0,0,0],0);for(const [cx,h,r] of [[8,10,3],[4,6,2],[12,7,2]]){for(let j=0;j<h;j++)P(cx,15-j,[170,210,190]);for(let k=-r;k<=r;k++){P(cx+k,15-h,vary([60,220,210],R,16));if(Math.abs(k)<r)P(cx+k,14-h,[180,255,240]);}}}]);
+xb('cinder_slate','Cinder Slate',XREALM,['fn',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++){const crack=Math.abs(Math.sin(x*.9+y*.4)+Math.sin(y*1.3-x*.2))<.12;P(x,y,crack?[255,120,40]:vary(y%5===0?[44,38,40]:[62,54,56],R,12));}}]);
+xb('emberbloom','Emberbloom',{...XPLANT,light:9},['fn',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++)P(x,y,[0,0,0],0);for(let j=0;j<9;j++)P(8,15-j,[60,40,40]);P(7,11,[80,50,40]);P(6,10,[80,50,40]);for(const [dx,dy] of [[0,-1],[1,0],[-1,0],[0,1],[1,-1],[-1,-1],[1,1],[-1,1],[0,-2],[2,0],[-2,0]])P(8+dx,5+dy,Math.abs(dx)+Math.abs(dy)>1?[255,90,30]:[255,200,80]);P(8,5,[255,250,200]);}]);
+xb('rimeglass','Rimeglass',{hardness:.8,sound:'glass',tool:'pickaxe'},['fn',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++){const f=(x+y)%9===0||(x-y+16)%13===0;P(x,y,f?[240,255,255]:vary(x<2||y<2?[200,240,250]:[150,206,236],R,10));}}]);
+xb('frostfern','Frostfern',{...XPLANT},['fn',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++)P(x,y,[0,0,0],0);for(const [cx,h,lean] of [[8,13,0],[4,9,-.25],[12,10,.25]])for(let j=0;j<h;j++){const x=Math.round(cx+lean*j);P(x,15-j,vary([170,220,236],R,12));if(j%2&&j>1){P(x-1,15-j,[220,245,255]);P(x+1,14-j,[200,236,250]);}}}]);
+xb('realm_pedestal','Heart Pedestal',{hardness:-1,sound:'stone'},{top:['fn',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++){const e=Math.min(x,y,15-x,15-y),d=Math.hypot(x-7.5,y-7.5);P(x,y,d<3.5?[16,10,24]:d<4.6?[120,90,150]:vary(e<2?[60,50,70]:[96,84,108],R,10));}}],bottom:'obsidian',side:['fn',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++)P(x,y,vary(y<3||y>12?[60,50,70]:(x%5===2?[130,100,160]:[90,78,102]),R,10));}]});
+xb('realm_pedestal_lit','Kindled Pedestal',{hardness:-1,sound:'stone',light:15,drop:0},{top:['fn',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++){const e=Math.min(x,y,15-x,15-y),d=Math.hypot(x-7.5,y-7.5);P(x,y,d<3.5?[255,240,255]:d<4.6?[230,140,255]:vary(e<2?[60,50,70]:[96,84,108],R,10));}}],bottom:'obsidian',side:['fn',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++)P(x,y,vary(y<3||y>12?[60,50,70]:(x%5===2?[240,170,255]:[90,78,102]),R,10));}]});
 if(extId>BLOCK_ID_LIMIT)throw Error('Block id space exhausted');
 const BLOCK_COUNT = BLOCKS.length;
 const LEAVES = new Set([8,30,39,41]);
@@ -2671,7 +2807,7 @@ function buildTextures(){
 const WORLDGEN_SRC = $('worldgen-src').textContent;
 const makeGenMain = new Function(WORLDGEN_SRC + '\nreturn makeGen;')();
 // The Nether has its own generator version (worlds that never visited it get the new Nether).
-function genVer(){return world.dimension==='nether'?(world.netherGen||world.genVersion||2):world.dimension==='end'?(world.endGen||1):(world.genVersion||2);}
+function genVer(){return world.dimension==='outerend'?(world.realmGen||1):world.dimension==='nether'?(world.netherGen||world.genVersion||2):world.dimension==='end'?(world.endGen||1):(world.genVersion||2);}
 let gen = null;          // main-thread generator (height/biome queries + fallback)
 let workers = [];
 let workerBusy = [];
@@ -2704,7 +2840,7 @@ const world = {
   seed: 0, chunks: new Map(), edits: new Map(), dirtyEdits: new Set(),
   get(cx,cz){ return this.chunks.get(ckey(cx,cz)); },
   getBlock(x,y,z){
-    if(y<0) return this.dimension==='end'?0:B.bedrock; if(y>=CH) return 0;   // the End has no floor: below the islands is the void
+    if(y<0) return this.dimension==='end'||this.dimension==='outerend'?0:B.bedrock; if(y>=CH) return 0;   // the End has no floor: below the islands is the void
     const c=this.chunks.get(ckey(x>>4,z>>4)); if(!c||!c.data) return -1;
     return c.data[(x&15)+((z&15)<<4)+(y<<8)];
   },
@@ -2772,7 +2908,7 @@ const vi = (x,y,z)=> (x+PADW) + (z+PADW)*VX + (y+1)*VXZ;
 const T_OPAQUE = new Uint8Array(BLOCK_COUNT), T_AO = new Uint8Array(BLOCK_COUNT), T_DRAW = new Uint8Array(BLOCK_COUNT), T_LIQ = new Uint8Array(BLOCK_COUNT), T_PLANT = new Uint8Array(BLOCK_COUNT), T_TORCH=new Uint8Array(BLOCK_COUNT), T_CULLSELF=new Uint8Array(BLOCK_COUNT), T_LIGHTDIM=new Uint8Array(BLOCK_COUNT), T_FLAT=new Uint8Array(BLOCK_COUNT), T_CUT=new Uint8Array(BLOCK_COUNT);
 const FACE_TILE = new Int16Array(BLOCK_COUNT*6);
 // self-lit blocks: their faces ignore the light around them (aLight.x carries +4, decoded in VERT as vEmis)
-const T_EMIS = new Uint8Array(BLOCK_COUNT), EMISSIVE_NAMES=['glowstone','portal','sea_lantern','shroomlight','ochre_froglight','verdant_froglight','pearlescent_froglight','crying_obsidian','magma_block','radioactive_sludge'];
+const T_EMIS = new Uint8Array(BLOCK_COUNT), EMISSIVE_NAMES=['glowstone','portal','sea_lantern','shroomlight','ochre_froglight','verdant_froglight','pearlescent_froglight','crying_obsidian','magma_block','radioactive_sludge','glowcap_cap','realm_pedestal_lit'];
 function buildBlockTables(){
   for(let id=0;id<BLOCK_COUNT;id++){ const b=BLOCKS[id]; if(!b) continue;
     T_OPAQUE[id]=b.opaque?1:0; T_AO[id]=(b.opaque||b.cutout&&b.ao)?1:0; T_DRAW[id]=id?1:0; T_LIQ[id]=b.liquid||b.aquatic?1:0; T_PLANT[id]=b.plant?1:0; T_TORCH[id]=b.model==='torch'?1:0; T_CULLSELF[id]=b.cullSelf?1:0;   // aquatic plants (kelp, seagrass, coral fans) count as water for water faces
@@ -3999,8 +4135,8 @@ const WORLDS_KEY='bc.worlds', LAST_SLOT_KEY='bc.lastSlot';
 let worldSlot='';
 const slotBase=(slot=worldSlot)=>slot?'bc.w'+slot+'.':'bc.';
 function saveKey(slot=worldSlot){ return slotBase(slot)+'world'; }
-const DIMENSIONS=['overworld','nether','end','groundzero'];
-function chunkPrefixFor(dim,slot=worldSlot){ return slotBase(slot)+(dim==='nether'?'n.c.':dim==='end'?'e.c.':dim==='groundzero'?'g.c.':'c.'); }
+const DIMENSIONS=['overworld','nether','end','groundzero','outerend'];
+function chunkPrefixFor(dim,slot=worldSlot){ return slotBase(slot)+(dim==='nether'?'n.c.':dim==='end'?'e.c.':dim==='groundzero'?'g.c.':dim==='outerend'?'o.c.':'c.'); }
 function isSlotChunkKey(k,slot=worldSlot){ const b=slotBase(slot); if(!k.startsWith(b)) return false; return /^(?:n\.|e\.|g\.)?c\.-?\d+,-?\d+$/.test(k.slice(b.length)); }
 function slotKeys(slot){ const b=slotBase(slot); return store.keys().filter(k=>k===saveKey(slot)||k===b+'backup'||isSlotChunkKey(k,slot)); }
 function readMeta(slot=worldSlot){ try{ const r=store.get(saveKey(slot)); return r?migrateMeta(JSON.parse(r)):null; }catch(e){ return null; } }
@@ -4027,7 +4163,7 @@ function saveWorld(){
   }
   if(ok) world.dirtyEdits.clear();
   const containers=[]; for(const [k,c] of world.containers) containers.push([k,{t:c.type,s:c.slots.map(st=>packStack(st)),b:c.burn||0,bm:c.burnMax||0,c:c.cook||0,p:!!c.powered,o:c.owner||undefined,x:c.xp||undefined}]);
-  const meta = { v:21, decor:world.decor||{}, ocean:world.ocean||{}, blasts:world.blasts||[], bombs:atomicBombsSave(), rads:+(player.rads||0).toFixed(2), atomic:atomicSave(), graves:world.graves||[], waypoints:world.waypoints||{}, villages:world.villages||{}, netherGen:world.netherGen||world.genVersion, endGen:world.endGen||1, dayLock:!!world.dayLock, endPortals:world.endPortals||[], endBoss:world.endBoss||{defeated:false}, pendingItems:[...craftGrid2,...craftGrid3,cursor].filter(Boolean).map(packStack), portalLinks:world.portalLinks||[],offhand:packStack(offhand[0]),pistons:[...pistonSticky],plantAges:[...world.plantAges], stats:worldStats,deathCause:world.deathCause||'', dimension:world.dimension||'overworld',dimensions:world.dimensionStates||{}, effects:player.effects||{}, advancements:[...advancements], tnt:primedTNT.map(e=>[e.pos.x,e.pos.y,e.pos.z,e.fuse]), days:dayCount,weather:{type:weather.type,remaining:weather.remaining}, generator:world.genVersion||2, mp:world.mp||undefined, signs:[...signTexts], armor:armorSlots.map(packStack), xpOrbs:xpOrbs.map(e=>[e.value,e.pos.x,e.pos.y,e.pos.z]), mobs:saveMobs(), mobChunks:[...mobChunks], name:world.name, seed:world.seed, mode:player.mode, hardcore:!!world.hardcore, time:dayTime, spawn:world.spawn,
+  const meta = { v:22, realm:world.realm||normRealm(), realmGen:world.realmGen||1, decor:world.decor||{}, ocean:world.ocean||{}, blasts:world.blasts||[], bombs:atomicBombsSave(), rads:+(player.rads||0).toFixed(2), atomic:atomicSave(), graves:world.graves||[], waypoints:world.waypoints||{}, villages:world.villages||{}, netherGen:world.netherGen||world.genVersion, endGen:world.endGen||1, dayLock:!!world.dayLock, endPortals:world.endPortals||[], endBoss:world.endBoss||{defeated:false}, pendingItems:[...craftGrid2,...craftGrid3,cursor].filter(Boolean).map(packStack), portalLinks:world.portalLinks||[],offhand:packStack(offhand[0]),pistons:[...pistonSticky],plantAges:[...world.plantAges], stats:worldStats,deathCause:world.deathCause||'', dimension:world.dimension||'overworld',dimensions:world.dimensionStates||{}, effects:player.effects||{}, advancements:[...advancements], tnt:primedTNT.map(e=>[e.pos.x,e.pos.y,e.pos.z,e.fuse]), days:dayCount,weather:{type:weather.type,remaining:weather.remaining}, generator:world.genVersion||2, mp:world.mp||undefined, signs:[...signTexts], armor:armorSlots.map(packStack), xpOrbs:xpOrbs.map(e=>[e.value,e.pos.x,e.pos.y,e.pos.z]), mobs:saveMobs(), mobChunks:[...mobChunks], name:world.name, seed:world.seed, mode:player.mode, hardcore:!!world.hardcore, time:dayTime, spawn:world.spawn,
     p:{ x:+player.pos.x.toFixed(4), y:+player.pos.y.toFixed(4), z:+player.pos.z.toFixed(4), yaw:+player.yaw.toFixed(3), pitch:+player.pitch.toFixed(3),
         fire:player.fire||0, hp:player.health, food:player.food, sat:player.sat, xp:player.xp, fly:player.flying },
     inv: inv.slots.map(st=>packStack(st)), sel:inv.sel, containers,
@@ -4928,7 +5064,7 @@ function setupTitleWorld(meta){
   const seed = meta ? meta.seed : 20261018;
   world.dimension=meta?.dimension||'overworld';world.dimensionStates=meta?.dimensions||{};
   world.dimension=meta?.dimension||'overworld';
-  world.genVersion=meta?.generator||14;world.netherGen=meta?.netherGen||(meta?world.genVersion:12);world.endGen=meta?.endGen===1||meta?.endGen===2?meta.endGen:(meta?1:2);
+  world.genVersion=meta?.generator||14;world.netherGen=meta?.netherGen||(meta?world.genVersion:12);world.endGen=meta?.endGen===1||meta?.endGen===2?meta.endGen:(meta?1:2);world.realmGen=1;world.realm=normRealm(meta?.realm);
   world.persist = !!meta;            // read saved edits so the panorama shows your builds
   if(world.seed!==seed || !workers.length||world.builtGenVersion!==genVer()||world.builtDimension!==(world.dimension||'overworld')){ world.edits.clear(); world.dirtyEdits.clear(); startWorld(seed, null, false); }
   if(meta){ titleCam.x=meta.p.x; titleCam.z=meta.p.z; titleCam.y=Math.max(meta.p.y+6, SEA+12); }
@@ -4949,7 +5085,7 @@ function beginGame(seed, meta, mode){
   respawnPending=false;resetMobs();clearSigns();resetRedstone();
   if(world.builtDimension!==world.dimension){world.edits.clear();world.dirtyEdits.clear();}
   if(world.loadedSlot!==worldSlot){world.edits.clear();world.dirtyEdits.clear();world.seed=NaN;world.loadedSlot=worldSlot;}
-  world.genVersion=meta?.generator||14;world.netherGen=meta?.netherGen||(meta?world.genVersion:12);world.endGen=meta?.endGen===1||meta?.endGen===2?meta.endGen:(meta?1:2);
+  world.genVersion=meta?.generator||14;world.netherGen=meta?.netherGen||(meta?world.genVersion:12);world.endGen=meta?.endGen===1||meta?.endGen===2?meta.endGen:(meta?1:2);world.realmGen=1;world.realm=normRealm(meta?.realm);
   world.mp=meta?.mp&&typeof meta.mp==='object'?meta.mp:null;
   world.persist = true;
   if(!meta){ world.edits.clear(); world.containers.clear(); }
@@ -5052,6 +5188,7 @@ function settleSpawn(){
   if(world.dimension==='nether'){settleNetherSpawn();return;}
   if(world.dimension==='end'){settleEndSpawn();return;}
   if(world.dimension==='groundzero'){settleZeroSpawn();return;}
+  if(world.dimension==='outerend'){settleRealmSpawn();return;}
   const x=Math.floor(player.pos.x), z=Math.floor(player.pos.z);
   for(let y=CH-1;y>0;y--){ const id=world.getBlock(x,y,z); if(id>0 && (BLOCKS[id].solid || BLOCKS[id].liquid)){ player.pos.y=y+1; break; } }
   player.vel.set(0,0,0); spawnPending=false;
@@ -5097,7 +5234,7 @@ function frame(){
     if(net.role) netFrame(dt);
   }
   const R=CONFIG.renderDistance*16;
-  if(world.dimension!=='nether'&&world.dimension!=='groundzero'&&(!player.eyeInWater || gameState==='title')) U.uFog.value.set(R*0.7, R*0.97);
+  if(world.dimension!=='nether'&&world.dimension!=='groundzero'&&world.dimension!=='outerend'&&(!player.eyeInWater || gameState==='title')) U.uFog.value.set(R*0.7, R*0.97);
   const tr=performance.now();
   renderScene();
   if(photo.capture)photoCapture();   // read the canvas in the same task it was drawn
@@ -5453,11 +5590,11 @@ function buildClouds(){
 const _tmpC=new THREE.Color(),_sunDir=new THREE.Vector3();
 function updateSky(dt, camPos){
   const nether=world.dimension==='nether';sky.group.visible=!nether;U.uAmbient.value=nether?.14:0;
-  if(world.dimension==='end'){
+  if(world.dimension==='end'||world.dimension==='outerend'){
     for(const cloud of sky.clouds)cloud.visible=false;sky.sun.visible=sky.moon.visible=false;sky.group.position.copy(camPos);
     // the End's own sky: a deep teal-violet void, an eclipsed star with a slow corona, nebula veils and drifting motes
     sky.domeU.uTop.value.setRGB(.035,.035,.1);sky.domeU.uHor.value.setRGB(.13,.21,.25);sky.domeU.uGlowAmt.value=0;sky.domeU.uFlat.value=1;sky.starMat.opacity=.95;sky.starPivot.rotation.z+=dt*.006;
-    U.uSky.value=.85;U.uSkyTint.value.setRGB(.86,.92,1);U.uAmbient.value=.25;U.uFogColor.value.copy(sky.domeU.uHor.value);endSkyFrame(dt,camPos);sfx.rain(0);sfx.update(dt);return;
+    U.uSky.value=.85;U.uSkyTint.value.setRGB(.86,.92,1);U.uAmbient.value=.25;U.uFogColor.value.copy(sky.domeU.uHor.value);endSkyFrame(dt,camPos);if(world.dimension==='outerend')realmSkyFrame(dt,camPos);sfx.rain(0);sfx.update(dt);return;
   }
   sky.sun.visible=sky.moon.visible=true;sky.domeU.uFlat.value=0;if(sky.endFx)sky.endFx.visible=false;
   if(nether){
@@ -5643,7 +5780,7 @@ function lightLevels(bx,by,bz){
 }
 function lightAt(x,y,z){
   const bx=Math.floor(x), by=Math.floor(y), bz=Math.floor(z), dim=world.dimension||'overworld';
-  const floor=Math.max(player.effects?.night_vision>0?.8:0,dim==='nether'?.18:dim==='end'?.35:.09);
+  const floor=Math.max(player.effects?.night_vision>0?.8:0,dim==='nether'?.18:dim==='end'||dim==='outerend'?.35:.09);
   const lv=lightLevels(bx,by,bz);
   if(lv){ const sky=lightCurve(lv.s/15*U.uSky.value), blk=lightCurve(lv.b/15,.65); return clamp(Math.max(floor,sky,blk),.05,1); }
   // chunk not meshed yet: rough column test
@@ -6121,7 +6258,9 @@ function migrateMeta(m){
   if(m.v<20){m.decor={};m.hardcore=!!m.hardcore;m.ocean={};m.v=20;}
   // v21: End generator 2 (the Shattered Halo). Worlds whose End was already built keep generator 1
   if(m.v<21){const e=m.endBoss||{},visited=m.dimension==='end'||!!m.dimensions?.end||!!e.defeated||Number.isFinite(e.hp)&&e.hp>0;m.endGen=visited?1:2;m.v=21;}
-  if(m.endGen!==1&&m.endGen!==2)m.endGen=1;
+  // v22: the Outer Realm (gateway, heart pedestals, Elder Dragon, reward) and its generator
+  if(m.v<22){m.realm={};m.realmGen=1;m.v=22;}
+  if(m.endGen!==1&&m.endGen!==2)m.endGen=1;if(!m.realm||typeof m.realm!=='object'||Array.isArray(m.realm))m.realm={};m.realmGen=1;
   if(!m.ocean||typeof m.ocean!=='object'||Array.isArray(m.ocean))m.ocean={};
   if(!m.decor||typeof m.decor!=='object'||Array.isArray(m.decor))m.decor={};
   if(!Array.isArray(m.blasts))m.blasts=[];if(!Array.isArray(m.bombs))m.bombs=[];if(!Number.isFinite(m.rads))m.rads=0;if(!m.atomic||typeof m.atomic!=='object'||Array.isArray(m.atomic))m.atomic={};
@@ -6316,7 +6455,7 @@ function tickHostile(e,dt,dist){
 function hostileSpawnDark(x,y,z){const L=lightLevels(x,y,z);if(!L||L.b>0)return false;if(world.dimension==='nether')return true;
  const day=clamp((U.uSky.value-.16)/.84,0,1),sky=Math.max(0,L.s-Math.round((1-day)*11));return sky<=Math.floor(Math.random()*8);}
 function tickHostileSpawns(dt){
- combat.spawnT-=dt;if(combat.spawnT>0||CONFIG.difficulty==='peaceful'||world.dimension==='end')return;combat.spawnT=1;
+ combat.spawnT-=dt;if(combat.spawnT>0||CONFIG.difficulty==='peaceful'||world.dimension==='end'||world.dimension==='outerend')return;combat.spawnT=1;
  let count=0;for(const e of entities)if(MOB_DEFS[e.kind].hostile)count++;
  if(count>=netHostileCap()||entities.length>=ENTITY_LIMIT)return;
  const pp=netSpawnCenter();
@@ -7334,14 +7473,14 @@ function switchDimension(next,source=null,mode='portal'){
  if(!saveWorld()){toast('Travel cancelled: save the world successfully first');return false;}
  const meta=readMeta();if(!meta)return false;const current=world.dimension||'overworld',states=world.dimensionStates||{};states[current]=captureDimension(meta);
  const saved=states[next]||{},scale=next==='nether'?1/8:8;
- const fixed=d=>d==='end'||d==='groundzero';
+ const fixed=d=>d==='end'||d==='groundzero'||d==='outerend';
  const linked=source&&(world.portalLinks||[]).slice().reverse().find(p=>p[current]&&portalKey(p[current])===portalKey(source))?.[next];
  const x=linked?.x??clamp((source?.x??player.pos.x)*scale,-490000,490000),z=linked?.z??clamp((source?.z??player.pos.z)*scale,-490000,490000);
  const state={spawn:null,containers:[],mobs:[],mobChunks:[],items:[],xpOrbs:[],signs:[],tnt:[],pistons:[],plantAges:[],endPortals:[],blasts:[],bombs:[],time:meta.time,days:meta.days,weather:{type:'clear',remaining:600},...saved};
  if(fixed(next)||fixed(current)||mode==='home'){
   // End and Ground Zero travel and going home use fixed destinations instead of scaled portal links;
   // stepping back through a Fission Gate returns you to the gate you left from
-  const home=next==='overworld'?(mode==='gate'&&saved.p?[saved.p.x,saved.p.y,saved.p.z]:saved.spawn||[saved.p?.x??0.5,saved.p?.y??80,saved.p?.z??0.5]):next==='groundzero'?[.5,60,150.5]:[100.5,49,.5];
+  const home=next==='overworld'?(mode==='gate'&&saved.p?[saved.p.x,saved.p.y,saved.p.z]:saved.spawn||[saved.p?.x??0.5,saved.p?.y??80,saved.p?.z??0.5]):next==='groundzero'?[.5,60,150.5]:next==='outerend'?[.5,61,34.5]:[100.5,49,.5];
   const merged={...meta,...state,p:{...meta.p,x:home[0],y:home[1],z:home[2]},dimension:next,dimensions:states,pendingItems:meta.pendingItems};
   beginGame(meta.seed,merged,meta.mode);portalState.arrival=null;portalState.cooldown=3;portalState.time=0;portalState.mustLeave=true;spawnPending=true;if(next==='overworld'&&mode!=='gate')respawnPending=true;world.keepArrival=mode==='gate';return true;
  }
@@ -7355,7 +7494,7 @@ function settleNetherSpawn(){
 }
 function tickPortals(dt){
  portalState.cooldown=Math.max(0,portalState.cooldown-dt);
- const p=player.pos,last=portalState.lastPos;portalState.lastPos={x:p.x,y:p.y,z:p.z};let f=null;if(world.dimension==='end'||world.dimension==='groundzero')return;
+ const p=player.pos,last=portalState.lastPos;portalState.lastPos={x:p.x,y:p.y,z:p.z};let f=null;if(world.dimension==='end'||world.dimension==='groundzero'||world.dimension==='outerend')return;
  const at=(x,y,z)=>{if(world.getBlock(x,y,z)!==B.portal)return null;const frame=findPortal(x,y,z);if(!frame)invalidatePortal(x,y,z);return frame;};
  for(const dy of [.1,1]){f=at(Math.floor(p.x),Math.floor(p.y+dy),Math.floor(p.z));if(f)break;}
  // Creative flight may cross an entire portal voxel between rendered frames.
@@ -7447,7 +7586,7 @@ function exportWorld(){
 }
 function validateWorldFile(data){
  if(!data||data.format!=='Minercraft'||data.version!==1||!data.meta||!data.chunks||Array.isArray(data.chunks))throw Error('Not a Minercraft world export');
- const m=data.meta;if(!Number.isInteger(m.v)||m.v<1||m.v>21||!Number.isFinite(m.seed)||!m.p||!['x','y','z'].every(k=>Number.isFinite(m.p[k])))throw Error('Invalid world metadata');
+ const m=data.meta;if(!Number.isInteger(m.v)||m.v<1||m.v>22||!Number.isFinite(m.seed)||!m.p||!['x','y','z'].every(k=>Number.isFinite(m.p[k])))throw Error('Invalid world metadata');
  if(Math.abs(m.p.x)>500000||Math.abs(m.p.z)>500000||m.p.y<-32||m.p.y>160)throw Error('Player coordinates are outside the supported world');
  if(!Array.isArray(m.inv)||m.inv.length>36)throw Error('Invalid inventory');
  const stack=s=>{if(!s)return;if(!Array.isArray(s)||!itemDef(s[0])||s[0]===0||!Number.isInteger(s[1])||s[1]<1||s[1]>maxStack(s[0])||s[2]!==null&&s[2]!==undefined&&(!Number.isFinite(s[2])||s[2]<1))throw Error('Invalid saved item stack');};
@@ -7668,7 +7807,7 @@ function repairStack(st){
 }
 function buildRepairGui(panel){label(panel,8,8,'Repair equipment · material + 1 XP level');const candidates=inv.slots.concat(armorSlots,offhand).filter(s=>s&&ITEMS[s.id]?.durability&&(s.d??ITEMS[s.id].durability)<ITEMS[s.id].durability).slice(0,7);candidates.forEach((s,i)=>{const b=el('button','btn',{position:'absolute',left:g(10),top:g(28+i*21),width:g(218)},panel,itemLabel(s.id)+' '+s.d+'/'+ITEMS[s.id].durability);b.onclick=()=>{if(repairStack(s))buildGui();};});}
 function buildMapGui(panel){
- label(panel,10,8,world.dimension==='nether'?'Nether Survey':world.dimension==='end'?'End Survey':'Explorer Map');const cv=el('canvas',null,{position:'absolute',left:g(14),top:g(27),width:g(160),height:g(160),imageRendering:'pixelated'},panel);cv.width=cv.height=16;const ctx=cv.getContext('2d'),px=Math.floor(player.pos.x),pz=Math.floor(player.pos.z),colors=['#719557','#d3bc7c','#54775b','#d1e0e1','#9eae7c','#416f9e','#2e527d','#4b88a8','#61724b','#477d3a','#a9a050','#ad724d','#3e633b','#90828e','#d1e0e1'];for(let z=0;z<16;z++)for(let x=0;x<16;x++){const wx=px+(x-8)*4,wz=pz+(z-8)*4,b=gen.biomeAt(wx,wz);ctx.fillStyle=world.dimension==='nether'?(gen.BIOME_NAMES.length===5?['#8c4937','#a3202a','#167a72','#5e4a3c','#5a5660'][b]:'#8c4937'):world.dimension==='end'?(gen.heightAt(wx,wz)?'#dcd9a5':'#120a1c'):colors[b]||'#9b987b';ctx.fillRect(x,z,1,1);}ctx.fillStyle='#fff';ctx.fillRect(8,8,1,1);label(panel,10,192,'X '+px+'  Z '+pz+' · white: you');
+ label(panel,10,8,world.dimension==='nether'?'Nether Survey':world.dimension==='end'?'End Survey':world.dimension==='outerend'?'Realm Survey':'Explorer Map');const cv=el('canvas',null,{position:'absolute',left:g(14),top:g(27),width:g(160),height:g(160),imageRendering:'pixelated'},panel);cv.width=cv.height=16;const ctx=cv.getContext('2d'),px=Math.floor(player.pos.x),pz=Math.floor(player.pos.z),colors=['#719557','#d3bc7c','#54775b','#d1e0e1','#9eae7c','#416f9e','#2e527d','#4b88a8','#61724b','#477d3a','#a9a050','#ad724d','#3e633b','#90828e','#d1e0e1'];for(let z=0;z<16;z++)for(let x=0;x<16;x++){const wx=px+(x-8)*4,wz=pz+(z-8)*4,b=gen.biomeAt(wx,wz);ctx.fillStyle=world.dimension==='nether'?(gen.BIOME_NAMES.length===5?['#8c4937','#a3202a','#167a72','#5e4a3c','#5a5660'][b]:'#8c4937'):world.dimension==='end'?(gen.heightAt(wx,wz)?'#dcd9a5':'#120a1c'):colors[b]||'#9b987b';ctx.fillRect(x,z,1,1);}ctx.fillStyle='#fff';ctx.fillRect(8,8,1,1);label(panel,10,192,'X '+px+'  Z '+pz+' · white: you');
 }
 function engineeringInteract(){
  const id=inv.heldId();if(id===B.map){openGui('map');return true;}if(id===B.repair_kit){openGui('repair');return true;}
@@ -9472,7 +9611,7 @@ function mapChunk(c,sliceY){
 function mapBiome(wx,wz){
  const k=(wx>>3)+','+(wz>>3)+','+wpDim();let v=mapBiomeCache.get(k);if(v)return v;if(mapBiomeCache.size>20000)mapBiomeCache.clear();
  const x=(wx>>3)*8+4,z=(wz>>3)*8+4,dim=wpDim(),b=gen.biomeAt(x,z);
- const hex=dim==='nether'?(gen.BIOME_NAMES.length===5?MAP_NETHER[b]:MAP_NETHER[0]):dim==='end'?(gen.heightAt(x,z)?'#dcd9a5':'#120a1c'):MAP_BIOME[b]||'#9b987b';
+ const hex=dim==='nether'?(gen.BIOME_NAMES.length===5?MAP_NETHER[b]:MAP_NETHER[0]):dim==='end'?(gen.heightAt(x,z)?'#dcd9a5':'#120a1c'):dim==='outerend'?(gen.heightAt(x,z)?(REALM_MAP[b+1]||'#dcd9a5'):'#08040e'):MAP_BIOME[b]||'#9b987b';
  v=[parseInt(hex.slice(1,3),16)*.72,parseInt(hex.slice(3,5),16)*.72,parseInt(hex.slice(5,7),16)*.72];mapBiomeCache.set(k,v);return v;
 }
 function drawMap(cv){
@@ -9505,7 +9644,7 @@ function drawMap(cv){
 }
 buildMapGui=function(panel){
  const dim=wpDim();if(mapView.follow){mapView.cx=player.pos.x;mapView.cz=player.pos.z;}
- label(panel,10,8,dim==='nether'?'Nether Survey':dim==='end'?'End Survey':'Explorer Map');
+ label(panel,10,8,dim==='nether'?'Nether Survey':dim==='end'?'End Survey':dim==='outerend'?'Realm Survey':'Explorer Map');
  const zl=label(panel,128,8,'1:'+mapView.scale);zl.style.color='#606060';
  const cv=el('canvas',null,{position:'absolute',left:g(10),top:g(20),width:g(170),height:g(170),imageRendering:'pixelated',cursor:mapView.place?'crosshair':'grab',touchAction:'none',outline:`${g(1)} solid #3a2a18`},panel);cv.width=cv.height=512;
  const toWorld=e=>{const r=cv.getBoundingClientRect(),fx=(e.clientX-r.left)/r.width,fz=(e.clientY-r.top)/r.height;return [Math.floor(mapView.cx)+(fx*128-64)*mapView.scale,Math.floor(mapView.cz)+(fz*128-64)*mapView.scale];};
@@ -11602,7 +11741,7 @@ function threatReady(pp){
 // spawning: ghouls in fallout, the odd marauder patrol at night, and the silo garrison
 {const _ths=tickHostileSpawns;tickHostileSpawns=function(dt){
  if(world.dimension==='groundzero')return tickZeroSpawns(dt);
- _ths(dt);if(net.role==='client'||CONFIG.difficulty==='peaceful'||world.dimension==='end')return;
+ _ths(dt);if(net.role==='client'||CONFIG.difficulty==='peaceful'||world.dimension==='end'||world.dimension==='outerend')return;
  rad.spawnT=(rad.spawnT||0)-dt;if(rad.spawnT>0)return;rad.spawnT=2;
  let ghouls=0,mar=0;for(const e of entities){if(e.kind==='ghoul')ghouls++;if(e.kind==='marauder'&&!e.persistent)mar++;}if(entities.length>=ENTITY_LIMIT-2)return;
  const pp=netSpawnCenter(),fall=doseRateAt(pp.x,pp.y,pp.z),ready=threatReady(pp),A=world.atomic||(world.atomic={});
@@ -12159,7 +12298,7 @@ const COMMANDS=[
  ['/kill','','Kill yourself'],
  ['/spawnpoint','','Set your spawn point here'],
  ['/difficulty','<peaceful|easy|normal|hard>','Change the difficulty'],
- ['/dimension','<overworld|nether|end|groundzero>','Travel to a dimension'],
+ ['/dimension','<overworld|nether|end|groundzero|outerend>','Travel to a dimension'],
  ['/power','','Toggle redstone power on the block you look at'],
  ['/friendlyfire','<on|off>','Let players hurt each other (host)'],
  ['/locate','<fortress|bastion|ruined_portal|silo>','Find the nearest structure'],
@@ -14230,6 +14369,94 @@ function buildPotionTextures(){
   row.innerHTML=`<img src="${iconURL(r.ingredient)}" style="width:${g(11)};height:${g(11)}">→<img src="${iconURL(r.out)}" style="width:${g(11)};height:${g(11)}"><span>${itemLabel(r.out).replace('Potion of ','')}</span>`;
   row.onmousemove=ev=>{ev.stopPropagation();showTip(ev,itemLabel(r.out),itemLabel(r.ingredient)+' into an Awkward Potion'+(ITEMS[r.out]?.desc?' · '+ITEMS[r.out].desc():''));};});};}
 /* =========================================================================
+   71. THE OUTER REALM
+   When the Starwing falls, a gateway arch rises on the End's ring, away from the exit portal (the host
+   builds it with world.setBlock, so it syncs; its record is world.realm.gate, saved in meta v22 and sent
+   to guests as 'rl' / 'realm'). Walking into the arch's opening travels to the 'outerend' dimension
+   (makeRealmGen in worldgen-src): a floating continent of four huge biomes round the Heart Arena. The
+   realm's own return gate stands just behind the arrival point. realmSkyFrame (called from updateSky)
+   blends sky colour, fog and drifting motes by the biome under the player.
+   ========================================================================= */
+function normRealm(r){r=r&&typeof r==='object'&&!Array.isArray(r)?r:{};const g=r.gate,d=r.dragon||{};
+ return {gate:g&&[g.x,g.y,g.z].every(Number.isInteger)?{x:g.x,y:g.y,z:g.z}:null,dragon:{defeated:!!d.defeated,hp:Number.isFinite(d.hp)?Math.max(0,d.hp):0},reward:!!r.reward,visited:!!r.visited};}
+const REALM_MAP=['#dcd9a5','#c4a6e6','#2a8c84','#4a3e40','#e6eef6'];   // hub, then the four biomes
+const REALM_NAMES=['Prism Barrens','Glowcap Jungle','Ashen Rift','Rimeglass Expanse'];
+// per biome (hub last): sky horizon and zenith, fog start and end as fractions of the view distance, mote colour and drift
+const REALM_SKY=[
+ {hor:[.34,.22,.44],top:[.07,.03,.13],fog:[.18,.9],mote:[.95,.78,1],vy:.25,size:.13},
+ {hor:[.05,.25,.25],top:[.01,.05,.07],fog:[.1,.75],mote:[.45,1,.86],vy:.12,size:.15},
+ {hor:[.3,.11,.07],top:[.07,.02,.03],fog:[.06,.68],mote:[1,.5,.22],vy:.7,size:.11},
+ {hor:[.46,.56,.64],top:[.09,.13,.22],fog:[.12,.8],mote:[1,1,1],vy:-.9,size:.14},
+ {hor:[.16,.2,.28],top:[.04,.035,.1],fog:[.3,.95],mote:[.66,1,.94],vy:.35,size:.15}];
+const REALM={key:'',group:null,cool:0,mustLeave:false,returning:false,time:0,b:4,atmo:null,motes:null,cells:null};
+function realmGateCells(){return REALM.cells||(REALM.cells=new Function(WORLDGEN_SRC+'\nreturn realmGatewayCells;')()(B));}
+// the arch's opening: a vertical star-field (the End portal shader turned on its side and shifted violet)
+const realmGateMat=new THREE.ShaderMaterial({uniforms:{uTime:U.uTime},side:THREE.DoubleSide,vertexShader:endPortalMat.vertexShader,
+ fragmentShader:endPortalMat.fragmentShader.replace('max(abs(V.y),0.12)','max(abs(V.z),0.12)').replace('V.xz/vy','V.xy/vy').replace(/vW\.xz/g,'vW.xy').replace('gl_FragColor=vec4(col,1.0);','gl_FragColor=vec4(col*vec3(1.15,.8,1.3)+vec3(.03,.0,.06)*(0.6+0.4*sin(uTime*1.3+vW.y)),1.0);')});
+function realmGateSpot(){return (world.dimension||'overworld')==='end'?world.realm?.gate:world.dimension==='outerend'&&gen?.gate?gen.gate:null;}
+function realmGateMeshes(){
+ const g=realmGateSpot(),key=g?(world.dimension+':'+g.x+','+g.y+','+g.z):'';if(key===REALM.key)return;REALM.key=key;
+ if(!REALM.group){REALM.group=new THREE.Group();scene.add(REALM.group);}
+ while(REALM.group.children.length){const m=REALM.group.children.pop();m.geometry.dispose();}
+ if(!g)return;const m=new THREE.Mesh(new THREE.PlaneGeometry(5,7),realmGateMat);m.position.set(g.x+.5,g.y+4.5,g.z+.5);REALM.group.add(m);
+}
+// Pick and build the End gateway: on the ring, due north of the exit portal, facing the island centre
+function realmPlaceGate(){
+ if(net.role==='client'||world.dimension!=='end'||!world.endBoss?.defeated||world.realm.gate||!gen?.heightAt)return;
+ let site=null;
+ for(let z=-48;z<=-16&&!site;z++){let ok=true,top=0;for(let dz=-2;dz<=2&&ok;dz++)for(let dx=-4;dx<=4;dx++){const h=gen.heightAt(dx,z+dz);if(!h&&dx===0&&dz===0)ok=false;top=Math.max(top,h);}
+  if(ok&&top>30)site={x:0,z,y:top};}
+ if(!site)site={x:0,z:-40,y:Math.max(50,gen.heightAt(0,0))};
+ for(const [dx,dz] of [[-5,-3],[5,-3],[-5,3],[5,3]])if(!world.get(Math.floor((site.x+dx)/16),Math.floor((site.z+dz)/16)))return;   // wait for the chunks
+ portalState.editing=true;
+ for(let dz=-2;dz<=2;dz++)for(let dx=-4;dx<=4;dx++){for(let y=site.y-1;y>site.y-7;y--){const id=world.getBlock(site.x+dx,y,site.z+dz);if(id>0&&BLOCKS[id]?.solid)break;world.setBlock(site.x+dx,y,site.z+dz,B.end_stone);}
+  for(let y=site.y+1;y<=site.y+11;y++)if(world.getBlock(site.x+dx,y,site.z+dz)>0)world.setBlock(site.x+dx,y,site.z+dz,0);}
+ for(const [dx,dy,dz,id] of realmGateCells())if(world.getBlock(site.x+dx,site.y+dy,site.z+dz)!==id)world.setBlock(site.x+dx,site.y+dy,site.z+dz,id);
+ portalState.editing=false;
+ world.realm.gate={x:site.x,y:site.y,z:site.z};REALM.key='';sfx.explode();
+ toast('A gateway has risen on the rim of the island. Something lies beyond…');if(net.role==='host')netBroadcast({t:'realm',r:world.realm});saveWorld();
+}
+function realmTravel(dt){
+ REALM.cool=Math.max(0,REALM.cool-dt);const g=realmGateSpot();if(!g||gameState!=='playing'){REALM.time=0;return;}
+ const p=player.pos,inside=Math.abs(p.x-(g.x+.5))<2.4&&p.y>g.y+.6&&p.y<g.y+8&&Math.abs(p.z-(g.z+.5))<.6;
+ if(!inside){REALM.mustLeave=false;REALM.time=0;return;}
+ if(REALM.mustLeave||REALM.cool>0)return;REALM.time+=dt;
+ if(REALM.time<(player.mode==='creative'?.1:.6))return;REALM.time=0;REALM.mustLeave=true;REALM.cool=3;
+ if(net.role==='client'){toast('Only the host can lead everyone through the gateway');return;}
+ if(world.dimension==='end'){toast('Crossing into the Outer Realm…');switchDimension('outerend',null,'realm');}
+ else{toast('Returning to the End…');REALM.returning=true;if(!switchDimension('end',null,'realm'))REALM.returning=false;}
+}
+function settleRealmSpawn(){const a=gen.arrival||{x:.5,y:61,z:34.5};player.pos.set(a.x,a.y+.001,a.z);player.vel.set(0,0,0);player.yaw=0;player.pitch=0;player.fallStart=null;spawnPending=false;REALM.mustLeave=true;REALM.cool=2;
+ if(!world.realm.visited){world.realm.visited=true;setTimeout(()=>toast('The Outer Realm. Four lands surround the Heart Arena; each keeps a heart.'),800);}
+ awardAdvancement('Beyond the Rim',B.realm_pedestal);}
+{const _se=settleEndSpawn;settleEndSpawn=function(){const g=world.realm?.gate;
+  if(REALM.returning&&g){REALM.returning=false;player.pos.set(g.x+.5,g.y+1.001,g.z+3.5);player.vel.set(0,0,0);player.yaw=Math.PI;player.pitch=0;player.fallStart=null;spawnPending=false;REALM.mustLeave=true;REALM.cool=2;return;}
+  REALM.returning=false;return _se();};}
+{const _te=tickEndPortals;tickEndPortals=function(dt){_te(dt);if(world.dimension==='end'&&world.endBoss?.defeated&&!world.realm.gate){REALM.placeT=(REALM.placeT||0)-dt;if(REALM.placeT<=0){REALM.placeT=1;realmPlaceGate();}}
+  realmGateMeshes();realmTravel(dt);};}
+// the realm's sky: the End dome re-tinted per biome, thicker biome fog, and a cloud of motes (petals of light,
+// spores, embers or snow) that follows the camera
+function realmSkyFrame(dt,camPos){
+ if(sky.endFx)sky.endFx.visible=false;if(sky.endMotes)sky.endMotes.pts.visible=false;
+ const x=Math.floor(camPos.x),z=Math.floor(camPos.z),b0=gen?.biomeAt?gen.biomeAt(x,z):-1,b=b0<0?4:b0,S=REALM_SKY[b];
+ const A=REALM.atmo||(REALM.atmo={hor:[...REALM_SKY[4].hor],top:[...REALM_SKY[4].top],fog:[...REALM_SKY[4].fog],mote:[...REALM_SKY[4].mote]}),k=Math.min(1,dt*.8);
+ for(const key of ['hor','top','fog','mote'])for(let i=0;i<A[key].length;i++)A[key][i]+=(S[key][i]-A[key][i])*k;
+ sky.domeU.uTop.value.setRGB(...A.top);sky.domeU.uHor.value.setRGB(...A.hor);U.uFogColor.value.setRGB(...A.hor);
+ const R=CONFIG.renderDistance*16;if(!player.eyeInWater)U.uFog.value.set(R*A.fog[0],R*A.fog[1]);
+ U.uSkyTint.value.setRGB(.8+A.hor[0]*.5,.8+A.hor[1]*.5,.85+A.hor[2]*.4);
+ if(REALM.b!==b){const was=REALM.b;REALM.b=b;if(b<4&&was!==b&&gameState==='playing')toast(REALM_NAMES[b]);}
+ if(!REALM.motes){const M=260,pos=new Float32Array(M*3),seed=[];for(let i=0;i<M;i++)seed.push([Math.random()*48,Math.random()*30,Math.random()*48,.5+Math.random()]);
+  const pg=new THREE.BufferGeometry();pg.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  const pts=new THREE.Points(pg,new THREE.PointsMaterial({color:0xffffff,size:.14,sizeAttenuation:true,transparent:true,opacity:.85,blending:THREE.AdditiveBlending,depthWrite:false}));pts.frustumCulled=false;scene.add(pts);REALM.motes={pts,seed,t:0};}
+ const m=REALM.motes;m.t+=dt;m.pts.visible=CONFIG.reduceMotion!==true;m.pts.material.color.setRGB(...A.mote);m.pts.material.size=S.size;m.pts.material.blending=b===3?THREE.NormalBlending:THREE.AdditiveBlending;
+ const a=m.pts.geometry.attributes.position,w=(v,c,span)=>((v-c)%span+span*1.5)%span-span/2;
+ for(let i=0;i<m.seed.length;i++){const s=m.seed[i];a.setXYZ(i,camPos.x+w(s[0]+Math.sin(m.t*.3+i)*1.2+(b===3?m.t*1.5:0),camPos.x,48),camPos.y+w(s[1]+m.t*S.vy*s[3],camPos.y,30),camPos.z+w(s[2]+Math.cos(m.t*.25+i)*1.2,camPos.z,48));}
+ a.needsUpdate=true;
+}
+{const _us=updateSky;updateSky=function(dt,camPos){_us(dt,camPos);if(world.dimension!=='outerend'&&REALM.motes)REALM.motes.pts.visible=false;};}
+ADV_EXTRA.push(['Beyond the Rim','realm_pedestal','Step through the gateway into the Outer Realm']);
+
+/* =========================================================================
    68. TEXTURE REFRESH
    Redraws the weakest legacy sprites and block tiles in the newer art style
    (artTile outlines, top-left light, bottom-right shade). Runs after every
@@ -14478,7 +14705,7 @@ function netSnapshot(at){
  if(world.persist){const prefix=chunkPrefix();for(const k of store.keys())if(k.startsWith(prefix)){const rest=k.slice(prefix.length);if(/^-?\d+,-?\d+$/.test(rest))edits[rest]=store.get(k)||'';}}
  for(const [k,m] of world.edits){const cx=Math.floor(k/65536)-32768,cz=(k%65536)-32768;edits[cx+','+cz]=netEncodeEdits(m);}
  const items=itemEntities.filter(e=>e.nid&&!e.fly).map(e=>[e.nid,e.id,e.count,e.d??null,e.en||null,r2(e.pos.x),r2(e.pos.y),r2(e.pos.z)]);
- return {name:world.name,seed:world.seed,lk:!!world.dayLock,gen:world.genVersion||2,ng:world.netherGen||world.genVersion||2,eg:world.endGen||1,dim:world.dimension||'overworld',mode:world.mp?.mode||player.mode,spawn:world.spawn,day:dayTime,days:dayCount,
+ return {name:world.name,seed:world.seed,lk:!!world.dayLock,gen:world.genVersion||2,ng:world.netherGen||world.genVersion||2,eg:world.endGen||1,rl:world.realm||null,dim:world.dimension||'overworld',mode:world.mp?.mode||player.mode,spawn:world.spawn,day:dayTime,days:dayCount,
   w:[weather.type,weather.remaining],diff:CONFIG.difficulty,pvp:!!world.mp?.pvp,blasts:world.blasts||[],signs:[...signTexts],pistons:[...pistonSticky],edits,items,host:net.me,at:at||[player.pos.x,player.pos.y,player.pos.z]};
 }
 
@@ -14832,7 +15059,8 @@ function netClientOnMsg(link,m,attempt){
  if(m.t==='welcome'){if(attempt.done)return;attempt.done=true;net.worldKey=String(attempt.listing?.id||'x').slice(0,40);net.wpStore=null;net.graves=[];net.pvp=!!m.pvp;relay.stop();net.host=link;net.role='client';net.attempt=null;net.leaving=false;netEnterWorld(m,false);return;}
  if(net.host!==link)return;
  switch(m.t){
-  case 'dim':netEnterWorld(m,true);netChat(`${m.host} led everyone to ${m.dim==='nether'?'the Nether':m.dim==='end'?'the End':m.dim==='groundzero'?'Ground Zero':'the Overworld'}`,'#ffff55');break;
+  case 'realm':world.realm=normRealm(m.r);REALM.key='';break;
+  case 'dim':netEnterWorld(m,true);netChat(`${m.host} led everyone to ${m.dim==='nether'?'the Nether':m.dim==='end'?'the End':m.dim==='groundzero'?'Ground Zero':m.dim==='outerend'?'the Outer Realm':'the Overworld'}`,'#ffff55');break;
   case 'ps':if(Array.isArray(m.l)){const live=new Set();for(const r of m.l){if(!Array.isArray(r)||typeof r[0]!=='string'||r[0]===net.me)continue;live.add(r[0]);netAvatarState(r[0],r[1],r[2],r[3],r[4],r[5],r[6],r[7],r[8]|0,r[9]|0);}
    for(const name of [...net.avatars.keys()])if(!live.has(name))netDropAvatar(name);}break;
   case 'b':if(Array.isArray(m.e))for(const r of m.e){if(!Array.isArray(r))continue;const [x,y,z,id]=r;if([x,y,z,id].every(Number.isInteger)&&BLOCKS[id])netApplyEdit(x,y,z,id);}break;
@@ -14867,7 +15095,7 @@ function netEnterWorld(w,dimChange){
  net.me=w.you||net.me;net.dim=w.dim;net.inWorld=true;netClearAvatars();
  const spawn=Array.isArray(w.spawn)&&w.spawn.every(Number.isFinite)?w.spawn:null,at=Array.isArray(w.at)&&w.at.every(Number.isFinite)?w.at:[.5,80,.5];
  const pos=dimChange?at:s?.p&&s.p.every(Number.isFinite)?s.p:spawn||at;
- const meta={v:21,endGen:w.eg===2?2:1,decor:Array.isArray(w.dc)?{[DIMENSIONS.includes(w.dim)?w.dim:'overworld']:w.dc}:{},graves:[],waypoints:{},villages:{},blasts:Array.isArray(w.blasts)?w.blasts.filter(validBlast):[],netherGen:[1,2,3,4,5,6,7,8,9,10,11,12,13,14].includes(w.ng)?w.ng:[1,2,3,4,5,6,7,8,9,10,11,12,13,14].includes(w.gen)?w.gen:12,dayLock:!!w.lk,name:String(w.name||'World').slice(0,32),seed:w.seed|0,mode:w.mode==='creative'?'creative':'survival',generator:[1,2,3,4,5,6,7,8,9,10,11,12,13,14].includes(w.gen)?w.gen:14,dimension:DIMENSIONS.includes(w.dim)?w.dim:'overworld',
+ const meta={v:22,realm:normRealm(w.rl),realmGen:1,endGen:w.eg===2?2:1,decor:Array.isArray(w.dc)?{[DIMENSIONS.includes(w.dim)?w.dim:'overworld']:w.dc}:{},graves:[],waypoints:{},villages:{},blasts:Array.isArray(w.blasts)?w.blasts.filter(validBlast):[],netherGen:[1,2,3,4,5,6,7,8,9,10,11,12,13,14].includes(w.ng)?w.ng:[1,2,3,4,5,6,7,8,9,10,11,12,13,14].includes(w.gen)?w.gen:12,dayLock:!!w.lk,name:String(w.name||'World').slice(0,32),seed:w.seed|0,mode:w.mode==='creative'?'creative':'survival',generator:[1,2,3,4,5,6,7,8,9,10,11,12,13,14].includes(w.gen)?w.gen:14,dimension:DIMENSIONS.includes(w.dim)?w.dim:'overworld',
   spawn:dimChange?at:spawn,time:+w.day||0,days:w.days|0,weather:{type:Array.isArray(w.w)?w.w[0]:'clear',remaining:1e9},
   p:{x:pos[0],y:pos[1],z:pos[2],yaw:pos[3]||0,pitch:pos[4]||0,fire:0,hp:s?.hp??20,food:s?.food??20,sat:s?.sat??5,xp:s?.xp??0,fly:false},
   inv:s?.inv||[],armor:s?.armor||[],offhand:s?.off||null,sel:s?.sel||0,effects:s?.fx||{},signs:Array.isArray(w.signs)?w.signs:[],pistons:Array.isArray(w.pistons)?w.pistons:[],
