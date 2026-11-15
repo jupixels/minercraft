@@ -177,6 +177,11 @@ Two limits on that freedom:
   block carrying in `e.carry`), spawns in a `tickHostileSpawns` wrapper (rare at
   night in the Overworld, common in the End), `throwPearl`/`pearlImpact` (projectile
   owner `'pearl'`), items 1039 `ender_pearl` and 1040 `spawn_enderman`.
+- Section 70 (before 68) is the potion expansion: `POTX` (items 1041-1050, effect
+  key, seconds, colour, Awkward + ingredient), effects in wrappers of `updatePlayer`,
+  `damage`, `mobPhysics`/`tickHostile`/`tickProjectiles` (Chronoshell, host-side),
+  a Space keydown hook (Skyhop/Blinking), Echo Sight via mob material depthTest,
+  and the Brewing Guide panel (a `buildGui` wrapper for the brewing stand).
 - Section 68 (just before BOOT) is the texture refresh: `buildTextureRefresh()`
   runs after every other texture builder and redraws weak legacy tiles in
   place (bread, meats, nuggets, armour icons, pillar/pumpkin/melon/deepslate
@@ -272,7 +277,7 @@ Two limits on that freedom:
 - **Item ids are global.** Items are also defined outside section 2 (boats at
   452, spawn eggs from 400, and 1024+ in sections 64-65); the test fails if an
   id is defined twice. 256-511 is nearly full, so new items go in 1024-2047
-  (above every block id; the test allows both ranges). Next free: 1041.
+  (above every block id; the test allows both ranges). Next free: 1051.
 - **Block IDs are permanent.** Saves store raw IDs, so an id → name pair
   never changes. The id space is split three ways:
   - `0–255`: the original blocks. Frozen; the test hashes them.

@@ -3554,6 +3554,7 @@ function updatePlayer(dt){
   else if(p.sprinting) speed = 5.612;
   if(!p.flying&&!p.inWater&&blockAtFeet(-.1)===B.soul_sand)speed*=.6;
   if(player.effects?.speed>0)speed*=1.4;
+  if(player.effects?.stoneskin>0)speed*=.75;
   if(!p.flying)speed*=atomicMoveFactor();
   const control = p.flying ? 10 : (p.onGround ? 18 : (p.inWater? (inLava()?5:11) : 4));
   const k = 1-Math.exp(-control*dt);
@@ -14137,6 +14138,98 @@ function buildEndermanTextures(){
  CREATIVE_TABS[3].items.push(B.ender_pearl,B.spawn_enderman);
 }
 /* =========================================================================
+   70. POTION EXPANSION
+   Ten original potions, brewed from an Awkward Potion like the classics,
+   each with its own colour, icon, duration and a gameplay-changing effect:
+   Topsy-Turvy (gravity flips), Blinking (Space in mid-air blinks you ahead),
+   Springheel (you bounce instead of taking fall damage), Ghoststep (walk
+   through thin walls), Lodestone (pulls items and XP to you), Chronoshell
+   (a bubble that slows mobs and missiles around you), Skyhop (double jump
+   and slow fall), Ember Trail (you leave fire and can't burn), Stoneskin
+   (60% less damage, slower) and Echo Sight (see mobs through walls).
+   The brewing stand gains a Brewing Guide panel listing every recipe.
+   Effects are on the drinking player; Chronoshell and Ember Trail act on the
+   world only on the host (guests' mobs and fire are the host's).
+   ========================================================================= */
+const POTX=[   // id, name, label, effect, seconds, colour, ingredient, what it does
+ [1041,'topsy_potion','Potion of Topsy-Turvy','topsy',15,[255,140,40],'amethyst_shard','Gravity flips: you fall up and walk on ceilings. Space pushes off. Mind the ending!'],
+ [1042,'blink_potion','Potion of Blinking','blink',45,[80,230,210],'ender_pearl','Press Space in mid-air to blink 8 blocks where you look.'],
+ [1043,'springheel_potion','Potion of Springheel','springheel',60,[140,235,70],'slime_ball','Landing bounces you back up instead of hurting. Sneak to stop.'],
+ [1044,'ghoststep_potion','Potion of Ghoststep','ghoststep',20,[205,215,240],'ink_sac','Walk into a wall up to 2 blocks thick to pass through it.'],
+ [1045,'lodestone_potion','Potion of Lodestone','lodestone',90,[215,60,70],'iron_ingot','Dropped items and XP within 12 blocks fly to you.'],
+ [1046,'chronoshell_potion','Potion of Chronoshell','chronoshell',20,[240,220,120],'clock','A bubble of slow time: nearby mobs and missiles crawl.'],
+ [1047,'skyhop_potion','Potion of Skyhop','skyhop',60,[150,200,255],'feather','Jump again in mid-air, and drift down softly.'],
+ [1048,'embertrail_potion','Potion of Ember Trail','embertrail',30,[255,90,20],'fire_charge','Fire springs up where you walk; flames can\'t hurt you.'],
+ [1049,'stoneskin_potion','Potion of Stoneskin','stoneskin',60,[128,116,104],'obsidian','Take 60% less damage, but move slower.'],
+ [1050,'echosight_potion','Potion of Echo Sight','echosight',45,[180,120,255],'glow_berries','See every creature nearby through walls.']];
+for(const [id,name,label,effect,dur,col,,desc] of POTX)defItem(id,name,{label,icon:name,effect,dur,stack:1,bottle:true,desc:()=>desc});
+for(const [,,,effect,,col] of POTX)POTION_COL[effect]='rgb('+col.join(',')+')';
+const PFX={bubble:null,blinkT:0,airJumps:0,trailT:0,wasGround:true,phaseT:0,lastVy:0,echo:false};
+// ---- drinking: per-potion duration and a one-line explanation the first few times
+{const _dp=drinkPotion;drinkPotion=function(id){const it=ITEMS[id];const r=_dp(id);if(r&&it?.dur){player.effects[it.effect]=it.dur;const n=(PFX.told=PFX.told||{});if((n[it.effect]=(n[it.effect]||0)+1)<=2)toast(it.label.replace('Potion of ','')+': '+it.desc());}return r;};}
+// ---- player-side effects, around the movement step
+{const _up=updatePlayer;updatePlayer=function(dt){const p=player,E=p.effects||{},air=!p.onGround&&!p.flying&&!p.inWater&&!p.swimming;
+ const flip=E.topsy>0&&!p.flying&&!p.inWater&&p.mode!=='spectator';
+ if(flip){p.vel.y+=56*dt;p.fallStart=null;}                                     // net gravity points up
+ if(E.springheel>0||E.skyhop>0)PFX.lastVy=p.vel.y;
+ if(E.skyhop>0&&air&&!p.sneaking&&p.vel.y<-4){p.vel.y=-4;p.fallStart=p.pos.y;}  // soft drift down
+ if(E.springheel>0&&!p.sneaking)p.fallStart=p.pos.y;                             // bouncing never hurts
+ const y0=p.pos.y;const r=_up(dt);
+ if(flip){p.vel.y=Math.min(p.vel.y,18);if(p.pos.y>CH+24){p.pos.y=CH+24;p.vel.y=0;}
+  const ceil=isSolidAt(Math.floor(p.pos.x),Math.floor(p.pos.y+PH+.06),Math.floor(p.pos.z));if(ceil&&p.vel.y>=0){p.vel.y=0;if(keys.has('Space'))p.vel.y=-8;}}
+ if(PFX.flip&&!flip&&!p.onGround){p.effects.skyhop=Math.max(p.effects.skyhop||0,6);}PFX.flip=flip;   // the world turns right way up: a few seconds of soft fall
+ if(E.springheel>0&&!p.sneaking&&p.onGround&&PFX.lastVy<-7){p.vel.y=Math.min(17,-PFX.lastVy*.82);p.onGround=false;sfx.pop?.();}
+ if(p.onGround)PFX.airJumps=0;
+ // ghoststep: pushing into a wall up to 2 thick steps you through it
+ if(E.ghoststep>0&&p.onGround&&keys.has('KeyW')&&Math.hypot(p.vel.x,p.vel.z)<.6){PFX.phaseT+=dt;if(PFX.phaseT>.3){PFX.phaseT=0;const fx=-Math.sin(p.yaw),fz=-Math.cos(p.yaw),ax=Math.abs(fx)>Math.abs(fz)?Math.sign(fx):0,az=ax?0:Math.sign(fz);
+   const bx=Math.floor(p.pos.x),by=Math.floor(p.pos.y),bz=Math.floor(p.pos.z);
+   for(let k=2;k<=3;k++){const x=bx+ax*k,z=bz+az*k,w=world.getBlock(bx+ax,by,bz+az);if(w===B.bedrock)break;if(world.getBlock(x,by,z)===0&&world.getBlock(x,by+1,z)===0&&isSolidAt(x,by-1,z)){for(let i=0;i<10;i++)emitParticle(p.pos.x,p.pos.y+1,p.pos.z,(Math.random()-.5),Math.random(),(Math.random()-.5),TEX.smoke,.1,.6);p.pos.set(x+.5,by,z+.5);sfx.pop?.();break;}}}}else PFX.phaseT=0;
+ // ember trail: fire where you walked (host only), and a little cinder spray
+ if(E.embertrail>0&&p.onGround&&net.role!=='client'){PFX.trailT-=dt;if(PFX.trailT<=0&&Math.hypot(p.vel.x,p.vel.z)>1){PFX.trailT=.22;const bx=Math.floor(p.pos.x-p.vel.x*.12),by=Math.floor(p.pos.y),bz=Math.floor(p.pos.z-p.vel.z*.12);if(world.getBlock(bx,by,bz)===0&&isSolidAt(bx,by-1,bz))igniteAt(bx,by,bz);}}
+ // lodestone: draw items and XP in
+ if(E.lodestone>0){for(const it of itemEntities){const d=it.pos.distanceTo(p.pos);if(d<12&&d>.6){const k=Math.min(1,dt*3);it.vel.x+=((p.pos.x-it.pos.x)/d*7-it.vel.x)*k;it.vel.z+=((p.pos.z-it.pos.z)/d*7-it.vel.z)*k;it.vel.y+=((p.pos.y+.8-it.pos.y)/d*7-it.vel.y)*k;it.delay=0;}}
+  for(const o of xpOrbs){const d=o.pos.distanceTo(p.pos);if(d<12&&d>.4){o.vel.addScaledVector(_hv.set(p.pos.x-o.pos.x,p.pos.y+.8-o.pos.y,p.pos.z-o.pos.z).normalize(),dt*30);}}}
+ return r;};}
+// Space in mid-air: Skyhop jumps again (once per airtime), Blinking teleports along your view
+document.addEventListener('keydown',e=>{if(e.code!=='Space'||e.repeat||gameState!=='playing')return;const p=player,E=p.effects||{};if(p.onGround||p.flying||p.inWater||p.swimming)return;
+ if(E.skyhop>0&&PFX.airJumps<1){PFX.airJumps++;p.vel.y=8.6;p.fallStart=p.pos.y;for(let i=0;i<8;i++)emitParticle(p.pos.x,p.pos.y,p.pos.z,(Math.random()-.5)*2,-1,(Math.random()-.5)*2,TEX.smoke,.2,.5);return;}
+ if(E.blink>0&&performance.now()-PFX.blinkT>900){PFX.blinkT=performance.now();camera.getWorldDirection(_rd);const s=p.pos.clone();let best=null;
+  for(let t=1;t<=8;t+=.5){const x=s.x+_rd.x*t,y=s.y+_rd.y*t,z=s.z+_rd.z*t;const bx=Math.floor(x),by=Math.floor(y),bz=Math.floor(z);if(isSolidAt(bx,by,bz)||isSolidAt(bx,by+1,bz))break;best=[x,y,z];}
+  if(best){for(let i=0;i<12;i++)emitParticle(s.x,s.y+1,s.z,(Math.random()-.5)*2,(Math.random()-.5)*2,(Math.random()-.5)*2,TEX.portal??TEX.smoke,.1,.6);p.pos.set(...best);p.vel.set(0,Math.max(p.vel.y,0),0);p.fallStart=p.pos.y;sfx.pop?.();}}},true);
+// stoneskin and ember trail on incoming damage
+{const _dmg=damage;damage=function(n,cause){const E=player.effects||{};if(cause==='fire'&&E.embertrail>0)return;if(E.stoneskin>0&&cause!=='void'&&cause!=='starve'&&cause!=='drown')n*=.4;return _dmg(n,cause);};}
+// chronoshell: mobs and missiles within 9 blocks run at quarter speed (host simulates mobs)
+const chronoNear=v=>player.effects?.chronoshell>0&&v.distanceToSquared(player.pos)<81;
+{const _mp=mobPhysics;mobPhysics=function(e,dt){return _mp(e,chronoNear(e.pos)?dt*.25:dt);};}
+{const _th=tickHostile;tickHostile=function(e,dt,dist){return _th(e,chronoNear(e.pos)?dt*.25:dt,dist);};}
+{const _tp=tickProjectiles;tickProjectiles=function(dt){for(const pr of projectiles){const inn=chronoNear(pr.pos);if(inn&&!pr.slowed){pr.vel.multiplyScalar(.3);pr.slowed=true;}else if(!inn&&pr.slowed){pr.vel.multiplyScalar(1/.3);pr.slowed=false;}}return _tp(dt);};}
+// visuals: the time bubble, and creatures drawn through walls with Echo Sight
+{const _ue=updateEntities;updateEntities=function(dt){_ue(dt);const E=player.effects||{};
+ if(E.chronoshell>0){if(!PFX.bubble){PFX.bubble=new THREE.Mesh(new THREE.SphereGeometry(9,32,16),new THREE.ShaderMaterial({uniforms:{uTime:U.uTime},transparent:true,depthWrite:false,side:THREE.DoubleSide,
+   vertexShader:'varying vec3 vN,vV;void main(){vec4 w=modelMatrix*vec4(position,1.0);vN=normalize(mat3(modelMatrix)*normal);vV=normalize(cameraPosition-w.xyz);gl_Position=projectionMatrix*viewMatrix*w;}',
+   fragmentShader:'uniform float uTime;varying vec3 vN,vV;void main(){float f=pow(1.0-abs(dot(vN,vV)),3.0);float r=0.5+0.5*sin(uTime*2.0+vN.y*12.0);gl_FragColor=vec4(vec3(1.0,0.86,0.45)*(0.6+0.4*r),f*0.55+0.03);}'}));scene.add(PFX.bubble);}
+  PFX.bubble.visible=true;PFX.bubble.position.copy(player.pos);PFX.bubble.position.y+=1;}else if(PFX.bubble)PFX.bubble.visible=false;
+ const echo=E.echosight>0;for(const e of entities){const m=e.model;if(!m)continue;const on=echo&&e.pos.distanceToSquared(player.pos)<48*48;if(!!m.echo!==on){m.echo=on;for(const part of m.parts){part.material.depthTest=!on;part.renderOrder=on?20:0;}}}
+};}
+// HUD icons for every potion effect
+{const _tm=tickMagic;tickMagic=function(dt){_tm(dt);if(entityClock.tick%20!==0)return;const imgs=effectHud.querySelectorAll('img'),keys2=Object.keys(player.effects||{});
+ imgs.forEach((im,i)=>{const it=Object.values(ITEMS).find(d=>d.effect===keys2[i]&&d.bottle);if(it)im.src=iconURL(it.id);});};}
+// icons and recipes
+function buildPotionTextures(){
+ for(const [id,name,,,,col] of POTX)artTile('item_'+name,T=>{const c=col,lt=c.map(v=>Math.min(255,v+70)),dk=c.map(v=>v*.6);
+  T.rows(['.....kk.....','....kKKk....','.....gg.....','.....gg.....','....gccg....','...gcccwg...','..gcccccwg..','..gccccccg..','..gdcccccg..','..gddccccg..','...gddddg...','....gggg....'],{k:[110,76,40],K:[160,116,64],g:[196,220,232],c,w:lt,d:dk},2,2);});
+ const brew=(input,ingredient,out)=>{if(B[ingredient]!==undefined)BREW[input+':'+B[ingredient]]={ingredient:B[ingredient],out};};
+ for(const [id,name,,,,,ing] of POTX)brew(B.awkward_potion,ing,id);
+ CREATIVE_TABS[3].items.push(...POTX.map(p=>p[0]));
+}
+// the Brewing Guide: every brewing recipe beside the stand
+{const _bg=buildGui;buildGui=function(){_bg();if(guiOpen!=='brewing')return;const panel=$('gui').querySelector('.panel');if(!panel)return;
+ const book=el('div','panel',{position:'absolute',left:g(182),top:0,width:g(140),height:g(178)},panel.parentElement||panel);label(book,10,7,'Brewing Guide');
+ const rows=Object.values(BREW).filter(r=>r.out!==B.awkward_potion);label(book,10,19,'Water + Nether Wart = Awkward').style.fontSize=g(7);
+ rows.forEach((r,i)=>{const x=5+(i%2)*67,y=31+((i/2)|0)*14.5,row=el('div',null,{position:'absolute',left:g(x),top:g(y),width:g(66),height:g(13),display:'flex',alignItems:'center',gap:g(2),fontSize:g(6.5),color:'#303030',whiteSpace:'nowrap',overflow:'hidden'},book);
+  row.innerHTML=`<img src="${iconURL(r.ingredient)}" style="width:${g(11)};height:${g(11)}">→<img src="${iconURL(r.out)}" style="width:${g(11)};height:${g(11)}"><span>${itemLabel(r.out).replace('Potion of ','')}</span>`;
+  row.onmousemove=ev=>{ev.stopPropagation();showTip(ev,itemLabel(r.out),itemLabel(r.ingredient)+' into an Awkward Potion'+(ITEMS[r.out]?.desc?' · '+ITEMS[r.out].desc():''));};});};}
+/* =========================================================================
    68. TEXTURE REFRESH
    Redraws the weakest legacy sprites and block tiles in the newer art style
    (artTile outlines, top-left light, bottom-right shade). Runs after every
@@ -14239,7 +14332,7 @@ function buildTextureRefresh(){
 /* =========================================================================
    20. BOOT
    ========================================================================= */
-buildTextures(); buildEntityTextures(); buildEquipmentTextures(); buildFarmTextures(); buildShapeTextures(); buildFluidTextures();buildBiomeTextures();buildRedstoneTextures();buildMagicTextures();buildNetherTextures();buildLivingTextures();buildEngineeringTextures();buildItemArt();buildEndItems();buildCavesCliffsTextures();buildUraniumTextures();buildNetherUpdateTextures();buildWorkshopTextures();buildDecorTextures();buildOceanTextures();buildEndermanTextures();buildTextureRefresh();
+buildTextures(); buildEntityTextures(); buildEquipmentTextures(); buildFarmTextures(); buildShapeTextures(); buildFluidTextures();buildBiomeTextures();buildRedstoneTextures();buildMagicTextures();buildNetherTextures();buildLivingTextures();buildEngineeringTextures();buildItemArt();buildEndItems();buildCavesCliffsTextures();buildUraniumTextures();buildNetherUpdateTextures();buildWorkshopTextures();buildDecorTextures();buildOceanTextures();buildEndermanTextures();buildPotionTextures();buildTextureRefresh();
 for(const n in TEX) TEX_NAME[TEX[n]]=n;
 buildWaveMap();
 buildShapeCache(); buildBlockTables(); makeMaterials(); initFluidMaterial(); makeCrackMats(); makeParticles();
