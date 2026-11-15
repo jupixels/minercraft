@@ -2486,14 +2486,14 @@ xb('wet_sponge','Wet Sponge',{hardness:.6,sound:'grass',tool:'hoe'},['fn',(P,R)=
 // The Outer Realm (1002-1012): ground, flora and fungus blocks for its four biomes, and the arena's heart pedestals.
 const XREALM={...XSTONE,hardness:2.2};
 xb('prismstone','Prismstone',XREALM,['fn',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++){const f=((x+y*2)%7===0)||((x*3-y)%11===0);P(x,y,vary(f?[236,214,250]:(x>>2)+(y>>2)&1?[196,170,222]:[178,152,210],R,12));}}]);
-xb('prism_shard','Prism Shard',{...XPLANT,sound:'glass',light:7},['fn',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++)P(x,y,[0,0,0],0);for(const [cx,h,w] of [[8,13,2],[4,8,1],[12,9,1]])for(let j=0;j<h;j++){const ww=Math.max(0,Math.round(w*(1-j/h)+.4));for(let k=-ww;k<=ww;k++)P(cx+k,15-j,j>h-3?[255,240,255]:k===-ww?[250,200,255]:vary([214,150,250],R,14));}}]);
+xb('prism_shard','Prism Shard',{...XPLANT,placeAny:true,sound:'glass',light:7},['fn',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++)P(x,y,[0,0,0],0);for(const [cx,h,w] of [[8,13,2],[4,8,1],[12,9,1]])for(let j=0;j<h;j++){const ww=Math.max(0,Math.round(w*(1-j/h)+.4));for(let k=-ww;k<=ww;k++)P(cx+k,15-j,j>h-3?[255,240,255]:k===-ww?[250,200,255]:vary([214,150,250],R,14));}}]);
 xb('glowcap_turf','Glowcap Turf',{hardness:.8,sound:'grass',tool:'shovel'},{top:['fn',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++){const r=R();P(x,y,r<.07?[120,255,220]:vary(r<.5?[34,104,100]:[26,86,92],R,14));}}],bottom:'end_stone',side:['fn',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++){const d=4+Math.round(Math.sin(x*1.3)*1.2);P(x,y,y<d?vary(R()<.08?[120,255,220]:[30,96,96],R,14):vary([219,222,158],R,14));}}]});
 xb('glowcap_cap','Glowcap Cap',{hardness:1,sound:'wood',tool:'axe',light:12},['fn',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++){const s=((x-4)**2+(y-5)**2<5)||((x-11)**2+(y-10)**2<6)||((x-12)**2+(y-3)**2<3);P(x,y,s?[200,255,236]:vary([40,190,190],R,22));}}]);
-xb('glowcap_sprout','Glowcap Sprout',{...XPLANT,light:7},['fn',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++)P(x,y,[0,0,0],0);for(const [cx,h,r] of [[8,10,3],[4,6,2],[12,7,2]]){for(let j=0;j<h;j++)P(cx,15-j,[170,210,190]);for(let k=-r;k<=r;k++){P(cx+k,15-h,vary([60,220,210],R,16));if(Math.abs(k)<r)P(cx+k,14-h,[180,255,240]);}}}]);
+xb('glowcap_sprout','Glowcap Sprout',{...XPLANT,placeAny:true,light:7},['fn',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++)P(x,y,[0,0,0],0);for(const [cx,h,r] of [[8,10,3],[4,6,2],[12,7,2]]){for(let j=0;j<h;j++)P(cx,15-j,[170,210,190]);for(let k=-r;k<=r;k++){P(cx+k,15-h,vary([60,220,210],R,16));if(Math.abs(k)<r)P(cx+k,14-h,[180,255,240]);}}}]);
 xb('cinder_slate','Cinder Slate',XREALM,['fn',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++){const crack=Math.abs(Math.sin(x*.9+y*.4)+Math.sin(y*1.3-x*.2))<.12;P(x,y,crack?[255,120,40]:vary(y%5===0?[44,38,40]:[62,54,56],R,12));}}]);
-xb('emberbloom','Emberbloom',{...XPLANT,light:9},['fn',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++)P(x,y,[0,0,0],0);for(let j=0;j<9;j++)P(8,15-j,[60,40,40]);P(7,11,[80,50,40]);P(6,10,[80,50,40]);for(const [dx,dy] of [[0,-1],[1,0],[-1,0],[0,1],[1,-1],[-1,-1],[1,1],[-1,1],[0,-2],[2,0],[-2,0]])P(8+dx,5+dy,Math.abs(dx)+Math.abs(dy)>1?[255,90,30]:[255,200,80]);P(8,5,[255,250,200]);}]);
+xb('emberbloom','Emberbloom',{...XPLANT,placeAny:true,light:9},['fn',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++)P(x,y,[0,0,0],0);for(let j=0;j<9;j++)P(8,15-j,[60,40,40]);P(7,11,[80,50,40]);P(6,10,[80,50,40]);for(const [dx,dy] of [[0,-1],[1,0],[-1,0],[0,1],[1,-1],[-1,-1],[1,1],[-1,1],[0,-2],[2,0],[-2,0]])P(8+dx,5+dy,Math.abs(dx)+Math.abs(dy)>1?[255,90,30]:[255,200,80]);P(8,5,[255,250,200]);}]);
 xb('rimeglass','Rimeglass',{hardness:.8,sound:'glass',tool:'pickaxe'},['fn',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++){const f=(x+y)%9===0||(x-y+16)%13===0;P(x,y,f?[240,255,255]:vary(x<2||y<2?[200,240,250]:[150,206,236],R,10));}}]);
-xb('frostfern','Frostfern',{...XPLANT},['fn',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++)P(x,y,[0,0,0],0);for(const [cx,h,lean] of [[8,13,0],[4,9,-.25],[12,10,.25]])for(let j=0;j<h;j++){const x=Math.round(cx+lean*j);P(x,15-j,vary([170,220,236],R,12));if(j%2&&j>1){P(x-1,15-j,[220,245,255]);P(x+1,14-j,[200,236,250]);}}}]);
+xb('frostfern','Frostfern',{...XPLANT,placeAny:true},['fn',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++)P(x,y,[0,0,0],0);for(const [cx,h,lean] of [[8,13,0],[4,9,-.25],[12,10,.25]])for(let j=0;j<h;j++){const x=Math.round(cx+lean*j);P(x,15-j,vary([170,220,236],R,12));if(j%2&&j>1){P(x-1,15-j,[220,245,255]);P(x+1,14-j,[200,236,250]);}}}]);
 xb('realm_pedestal','Heart Pedestal',{hardness:-1,sound:'stone'},{top:['fn',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++){const e=Math.min(x,y,15-x,15-y),d=Math.hypot(x-7.5,y-7.5);P(x,y,d<3.5?[16,10,24]:d<4.6?[120,90,150]:vary(e<2?[60,50,70]:[96,84,108],R,10));}}],bottom:'obsidian',side:['fn',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++)P(x,y,vary(y<3||y>12?[60,50,70]:(x%5===2?[130,100,160]:[90,78,102]),R,10));}]});
 xb('realm_pedestal_lit','Kindled Pedestal',{hardness:-1,sound:'stone',light:15,drop:0},{top:['fn',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++){const e=Math.min(x,y,15-x,15-y),d=Math.hypot(x-7.5,y-7.5);P(x,y,d<3.5?[255,240,255]:d<4.6?[230,140,255]:vary(e<2?[60,50,70]:[96,84,108],R,10));}}],bottom:'obsidian',side:['fn',(P,R)=>{for(let y=0;y<16;y++)for(let x=0;x<16;x++)P(x,y,vary(y<3||y>12?[60,50,70]:(x%5===2?[240,170,255]:[90,78,102]),R,10));}]});
 if(extId>BLOCK_ID_LIMIT)throw Error('Block id space exhausted');
@@ -3691,6 +3691,7 @@ function updatePlayer(dt){
   if(!p.flying&&!p.inWater&&blockAtFeet(-.1)===B.soul_sand)speed*=.6;
   if(player.effects?.speed>0)speed*=1.4;
   if(player.effects?.stoneskin>0)speed*=.75;
+  if(player.effects?.chill>0)speed*=.6;
   if(!p.flying)speed*=atomicMoveFactor();
   const control = p.flying ? 10 : (p.onGround ? 18 : (p.inWater? (inLava()?5:11) : 4));
   const k = 1-Math.exp(-control*dt);
@@ -5394,7 +5395,7 @@ const sfx = (()=>{
     mob(kind, hurt=false, pos=null){ if(!ok()) return; let k=1;
       if(pos){const c=camera.position,d=Math.hypot(pos.x-c.x,(pos.y+1)-c.y,pos.z-c.z),R=MOB_DEFS[kind]?.boss?32:16;if(d>=R)return;k=Math.pow(1-d/R,1.6);if(k<.02)return;}
       if(playPack('mob/'+kind+'/'+(hurt?'hurt':'say'),.4*k,1))return;
-      const t=ctx.currentTime,f={pig:155,cow:95,sheep:210,chicken:530,piglin:118,piglin_brute:92,zombified_piglin:84,hoglin:62,blaze:330,wither_skeleton:72,magma_cube:54,strider:190}[kind]||140;
+      const t=ctx.currentTime,f={pig:155,cow:95,sheep:210,chicken:530,piglin:118,piglin_brute:92,zombified_piglin:84,hoglin:62,blaze:330,wither_skeleton:72,magma_cube:54,strider:190,prismoth:620,shardling:400,mossback:70,sporeling:260,cinder_beetle:300,ashwraith:110,frostkit:480,rimewalker:55,enderman:90}[kind]||140;
       tone(t,.18,hurt?'sawtooth':'triangle',hurt?f*1.7:f,f*.7,.13*k); noise(t,.08,'bandpass',f*4,2,.08*k);
     },
     ui(kind){ if(!ok()) return; const t=ctx.currentTime; if(kind==='chest'){ tone(t,0.25,'triangle',150,95,0.25,0.02); noise(t,0.2,'bandpass',300,3,0.2,0.02); } else { noise(t,0.08,'bandpass',500,1.5,0.25); } },
@@ -6396,7 +6397,7 @@ function updateEntities(dt){
   const alpha=entityClock.acc/.05;
   for(const e of entities){
     const m=e.model,p=e.pos,d=MOB_DEFS[e.kind];m.g.position.set(lerp(e.prev.x,p.x,alpha),lerp(e.prev.y,p.y,alpha),lerp(e.prev.z,p.z,alpha));
-    if(riding===e){const g=m.g.position;player.pos.set(g.x,g.y+RIDE_SEAT[d.boat?'boat':e.kind==='strider'?'strider':'horse'],g.z);player.vel.set(0,0,0);if(d.boat)steerBoat(e,dt);}
+    if(riding===e){const g=m.g.position;player.pos.set(g.x,g.y+(d.boat?RIDE_SEAT.boat:RIDE_SEAT[e.kind]??RIDE_SEAT.horse),g.z);player.vel.set(0,0,0);if(d.boat)steerBoat(e,dt);}
     m.g.rotation.set(0,e.yaw,e.dead?Math.min(Math.PI/2,e.dead*3):0);m.g.scale.setScalar(mobScale(e));
     // per-mob lighting: dark in caves, lit by torches, bright in daylight
     e.lightT=(e.lightT||0)-dt;if(e.lightT<=0){e.lightT=.35+Math.random()*.2;m.light=lightAt(p.x,p.y+d.h*.6,p.z);}
@@ -7599,7 +7600,7 @@ function validateWorldFile(data){
   for(const pair of m.portalLinks)for(const [dim,f] of Object.entries(pair||{}))if(!['overworld','nether'].includes(dim)||!f||![f.x,f.y,f.z].every(Number.isInteger)||Math.abs(f.x)>500000||Math.abs(f.z)>500000||f.y<1||f.y>CH-5||![0,1].includes(f.axis))throw Error('Invalid portal destination');
  }
  if(m.plantAges!==undefined&&(!Array.isArray(m.plantAges)||m.plantAges.some(e=>!Array.isArray(e)||!/^[-0-9]+,[-0-9]+,[-0-9]+$/.test(e[0])||!Number.isInteger(e[1])||e[1]<0||e[1]>3)))throw Error('Invalid growth data');
- if(m.effects&&Object.keys(m.effects).some(k=>!['speed','strength','night_vision','fire_resistance'].includes(k)||!Number.isFinite(m.effects[k])||m.effects[k]<0||m.effects[k]>100000))throw Error('Invalid status effects');
+ if(m.effects&&Object.keys(m.effects).some(k=>!/^[a-z_]{2,24}$/.test(k)||!Number.isFinite(m.effects[k])||m.effects[k]<0||m.effects[k]>100000))throw Error('Invalid status effects');
  for(const state of Object.values(m.dimensions||{})){if(state.p&&!['x','y','z'].every(k=>Number.isFinite(state.p[k])))throw Error('Invalid dimension coordinates');for(const entry of state.containers||[]){if(!Array.isArray(entry?.[1]?.s)||entry[1].s.length>(entry[1].t==='grave'?41:27))throw Error('Invalid dimension container');entry[1].s.forEach(stack);}}
  (m.pendingItems||[]).forEach(stack);m.inv.forEach(stack);(m.armor||[]).forEach(stack);for(const entry of m.containers||[]){if(!Array.isArray(entry)||!entry[1]||!Array.isArray(entry[1].s))throw Error('Invalid container');entry[1].s.forEach(stack);}
  const entries=Object.entries(data.chunks);if(entries.length>4096)throw Error('Too many chunks in the import');
@@ -14456,6 +14457,193 @@ function realmSkyFrame(dt,camPos){
 {const _us=updateSky;updateSky=function(dt,camPos){_us(dt,camPos);if(world.dimension!=='outerend'&&REALM.motes)REALM.motes.pts.visible=false;};}
 ADV_EXTRA.push(['Beyond the Rim','realm_pedestal','Step through the gateway into the Outer Realm']);
 
+/* ---- 71b. Realm creatures: one useful animal and one hunter per biome ----
+   Prism Barrens: the prismoth (a crystal moth; brush it bare-handed for prism dust) and the shardling
+   (a crystal crawler that spits shards). Glowcap Jungle: the mossback (feed it glowcap sprouts to tame,
+   saddle and ride it) and the sporeling (a puffball that bursts into choking spores). Ashen Rift: the
+   cinder beetle (drops ember chitin, a fuel that burns four times longer than coal) and the ashwraith (a
+   flying wraith that throws fire). Rimeglass Expanse: the frostkit (tame it with raw fish; it follows and
+   fights for you) and the rimewalker (an ice golem whose blows chill you). Passive AI hangs off
+   petAndGuardianAI, hostile AI off tickHostile (REALM_AI), spawning off tickHostileSpawns (host only). */
+defItem(1051,'prism_dust',{label:'Prism Dust'});
+defItem(1052,'ember_chitin',{label:'Ember Chitin'});
+defItem(1053,'realm_compass',{label:'Realm Compass',stack:1});
+const REALM_MOBS=['prismoth','mossback','cinder_beetle','frostkit','shardling','sporeling','ashwraith','rimewalker'];
+REALM_MOBS.forEach((k,i)=>defItem(1059+i,'spawn_'+k,{label:'Spawn '+k.replaceAll('_',' '),icon:'egg',spawn:k}));
+Object.assign(MOB_DEFS,{
+ prismoth:{hp:8,w:.4,h:.8,speed:1.5,color:[200,170,240],flying:true,hover:true,loot:[['prism_dust',2]],realm:0},
+ mossback:{hp:40,w:.85,h:1.7,speed:1,color:[60,110,80],food:'glowcap_sprout',loot:[['leather',3]],realm:1},
+ cinder_beetle:{hp:14,w:.55,h:.7,speed:.9,color:[60,40,36],fireImmune:true,food:'emberbloom',loot:[['ember_chitin',2]],realm:2},
+ frostkit:{hp:14,w:.32,h:.75,speed:1.9,color:[220,236,250],food:'raw_fish',loot:[],realm:3},
+ shardling:{hp:18,w:.5,h:1,speed:1.9,color:[180,120,230],hostile:true,loot:[['prism_dust',1]],realm:0},
+ sporeling:{hp:16,w:.45,h:1.2,speed:1.5,color:[40,170,160],hostile:true,loot:[['glowcap_sprout',2]],realm:1},
+ ashwraith:{hp:24,w:.45,h:2,speed:1.6,color:[40,32,34],hostile:true,flying:true,hover:true,fireImmune:true,loot:[['ember_chitin',1],['blaze_powder',1]],realm:2},
+ rimewalker:{hp:50,w:.7,h:2.6,speed:1.1,color:[170,210,236],hostile:true,loot:[['blue_ice',2],['packed_ice',2]],realm:3}});
+RIDE_SEAT.mossback=1.45;
+// ---- models ----
+const RM={lil:[196,160,236],lil2:[150,110,200],crys:[236,214,255],moss:[58,104,70],moss2:[44,84,58],glow:[90,240,220],chit:[46,32,30],ember:[255,120,40],snow:[232,240,250],ice:[170,210,236],ice2:[120,170,210]};
+const rmSpots=(c,n=6,s=1)=>(P,w,h,R)=>{for(let i=0;i<w*h/n;i++){const x=R()*w|0,y=R()*h|0;rectP(P,x,y,s,s,c);}};
+const rmFacets=(P,w,h,R)=>{for(let y=0;y<h;y++)for(let x=0;x<w;x++){const f=((x+y*2)%5===0)||((x*2-y+20)%7===0);P(x,y,f?RM.crys:vary(((x>>1)+(y>>1))&1?RM.lil:[214,180,246],R,12));}};
+const rmEyes=(c,y=1,gap=2)=>(P,w)=>{const x0=Math.floor(w/2)-gap;rectP(P,x0-1,y,2,1,c);rectP(P,w-x0-1,y,2,1,c);};
+Object.assign(MOB_SPECS,{
+ prismoth:{scale:1.5,parts:[
+  {id:'body',pivot:[0,9,0],box:[-1.5,-1.5,-4,3,3,7],c:[110,80,150],f:{top:(P,w,h)=>{for(let y=0;y<h;y+=2)rectP(P,0,y,w,1,[160,120,210]);}}},
+  {id:'head',parent:'body',pivot:[0,.5,3],box:[-1.5,-1.5,0,3,3,2.5],c:[90,64,128],f:{front:(P,w)=>{P(0,1,[220,250,255]);P(w-1,1,[220,250,255]);}}},
+  {id:'antL',parent:'head',pivot:[-1,1.5,2],rot:[-.6,0,-.3],box:[-.25,0,-.25,.5,4,.5],c:RM.crys},
+  {id:'antR',parent:'head',pivot:[1,1.5,2],rot:[-.6,0,.3],box:[-.25,0,-.25,.5,4,.5],c:RM.crys},
+  {id:'wingR',parent:'body',pivot:[1.5,1,1],box:[0,-.2,-5,9,.4,8],c:RM.lil,f:{top:rmFacets,bottom:rmFacets},limb:{axis:'z',amp:.7,idle:true}},
+  {id:'wingL',parent:'body',pivot:[-1.5,1,1],box:[-9,-.2,-5,9,.4,8],c:RM.lil,f:{top:rmFacets,bottom:rmFacets},limb:{axis:'z',amp:-.7,idle:true}},
+  {id:'hindR',parent:'body',pivot:[1.5,.5,-2],box:[0,-.2,-5,6,.4,5],c:RM.lil2,f:{top:rmFacets},limb:{axis:'z',amp:.6,phase:.5,idle:true}},
+  {id:'hindL',parent:'body',pivot:[-1.5,.5,-2],box:[-6,-.2,-5,6,.4,5],c:RM.lil2,f:{top:rmFacets},limb:{axis:'z',amp:-.6,phase:.5,idle:true}}]},
+ shardling:{scale:1.25,parts:[
+  {id:'body',pivot:[0,6,0],box:[-4,-2,-5,8,5,10],c:RM.lil2,f:{all:rmFacets}},
+  {id:'head',parent:'body',pivot:[0,0,5],box:[-3,-2,0,6,4,3],c:[120,80,170],f:{front:(P,w)=>{rectP(P,1,1,w-2,1,[255,90,220]);P(2,1,[255,230,250]);}}},
+  {id:'sp1',parent:'body',pivot:[0,3,-2],rot:[-.3,0,.2],box:[-1,0,-1,2,7,2],c:RM.crys},
+  {id:'sp2',parent:'body',pivot:[-2,3,1],rot:[.2,0,.5],box:[-.75,0,-.75,1.5,5,1.5],c:[220,190,250]},
+  {id:'sp3',parent:'body',pivot:[2,3,2],rot:[.3,0,-.45],box:[-.75,0,-.75,1.5,6,1.5],c:RM.crys},
+  {id:'sp4',parent:'body',pivot:[0,3,3],rot:[.6,0,0],box:[-.5,0,-.5,1,4,1],c:[250,220,255]},
+  {id:'legFL',pivot:[-3,5,3],rot:[0,0,.6],box:[-1,-5,-1,2,5,2],c:[110,70,150],limb:{phase:0,amp:.5}},
+  {id:'legFR',pivot:[3,5,3],rot:[0,0,-.6],box:[-1,-5,-1,2,5,2],c:[110,70,150],limb:{phase:Math.PI,amp:.5}},
+  {id:'legBL',pivot:[-3,5,-3],rot:[0,0,.6],box:[-1,-5,-1,2,5,2],c:[110,70,150],limb:{phase:Math.PI,amp:.5}},
+  {id:'legBR',pivot:[3,5,-3],rot:[0,0,-.6],box:[-1,-5,-1,2,5,2],c:[110,70,150],limb:{phase:0,amp:.5}}]},
+ mossback:{scale:1.15,parts:[
+  {id:'body',pivot:[0,14,0],box:[-8,-6,-11,16,12,22],c:RM.moss,f:{top:(P,w,h,R)=>{for(let y=0;y<h;y++)for(let x=0;x<w;x++)P(x,y,vary(R()<.5?RM.moss:RM.moss2,R,16));rmSpots(RM.glow,40)(P,w,h,R);},side:(P,w,h,R)=>{for(let y=0;y<h;y++)for(let x=0;x<w;x++)P(x,y,vary(y<h*.45?RM.moss:[92,74,58],R,14));}}},
+  {id:'shell',parent:'body',box:[-7,6,-9,14,3,18],c:RM.moss2,f:{top:rmSpots(RM.glow,14,2)}},
+  {id:'cap1',parent:'body',pivot:[-3,9,-3],box:[-2.5,1.5,-2.5,5,2,5],c:[40,190,190],f:{top:rmSpots([200,255,236],6)}},
+  {id:'stem1',parent:'body',pivot:[-3,9,-3],box:[-.75,0,-.75,1.5,1.8,1.5],c:[200,220,210]},
+  {id:'cap2',parent:'body',pivot:[3,9,4],box:[-2,1,-2,4,1.6,4],c:[50,210,200],f:{top:rmSpots([200,255,236],6)}},
+  {id:'stem2',parent:'body',pivot:[3,9,4],box:[-.5,0,-.5,1,1.2,1],c:[200,220,210]},
+  {id:'head',pivot:[0,15,11],box:[-4.5,-5,0,9,9,7],c:[96,78,60],f:{front:(P,w,h)=>{rectP(P,1,3,2,1,[20,20,20]);rectP(P,w-3,3,2,1,[20,20,20]);rectP(P,2,h-3,w-4,2,[70,56,44]);},top:(P,w,h,R)=>{for(let y=0;y<h;y++)for(let x=0;x<w;x++)P(x,y,vary(RM.moss,R,16));}}},
+  {id:'tuskL',parent:'head',pivot:[-3.5,-4,6],rot:[-.5,0,0],box:[-.75,0,0,1.5,1.5,4],c:[236,230,200]},
+  {id:'tuskR',parent:'head',pivot:[3.5,-4,6],rot:[-.5,0,0],box:[-.75,0,0,1.5,1.5,4],c:[236,230,200]},
+  {id:'legFL',pivot:[-5.5,9,7],box:[-2,-9,-2,4,9,4],c:[80,64,50],limb:{phase:0,amp:.45}},
+  {id:'legFR',pivot:[5.5,9,7],box:[-2,-9,-2,4,9,4],c:[80,64,50],limb:{phase:Math.PI,amp:.45}},
+  {id:'legBL',pivot:[-5.5,9,-7],box:[-2,-9,-2,4,9,4],c:[80,64,50],limb:{phase:Math.PI,amp:.45}},
+  {id:'legBR',pivot:[5.5,9,-7],box:[-2,-9,-2,4,9,4],c:[80,64,50],limb:{phase:0,amp:.45}},
+  {id:'saddle',parent:'body',box:[-5,6.2,-3,10,1,7],c:[110,64,34],hidden:true}]},
+ sporeling:{parts:[
+  {id:'body',pivot:[0,4,0],box:[-5,0,-5,10,10,10],c:[40,150,140],f:{all:(P,w,h,R)=>{for(let y=0;y<h;y++)for(let x=0;x<w;x++)P(x,y,vary([40,150,140],R,18));rmSpots([170,255,230],7)(P,w,h,R);}}},
+  {id:'head',parent:'body',pivot:[0,10,0],box:[-6,0,-6,12,3,12],c:[30,120,120],f:{top:rmSpots([200,255,240],8,2)}},
+  {id:'face',parent:'body',box:[-3,3,5,6,3,.4],c:[20,60,60],f:{front:(P,w)=>{P(1,1,[220,255,120]);P(w-2,1,[220,255,120]);rectP(P,2,2,w-4,1,[10,30,30]);}}},
+  {id:'legL',pivot:[-2.5,4,0],box:[-1.5,-4,-1.5,3,4,3],c:[200,220,210],limb:{phase:0,amp:.6}},
+  {id:'legR',pivot:[2.5,4,0],box:[-1.5,-4,-1.5,3,4,3],c:[200,220,210],limb:{phase:Math.PI,amp:.6}}]},
+ cinder_beetle:{parts:[
+  {id:'body',pivot:[0,4,-1],box:[-5,-1,-6,10,6,12],c:RM.chit,f:{top:(P,w,h,R)=>{for(let y=0;y<h;y++)for(let x=0;x<w;x++){const crack=Math.abs(Math.sin(x*1.1+y*.5)+Math.sin(y*1.4-x*.3))<.18||x===Math.floor(w/2);P(x,y,crack?RM.ember:vary(RM.chit,R,10));}},side:rmSpots(RM.ember,12)}},
+  {id:'head',pivot:[0,4,5],box:[-3,-2,0,6,4,3],c:[36,26,24],f:{front:(P,w)=>{P(1,1,[255,200,80]);P(w-2,1,[255,200,80]);}}},
+  {id:'manL',parent:'head',pivot:[-2,-1,3],rot:[0,.4,0],box:[-.5,-.5,0,1,1,3],c:[80,60,50]},
+  {id:'manR',parent:'head',pivot:[2,-1,3],rot:[0,-.4,0],box:[-.5,-.5,0,1,1,3],c:[80,60,50]},
+  ...[[-1,3,0],[1,3,Math.PI],[-1,0,Math.PI],[1,0,0],[-1,-3,0],[1,-3,Math.PI]].map(([s,z,ph],i)=>({id:'leg'+i,pivot:[s*5,3,z],rot:[0,0,s*-.9],box:[-.5,-4,-.5,1,4,1],c:[30,22,20],limb:{phase:ph,amp:.5}}))]},
+ ashwraith:{parts:[
+  {id:'body',pivot:[0,8,0],box:[-5,0,-3,10,14,6],c:[44,36,38],f:{all:(P,w,h,R)=>{for(let y=0;y<h;y++)for(let x=0;x<w;x++)P(x,y,vary(y>h-3?[64,52,50]:[44,36,38],R,12));for(let i=0;i<w*h/10;i++)P(R()*w|0,R()*h|0,[255,110,40]);}}},
+  {id:'tail',parent:'body',pivot:[0,0,0],box:[-3.5,-7,-2,7,7,4],c:[34,28,30],f:{all:(P,w,h,R)=>{for(let y=0;y<h;y++)for(let x=0;x<w;x++)P(x,y,(y>h-2&&(x%2))?[0,0,0]:vary([34,28,30],R,10),(y>h-2&&(x%2))?0:1);}},limb:{amp:.25,idle:true}},
+  {id:'head',pivot:[0,22,0],box:[-4,0,-4,8,8,8],c:[30,24,26],f:{front:(P,w,h)=>{rectP(P,1,1,w-2,h-2,[8,6,8]);rectP(P,2,3,1,1,[255,140,40]);rectP(P,w-3,3,1,1,[255,140,40]);}}},
+  {id:'armL',pivot:[-6,20,0],box:[-1.5,-12,-1.5,3,12,3],c:[40,32,34],limb:{amp:.3,idle:true}},
+  {id:'armR',pivot:[6,20,0],box:[-1.5,-12,-1.5,3,12,3],c:[40,32,34],limb:{amp:.3,phase:Math.PI,idle:true}},
+  {id:'clawL',parent:'armL',box:[-1,-14,-1,2,2,2],c:[255,120,50]},
+  {id:'clawR',parent:'armR',box:[-1,-14,-1,2,2,2],c:[255,120,50]}]},
+ frostkit:{parts:[
+  {id:'body',pivot:[0,7,0],box:[-3,-2.5,-5,6,5,10],c:RM.snow,f:{top:(P,w,h,R)=>{for(let y=0;y<h;y++)for(let x=0;x<w;x++)P(x,y,vary(x===Math.floor(w/2)?[190,214,236]:RM.snow,R,8));}}},
+  {id:'head',pivot:[0,9,5],box:[-3,-3,0,6,5,4],c:[240,246,252],f:{front:(P,w)=>{P(1,1,[60,120,200]);P(w-2,1,[60,120,200]);}}},
+  {id:'snout',parent:'head',box:[-1.5,-3,4,3,2,2],c:[220,232,244],f:{front:(P,w)=>P(Math.floor(w/2),0,[30,30,40])}},
+  {id:'earL',parent:'head',box:[-3,2,1,2,3,1],c:[200,224,244]},
+  {id:'earR',parent:'head',box:[1,2,1,2,3,1],c:[200,224,244]},
+  {id:'tail',pivot:[0,8,-5],rot:[.9,0,0],box:[-2,-2,-8,4,4,8],c:[236,244,252],f:{all:(P,w,h,R)=>{for(let y=0;y<h;y++)for(let x=0;x<w;x++)P(x,y,vary(y<2?[150,200,240]:[236,244,252],R,8));}},limb:{axis:'y',amp:.35,idle:true}},
+  {id:'legFL',pivot:[-1.8,4.5,3.5],box:[-1,-4.5,-1,2,4.5,2],c:[200,220,240],limb:{phase:0,amp:.6}},
+  {id:'legFR',pivot:[1.8,4.5,3.5],box:[-1,-4.5,-1,2,4.5,2],c:[200,220,240],limb:{phase:Math.PI,amp:.6}},
+  {id:'legBL',pivot:[-1.8,4.5,-3.5],box:[-1,-4.5,-1,2,4.5,2],c:[200,220,240],limb:{phase:Math.PI,amp:.6}},
+  {id:'legBR',pivot:[1.8,4.5,-3.5],box:[-1,-4.5,-1,2,4.5,2],c:[200,220,240],limb:{phase:0,amp:.6}}]},
+ rimewalker:{parts:[
+  {id:'legL',pivot:[-4,14,0],box:[-2.5,-14,-2.5,5,14,5],c:RM.ice2,limb:{phase:0,amp:.4}},
+  {id:'legR',pivot:[4,14,0],box:[-2.5,-14,-2.5,5,14,5],c:RM.ice2,limb:{phase:Math.PI,amp:.4}},
+  {id:'body',pivot:[0,14,0],box:[-9,0,-5,18,15,10],c:RM.ice,f:{all:(P,w,h,R)=>{for(let y=0;y<h;y++)for(let x=0;x<w;x++){const f=(x+y)%9===0||(x-y+30)%11===0;P(x,y,f?[236,250,255]:vary(RM.ice,R,10));}}}},
+  {id:'sh1',parent:'body',pivot:[-7,15,0],rot:[0,0,.5],box:[-1,0,-1,2,7,2],c:[220,246,255]},
+  {id:'sh2',parent:'body',pivot:[7,15,0],rot:[0,0,-.5],box:[-1,0,-1,2,6,2],c:[220,246,255]},
+  {id:'sh3',parent:'body',pivot:[0,15,-3],rot:[-.4,0,0],box:[-1,0,-1,2,5,2],c:[200,236,255]},
+  {id:'head',pivot:[0,29,1],box:[-3.5,0,-3.5,7,6,7],c:[150,196,226],f:{front:(P,w)=>rectP(P,1,2,w-2,1,[90,200,255])}},
+  {id:'armL',pivot:[-10.5,27,0],box:[-2.5,-20,-2.5,5,20,5],c:RM.ice2,limb:{phase:Math.PI,amp:.35}},
+  {id:'armR',pivot:[10.5,27,0],box:[-2.5,-20,-2.5,5,20,5],c:RM.ice2,limb:{phase:0,amp:.35}}]}});
+// ---- AI ----
+function realmOwnerFollow(e,dt,speed){
+ if(e.sitting)return 0;const op=ownerPos(e);if(!op)return speed*.3;
+ let target=null,best=100;for(const m of entities)if(!m.dead&&MOB_DEFS[m.kind].hostile&&!MOB_DEFS[m.kind].boss){const d=e.pos.distanceToSquared(m.pos);if(d<best&&m.pos.distanceToSquared(op)<256){best=d;target=m;}}
+ if(target){e.defendT=Math.max(0,(e.defendT||0)-dt);if(best<3&&e.defendT<=0){e.defendT=1;e.yaw=Math.atan2(target.pos.x-e.pos.x,target.pos.z-e.pos.z);hurtMob(target,5);return 0;}return navYaw(e,target.pos.x,target.pos.y,target.pos.z)?MOB_DEFS[e.kind].speed*1.5:0;}
+ return e.pos.distanceToSquared(op)>9?(navYaw(e,op.x,op.y,op.z)?MOB_DEFS[e.kind].speed*1.4:0):0;}
+{const _pg=petAndGuardianAI;petAndGuardianAI=function(e,dt,speed){
+ if(e.kind==='prismoth'){const g=(gen?.heightAt?gen.heightAt(Math.floor(e.pos.x),Math.floor(e.pos.z)):0)||Math.floor(e.pos.y)-3;e.bob=(e.bob||Math.random()*9)+dt;
+  e.vel.y=clamp((g+3.5+Math.sin(e.bob*.7)*1.5-e.pos.y)*1.2,-2,2);e.dustT=Math.max(0,(e.dustT||0)-dt);if(entityClock.tick%8===0&&Math.random()<.4)emitParticle(e.pos.x,e.pos.y+.4,e.pos.z,0,-.4,0,TEX.amethyst_block??TEX.smoke,.05,.8);return e.panic?speed:speed*1.2;}
+ if(e.kind==='frostkit'&&e.tamed)return realmOwnerFollow(e,dt,speed);
+ if(e.kind==='cinder_beetle'&&entityClock.tick%14===0&&Math.random()<.3)emitParticle(e.pos.x,e.pos.y+.6,e.pos.z,0,.6,0,TEX.lava_still??TEX.smoke,.1,.6);
+ return _pg(e,dt,speed);};}
+const REALM_AI={
+ shardling(e,dt,T,dist){const d=MOB_DEFS.shardling;if(!sight(e,T,d)){wander(e,dt,d.speed*.4);return;}
+  if(dist>36){chase(e,T,d.speed);if(e.sees&&e.attackT<=0&&dist<400){e.attackT=2.2;const p=e.pos,pp=T.pos,dx=pp.x-p.x,dy=pp.y+1-(p.y+.7),dz=pp.z-p.z,l=Math.hypot(dx,dy,dz)||1;for(const s of [-.08,0,.08]){const c=Math.cos(s),sn=Math.sin(s);spawnArrow(p.x,p.y+.7,p.z,(dx*c-dz*sn)/l*16,(dy/l+l/500)*16,(dx*sn+dz*c)/l*16,'hostile');}sfx.mob('shardling',false,p);}}
+  else{chase(e,T,dist<4?0:d.speed);melee(e,T,dist,4);}},
+ sporeling(e,dt,T,dist){const d=MOB_DEFS.sporeling;if(!sight(e,T,d)&&!(e.fuse>0)){wander(e,dt,d.speed*.4);return;}
+  if(dist<6.25||e.fuse>0){e.fuse=Math.max(0,(e.fuse||0)+(dist<12?dt:-dt*2));e.vel.x=e.vel.z=0;e.model.inner.scale.setScalar(1+e.fuse*.25);
+   if(e.fuse>=1.2){const p=e.pos;for(let i=0;i<40;i++)emitParticle(p.x,p.y+.8,p.z,(Math.random()-.5)*6,Math.random()*3,(Math.random()-.5)*6,TEX.glowcap_cap??TEX.smoke,.2,1.5+Math.random());
+    if(player.pos.distanceToSquared(p)<16){player.effects.spores=Math.max(player.effects.spores||0,8);mobDamage(4,'sporeling',p);}
+    for(const m of entities)if(m!==e&&!m.dead&&m.pos.distanceToSquared(p)<9)hurtMob(m,3);sfx.explode?.(Math.sqrt(dist),.4);e.hp=0;e.dead=.001;removeMob(e);}}
+  else chase(e,T,d.speed);},
+ ashwraith(e,dt,T,dist){const d=MOB_DEFS.ashwraith,p=e.pos,pp=T.pos;const live=sight(e,T,d,32);const g=(gen?.heightAt?gen.heightAt(Math.floor(p.x),Math.floor(p.z)):0)||Math.floor(p.y)-4;
+  e.bob=(e.bob||Math.random()*9)+dt;
+  if(!live){wander(e,dt,d.speed*.5);e.vel.y=clamp((g+6+Math.sin(e.bob)*2-p.y),-2,2);return;}
+  e.yaw=Math.atan2(pp.x-p.x,pp.z-p.z);e.dive=Math.max(0,(e.dive||0)-dt);
+  if(e.dive>0){const l=Math.sqrt(dist)||1;e.vel.set((pp.x-p.x)/l*9,(pp.y+.8-p.y)/l*9,(pp.z-p.z)/l*9);melee(e,T,dist,5,1.8);return;}
+  const want=dist<64?-1:dist>196?1:0;e.vel.x=Math.sin(e.yaw)*d.speed*2*want;e.vel.z=Math.cos(e.yaw)*d.speed*2*want;e.vel.y=clamp((Math.max(g+5,pp.y+4)+Math.sin(e.bob)*1.5-p.y),-3,3);
+  if(e.sees&&e.attackT<=0){if(Math.random()<.3){e.dive=1.2;e.attackT=3;}else{e.attackT=2.6;const dx=pp.x-p.x,dy=pp.y+1-p.y,dz=pp.z-p.z,l=Math.hypot(dx,dy,dz)||1;spawnFireball(p.x,p.y+1.6,p.z,dx/l*13,dy/l*13,dz/l*13);}}},
+ rimewalker(e,dt,T,dist){const d=MOB_DEFS.rimewalker;if(!sight(e,T,d)){wander(e,dt,d.speed*.4);return;}chase(e,T,d.speed);
+  if(melee(e,T,dist,7,3.2)){e.attackT=1.8;if(T.pos===player.pos){player.effects.chill=Math.max(player.effects.chill||0,6);player.kbx=(player.kbx||0)+Math.sin(e.yaw)*7;player.kbz=(player.kbz||0)+Math.cos(e.yaw)*7;player.vel.y=Math.max(player.vel.y,6);}
+   for(let i=0;i<12;i++)emitParticle(T.pos.x,T.pos.y+1,T.pos.z,(Math.random()-.5)*3,Math.random()*2,(Math.random()-.5)*3,TEX.blue_ice??TEX.smoke,.6,.8);}
+  if(entityClock.tick%10===0)emitParticle(e.pos.x+(Math.random()-.5),e.pos.y+Math.random()*2.5,e.pos.z+(Math.random()-.5),0,-.3,0,TEX.snow??TEX.smoke,.1,1);}};
+{const _th=tickHostile;tickHostile=function(e,dt,dist){const f=REALM_AI[e.kind];if(!f)return _th(e,dt,dist);const T=hostileTarget(e.pos);e.attackT=Math.max(0,(e.attackT||0)-dt);f(e,dt,T,e.pos.distanceToSquared(T.pos));};}
+// interactions: brush a prismoth, tame/saddle/ride a mossback, tame and sit a frostkit
+const REALM_USE={
+ prismoth(a,m){if(a.held)return false;if(m.dustT>0){a.toast('This prismoth has no dust left. Come back later.');return true;}m.dustT=90;m.persistent=true;spawnItem(B.prism_dust,1+((Math.random()*2)|0),m.pos.x,m.pos.y+.3,m.pos.z);sfx.pop();return true;},
+ mossback(a,m){
+  if(!m.tamed){if(a.held!==B.glowcap_sprout){a.toast('The mossback sniffs at you. It likes glowcap sprouts.');return true;}a.consume();m.tameCount=(m.tameCount||0)+1;sfx.pop();if(m.tameCount>=3){m.tamed=true;m.persistent=true;m.owner=a.name;a.toast('The mossback trusts you. Saddle it to ride.');awardAdvancement('Gentle Giant',B.glowcap_sprout);}else a.toast('The mossback munches happily');return true;}
+  if(a.held===B.saddle&&!m.saddled){m.saddled=true;a.consume();a.toast('Saddle equipped');return true;}
+  if(m.saddled)return mountMob(a,m,'WASD to ride, Space to jump, Shift to dismount');return false;},
+ frostkit(a,m){
+  if(!m.tamed){if(a.held!==B.raw_fish)return false;a.consume();if(Math.random()<.4){m.tamed=true;m.owner=a.name;m.persistent=true;m.hp=MOB_DEFS.frostkit.hp;a.toast('The frostkit is now your companion');awardAdvancement('Snow Friend',B.raw_fish);}else a.toast('The frostkit sniffs the fish… try again');return true;}
+  if((m.owner||'')!==a.name){a.toast('This frostkit follows '+(m.owner||'someone else'));return true;}
+  if(ITEMS[a.held]?.food){m.hp=Math.min(MOB_DEFS.frostkit.hp,m.hp+4);a.consume();return true;}
+  m.sitting=!m.sitting;a.toast(m.sitting?'Frostkit is sitting':'Frostkit is following');return true;}};
+{const _mu=mobUse;mobUse=function(a,mob){if(mob&&!mob.dead&&REALM_USE[mob.kind]&&REALM_USE[mob.kind](a,mob))return true;return _mu(a,mob);};}
+// saddles show on mossbacks
+{const _ue=updateEntities;updateEntities=function(dt){_ue(dt);for(const e of entities)if(e.kind==='mossback'&&e.model.nodes.saddle)e.model.nodes.saddle.visible=!!e.saddled;};}
+// ---- spawning: by the biome under each attempt, away from the arena ----
+const REALM_SPAWN={t:0};
+function realmSpawnTick(dt){
+ REALM_SPAWN.t-=dt;if(REALM_SPAWN.t>0)return;REALM_SPAWN.t=1.5;
+ const pp=netSpawnCenter?.()||player.pos;let pas=0,hos=0;for(const e of entities){const d=MOB_DEFS[e.kind];if(d.realm===undefined)continue;if(d.hostile)hos++;else pas++;}
+ const hostile=CONFIG.difficulty!=='peaceful'&&hos<4&&Math.random()<.45,passive=pas<8&&Math.random()<.55;if(!hostile&&!passive)return;
+ const a=Math.random()*Math.PI*2,r=22+Math.random()*30,x=Math.floor(pp.x+Math.cos(a)*r),z=Math.floor(pp.z+Math.sin(a)*r);if(Math.hypot(x,z)<70)return;
+ const b=gen.biomeAt(x,z);if(b<0)return;const c=world.get(x>>4,z>>4);if(!c?.meshed)return;const y=gen.heightAt(x,z)+1;
+ if(world.getBlock(x,y,z)!==0&&!BLOCKS[world.getBlock(x,y,z)]?.plant||world.getBlock(x,y+1,z)!==0||!isSolidAt(x,y-1,z))return;
+ const kinds=hostile?[['shardling'],['sporeling'],['ashwraith'],['rimewalker']][b]:[['prismoth'],['mossback'],['cinder_beetle'],['frostkit']][b],k=kinds[0];
+ const n=hostile?1:(k==='mossback'?1:1+((Math.random()*2)|0));for(let i=0;i<n;i++)spawnMob(k,x+.5+(i?(Math.random()-.5)*2:0),y+(k==='prismoth'||k==='ashwraith'?3:0),z+.5+(i?(Math.random()-.5)*2:0));
+}
+{const _ths=tickHostileSpawns;tickHostileSpawns=function(dt){_ths(dt);if(world.dimension==='outerend'&&net.role!=='client'&&gen?.biomeAt)realmSpawnTick(dt);};}
+// spores choke (damage over time); chill slows (see updatePlayer's speed)
+{const _tm=tickMagic;tickMagic=function(dt){_tm(dt);const E=player.effects||{};if(E.spores>0){REALM_SPAWN.sp=(REALM_SPAWN.sp||0)+dt;if(REALM_SPAWN.sp>1.5){REALM_SPAWN.sp=0;damage(1,'sporeling');}if(entityClock.tick%6===0)emitParticle(player.pos.x+(Math.random()-.5),player.pos.y+1.4,player.pos.z+(Math.random()-.5),0,.3,0,TEX.glowcap_cap??TEX.smoke,.05,.6);}};}
+// the realm compass: in the realm it points to the Heart Arena and names the land you stand in
+{const _ta=tickAutomation;tickAutomation=function(dt){_ta(dt);if(inv.heldId()!==B.realm_compass||gameState!=='playing')return;compassHud.style.display='block';
+ if(world.dimension!=='outerend'){compassHud.textContent='The needle spins: it only finds its way in the Outer Realm';return;}
+ const dx=.5-player.pos.x,dz=.5-player.pos.z,i=(Math.round(Math.atan2(dx,-dz)/(Math.PI/4))+8)%8,b=gen.biomeAt(Math.floor(player.pos.x),Math.floor(player.pos.z));
+ compassHud.textContent='Heart Arena: '+['N','NE','E','SE','S','SW','W','NW'][i]+' · '+Math.round(Math.hypot(dx,dz))+' blocks'+(b>=0?' · '+REALM_NAMES[b]:'');};}
+FUEL[B.ember_chitin]=320;
+ADV_EXTRA.push(['Gentle Giant','glowcap_sprout','Tame a mossback in the Glowcap Jungle'],['Snow Friend','raw_fish','Tame a frostkit in the Rimeglass Expanse']);
+function buildRealmCreatureTextures(){
+ artTile('item_prism_dust',T=>IC.pile(T,[[214,170,250],[236,214,255],[170,120,230],[250,240,255]]));
+ artTile('item_ember_chitin',T=>{T.ell(8,8.5,5.5,4.5,(x,y,dx,dy)=>{const crack=Math.abs(dx*3+dy)<.25||Math.abs(dx+dy*2-.4)<.18;return crack?[255,130,40]:dx<-.3&&dy<-.3?[90,64,58]:dx+dy>.7?[30,20,18]:[56,40,36];});T.S(6,6,[255,200,120]);});
+ artTile('item_realm_compass',T=>{T.ell(8,8,5.5,5.5,(x,y,dx,dy)=>dx*dx+dy*dy>.72?[80,60,110]:[30,22,40]);T.line(8,8,8,4,[236,180,255],1);T.line(8,8,8,12,[120,230,220],1);T.S(8,8,[255,255,255]);for(const [x,y,c] of [[8,3,[200,150,240]],[13,8,[40,170,160]],[8,13,[255,120,50]],[3,8,[200,230,250]]])T.S(x,y,c);});
+ const EGG={prismoth:[[196,160,236],[255,240,255]],mossback:[[58,104,70],[90,240,220]],cinder_beetle:[[46,32,30],[255,120,40]],frostkit:[[232,240,250],[60,120,200]],shardling:[[150,110,200],[255,90,220]],sporeling:[[40,150,140],[200,255,240]],ashwraith:[[40,32,34],[255,140,40]],rimewalker:[[170,210,236],[90,200,255]]};
+ for(const k of REALM_MOBS){artTile('item_egg_'+k,T=>IC.egg(T,EGG[k][0],EGG[k][1],mulberry32(hashStr(k))));ITEMS[B['spawn_'+k]].icon='egg_'+k;}
+ shaped([' d ','dpd',' d '],{d:B.prism_dust,p:B.ender_pearl},B.realm_compass);
+ CREATIVE_TABS[3].items.push(B.prism_dust,B.ember_chitin,B.realm_compass,...REALM_MOBS.map(k=>B['spawn_'+k]));
+ CREATIVE_TABS[1].items.push(B.prismstone,B.glowcap_turf,B.glowcap_cap,B.cinder_slate,B.rimeglass,B.prism_shard,B.glowcap_sprout,B.emberbloom,B.frostfern);
+}
+
 /* =========================================================================
    68. TEXTURE REFRESH
    Redraws the weakest legacy sprites and block tiles in the newer art style
@@ -14559,7 +14747,7 @@ function buildTextureRefresh(){
 /* =========================================================================
    20. BOOT
    ========================================================================= */
-buildTextures(); buildEntityTextures(); buildEquipmentTextures(); buildFarmTextures(); buildShapeTextures(); buildFluidTextures();buildBiomeTextures();buildRedstoneTextures();buildMagicTextures();buildNetherTextures();buildLivingTextures();buildEngineeringTextures();buildItemArt();buildEndItems();buildCavesCliffsTextures();buildUraniumTextures();buildNetherUpdateTextures();buildWorkshopTextures();buildDecorTextures();buildOceanTextures();buildEndermanTextures();buildPotionTextures();buildTextureRefresh();
+buildTextures(); buildEntityTextures(); buildEquipmentTextures(); buildFarmTextures(); buildShapeTextures(); buildFluidTextures();buildBiomeTextures();buildRedstoneTextures();buildMagicTextures();buildNetherTextures();buildLivingTextures();buildEngineeringTextures();buildItemArt();buildEndItems();buildCavesCliffsTextures();buildUraniumTextures();buildNetherUpdateTextures();buildWorkshopTextures();buildDecorTextures();buildOceanTextures();buildEndermanTextures();buildPotionTextures();buildRealmCreatureTextures();buildTextureRefresh();
 for(const n in TEX) TEX_NAME[TEX[n]]=n;
 buildWaveMap();
 buildShapeCache(); buildBlockTables(); makeMaterials(); initFluidMaterial(); makeCrackMats(); makeParticles();
@@ -14573,7 +14761,7 @@ window.__bc = { checkEndPortalAt, get endPortals(){return world.endPortals;}, ge
        list and the connection handshake (encrypted with ECDH + AES-GCM);
        no gameplay goes through them.
    ========================================================================= */
-const NET_V=12, NET_NS='minercraft-jupixels/v1', NET_MAX=8, NET_STALE=150000;
+const NET_V=13, NET_NS='minercraft-jupixels/v1', NET_MAX=8, NET_STALE=150000;
 const NET_QS=new URLSearchParams(location.search);
 const NET_BROKERS=(NET_QS.get('relay')||'wss://mqtt.eclipseprojects.io:443/mqtt,wss://broker.emqx.io:8084/mqtt,wss://broker.hivemq.com:8884/mqtt,wss://test.mosquitto.org:8081/mqtt').split(',').map(s=>s.trim()).filter(Boolean);
 const NET_RTC={iceServers:[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']},{urls:'stun:stun.cloudflare.com:3478'}]};

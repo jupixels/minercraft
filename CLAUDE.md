@@ -286,7 +286,7 @@ Two limits on that freedom:
 - **Item ids are global.** Items are also defined outside section 2 (boats at
   452, spawn eggs from 400, and 1024+ in sections 64-65); the test fails if an
   id is defined twice. 256-511 is nearly full, so new items go in 1024-2047
-  (above every block id; the test allows both ranges). Next free: 1051.
+  (above every block id; the test allows both ranges). Next free: 1071 (1054-1058 reserved for the realm hearts and reward).
 - **Block IDs are permanent.** Saves store raw IDs, so an id → name pair
   never changes. The id space is split three ways:
   - `0–255`: the original blocks. Frozen; the test hashes them.
@@ -382,7 +382,7 @@ How syncing works, so new features stay multiplayer-safe:
 - New kinds of shared state that don't go through the functions above need a
   message: add a case to `netHostOnMsg` (guest → host; validate everything,
   guests are untrusted) and to `netClientOnMsg` (host → guest).
-- `NET_V` is the protocol version (currently 12). Bump it whenever messages
+- `NET_V` is the protocol version (currently 13). Bump it whenever messages
   or block ids change in an incompatible way, so mismatched players get a
   "refresh to update" message instead of a broken game.
 - Friendly fire is the host's setting `world.mp.pvp` (pause-menu button or
