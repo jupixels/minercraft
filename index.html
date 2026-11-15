@@ -2704,7 +2704,7 @@ const world = {
   seed: 0, chunks: new Map(), edits: new Map(), dirtyEdits: new Set(),
   get(cx,cz){ return this.chunks.get(ckey(cx,cz)); },
   getBlock(x,y,z){
-    if(y<0) return B.bedrock; if(y>=CH) return 0;
+    if(y<0) return this.dimension==='end'?0:B.bedrock; if(y>=CH) return 0;   // the End has no floor: below the islands is the void
     const c=this.chunks.get(ckey(x>>4,z>>4)); if(!c||!c.data) return -1;
     return c.data[(x&15)+((z&15)<<4)+(y<<8)];
   },
