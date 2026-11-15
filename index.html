@@ -3674,8 +3674,8 @@ document.addEventListener('keyup', (e)=>{ keys.delete(e.code); if(e.key==='Shift
 // empty/'Unidentified' code, and a Shift already held when a menu closes or the window regains focus never
 // fires a keydown. Every trusted key/mouse event carries shiftKey, so keep 'ShiftLeft' in step with it.
 function syncShift(e){if(!e.isTrusted||gameState!=='playing'||touchUI?.sneak||PAD?.on)return;
- if(e.shiftKey)keys.add(keys.has('ShiftRight')?'ShiftRight':'ShiftLeft');else{keys.delete('ShiftLeft');keys.delete('ShiftRight');}}
-for(const t of ['keydown','keyup','mousemove','mousedown','mouseup','wheel'])document.addEventListener(t,e=>{if(t==='keyup'&&(e.key==='Shift'||/^Shift/.test(e.code)))return;syncShift(e);},{passive:true});
+ if(e.shiftKey)keys.add(keys.has('ShiftRight')?'ShiftRight':'ShiftLeft');else if(e.type==='keydown'||e.type==='keyup'){keys.delete('ShiftLeft');keys.delete('ShiftRight');}}   // mouse events only ever add it: synthetic moves can report a stale false
+for(const t of ['keydown','keyup','mousemove','mousedown','mouseup','wheel'])document.addEventListener(t,e=>{if((t==='keyup'||t==='keydown')&&(e.key==='Shift'||/^Shift/.test(e.code))){if(t==='keydown'&&gameState==='playing')keys.add(e.code&&/^Shift/.test(e.code)?e.code:'ShiftLeft');return;}syncShift(e);},{passive:true});   // Shift's own events speak for themselves
 addEventListener('blur', ()=>keys.clear());
 
 /* =========================================================================
